@@ -1,0 +1,101 @@
+{
+  "name": "yuuka",
+  "version": "1.1.23",
+  "type": "module",
+  "bin": {
+    "yuuka": "cli.cjs"
+  },
+  "engines": {
+    "node": ">=20.18.1"
+  },
+  "main": "cli.cjs",
+  "author": "ShareAI-lab <ai-lab@foxmail.com>",
+  "license": "Apache-2.0",
+  "description": "Personal computer agent CLI (terminal UI) powered by Gemini.",
+  "homepage": "https://github.com/shareAI-lab/yuuka",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shareAI-lab/yuuka.git"
+  },
+  "bugs": {
+    "url": "https://github.com/shareAI-lab/yuuka/issues"
+  },
+  "files": [
+    "cli.cjs",
+    "yoga.wasm",
+    "dist/**/*",
+    "scripts/postinstall.cjs",
+    ".npmrc"
+  ],
+  "scripts": {
+    "dev": "node --import tsx ./src/entrypoints/cli.tsx --verbose",
+    "build": "node scripts/build.mjs",
+    "clean": "rm -rf cli.cjs",
+    "prepublishOnly": "node scripts/build.mjs && node scripts/prepublish-check.cjs",
+    "postinstall": "node scripts/postinstall.cjs || true",
+    "format": "prettier --write \"src/**/*.{ts,tsx,js,jsx,json}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,js,jsx,json}\"",
+    "lint": "eslint . --ext .ts,.tsx,.js --max-warnings 0",
+    "lint:fix": "eslint . --ext .ts,.tsx,.js --fix",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "prepare": "",
+    "publish:dev": "node scripts/publish-dev.cjs",
+    "publish:release": "node scripts/publish-release.cjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/bedrock-sdk": "^0.12.6",
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@anthropic-ai/vertex-sdk": "^0.7.0",
+    "@commander-js/extra-typings": "^13.1.0",
+    "@inkjs/ui": "^2.0.0",
+    "@modelcontextprotocol/sdk": "^1.15.1",
+    "@types/lodash-es": "^4.17.12",
+    "@types/react": "^19.1.8",
+    "@vscode/ripgrep": "^1.17.0",
+    "ansi-escapes": "^7.0.0",
+    "chalk": "^5.4.1",
+    "cli-highlight": "^2.1.11",
+    "cli-table3": "^0.6.5",
+    "commander": "^13.1.0",
+    "debug": "^4.4.1",
+    "diff": "^7.0.0",
+    "dotenv": "^16.6.1",
+    "env-paths": "^3.0.0",
+    "figures": "^6.1.0",
+    "glob": "^11.0.3",
+    "gray-matter": "^4.0.3",
+    "highlight.js": "^11.11.1",
+    "ink": "^5.2.1",
+    "ink-link": "^4.1.0",
+    "ink-select-input": "^6.2.0",
+    "ink-text-input": "^6.0.0",
+    "lodash-es": "^4.17.21",
+    "lru-cache": "^11.1.0",
+    "marked": "^15.0.12",
+    "nanoid": "^5.1.5",
+    "node-fetch": "^3.3.2",
+    "node-html-parser": "^7.0.1",
+    "openai": "^4.104.0",
+    "react": "18.3.1",
+    "semver": "^7.7.2",
+    "shell-quote": "^1.8.3",
+    "spawn-rx": "^5.1.2",
+    "string-width": "^7.2.0",
+    "strip-ansi": "^7.1.0",
+    "tsx": "^4.20.3",
+    "turndown": "^7.2.0",
+    "undici": "^7.11.0",
+    "wrap-ansi": "^9.0.0",
+    "zod": "^3.25.76",
+    "zod-to-json-schema": "^3.24.6"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^24.1.0",
+    "esbuild": "^0.25.9",
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}
