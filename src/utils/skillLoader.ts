@@ -8,7 +8,7 @@
  */
 
 import { existsSync, readFileSync, readdirSync, statSync, watch, FSWatcher } from 'fs'
-import { join } from 'path'
+import { basename, join } from 'path'
 import { homedir } from 'os'
 import matter from 'gray-matter'
 import { getCwd } from './state'
@@ -21,6 +21,14 @@ export interface SkillConfig {
   allowedTools?: string[]   // Optional: restrict available tools
   location: 'user' | 'project'
   dirPath: string          // Full path to skill directory
+}
+
+function isValidSkillName(name: string): boolean {
+  // Open Standard: 1-64 chars, lower-case letters/numbers/hyphens,
+  // no leading/trailing hyphen, no consecutive hyphens.
+  if (!name) return false
+  if (name.length < 1 || name.length > 64) return false
+  return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name)
 }
 
 /**
@@ -39,6 +47,46 @@ function parseAllowedTools(tools: any): string[] | undefined {
   return undefined
 }
 
+function findSkillDirectories(basePath: string): string[] {
+  if (!existsSync(basePath)) return []
+
+  const result: string[] = []
+  const queue: string[] = [basePath]
+
+  while (queue.length > 0) {
+    const dirPath = queue.shift()!
+
+    let entries: string[]
+    try {
+      entries = readdirSync(dirPath)
+    } catch {
+      continue
+    }
+
+    const hasSkillFile = entries.includes('SKILL.md')
+    if (hasSkillFile) {
+      result.push(dirPath)
+      // A skill directory is a leaf in the standard; don't recurse into it.
+      continue
+    }
+
+    for (const entry of entries) {
+      const childPath = join(dirPath, entry)
+      let stat
+      try {
+        stat = statSync(childPath)
+      } catch {
+        continue
+      }
+      if (!stat.isDirectory()) continue
+      queue.push(childPath)
+    }
+  }
+
+  // Ensure stable ordering (filesystem order can vary)
+  return result.sort()
+}
+
 /**
  * Scan a directory for skill configurations
  * Skills are directories containing SKILL.md
@@ -51,29 +99,48 @@ async function scanSkillDirectory(basePath: string, location: 'user' | 'project'
   const skills: SkillConfig[] = []
 
   try {
-    const entries = readdirSync(basePath)
+    const skillDirs = findSkillDirectories(basePath)
 
-    for (const entry of entries) {
-      const skillDirPath = join(basePath, entry)
-      const stat = statSync(skillDirPath)
-
-      // Skills must be directories
-      if (!stat.isDirectory()) continue
-
+    for (const skillDirPath of skillDirs) {
+      const dirName = basename(skillDirPath)
       const skillFilePath = join(skillDirPath, 'SKILL.md')
-
-      // Check if SKILL.md exists in the directory
-      if (!existsSync(skillFilePath)) continue
-
       try {
         const content = readFileSync(skillFilePath, 'utf-8')
         const { data: frontmatter, content: body } = matter(content)
 
-        // Use frontmatter name or directory name as skill identifier
-        const skillName = frontmatter.name || entry
+        const rawFrontmatterName = typeof frontmatter.name === 'string' ? frontmatter.name.trim() : ''
+        const skillName = rawFrontmatterName || dirName
+
+        // Open Standard validation (with minimal legacy fallback):
+        // - If frontmatter.name is present, it must match the directory name
+        // - If frontmatter.name is missing, fall back to directory name (but require it to be valid)
+        if (!rawFrontmatterName) {
+          if (!isValidSkillName(dirName)) {
+            console.warn(
+              `Skipping skill ${skillFilePath}: missing 'name' and directory name "${dirName}" is not a valid skill name`
+            )
+            continue
+          }
+          console.warn(
+            `Skill ${skillFilePath}: missing 'name' field; using directory name "${dirName}" (please add frontmatter.name to be Open Standard compliant)`
+          )
+        } else {
+          if (rawFrontmatterName !== dirName) {
+            console.warn(
+              `Skipping skill ${skillFilePath}: 'name' (${rawFrontmatterName}) must match directory name (${dirName})`
+            )
+            continue
+          }
+          if (!isValidSkillName(rawFrontmatterName)) {
+            console.warn(
+              `Skipping skill ${skillFilePath}: invalid skill name "${rawFrontmatterName}" (must be kebab-case, 1-64 chars)`
+            )
+            continue
+          }
+        }
 
         // Validate required description field
-        if (!frontmatter.description) {
+        if (!frontmatter.description || typeof frontmatter.description !== 'string' || !frontmatter.description.trim()) {
           console.warn(`Skipping skill ${skillFilePath}: missing required 'description' field`)
           continue
         }
@@ -119,20 +186,20 @@ async function loadAllSkills(): Promise<{
       scanSkillDirectory(projectGeminiDir, 'project'),
     ])
 
-    // Apply priority override (later entries override earlier ones with same name)
+    // Apply priority override: project < user (user overrides project)
     const skillMap = new Map<string, SkillConfig>()
 
-    for (const skill of userGeminiSkills) {
+    for (const skill of projectGeminiSkills) {
       skillMap.set(skill.name, skill)
     }
-    for (const skill of projectGeminiSkills) {
+    for (const skill of userGeminiSkills) {
       skillMap.set(skill.name, skill)
     }
 
     const activeSkills = Array.from(skillMap.values())
     const allSkills = [
-      ...userGeminiSkills,
       ...projectGeminiSkills,
+      ...userGeminiSkills,
     ]
 
     return { activeSkills, allSkills }

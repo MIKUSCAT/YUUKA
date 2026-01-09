@@ -132,6 +132,44 @@ function LoadingSpinner({ text }: { text?: string }) {
 }
 
 // File system helpers
+function normalizeSkillName(input: string): string {
+  let name = input.trim().toLowerCase()
+  name = name.replace(/[\s_]+/g, '-')
+  name = name.replace(/[^a-z0-9-]/g, '-')
+  name = name.replace(/-+/g, '-')
+  name = name.replace(/^-+/, '').replace(/-+$/, '')
+  if (name.length > 64) {
+    name = name.slice(0, 64).replace(/-+$/, '')
+  }
+  return name
+}
+
+function isValidSkillName(name: string): boolean {
+  // Open Standard: 1-64 chars, lower-case letters/numbers/hyphens,
+  // no leading/trailing hyphen, no consecutive hyphens.
+  if (!name) return false
+  if (name.length < 1 || name.length > 64) return false
+  return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name)
+}
+
+function normalizeSkillDescription(input: string): string {
+  return input.replace(/\s+/g, ' ').trim()
+}
+
+function validateSkillName(name: string): string | null {
+  if (!name) return 'Skill name is required'
+  if (!isValidSkillName(name)) {
+    return 'Name must be kebab-case (lowercase letters/numbers, hyphens), 1-64 chars, no leading/trailing hyphen'
+  }
+  return null
+}
+
+function validateSkillDescription(description: string): string | null {
+  if (!description) return 'Description is required'
+  if (description.length > 1024) return 'Description is too long (max 1024 chars)'
+  return null
+}
+
 function getSkillDirectory(location: SkillLocation): string {
   if (location === 'user') {
     return join(homedir(), '.gemini', 'skills')
@@ -140,12 +178,22 @@ function getSkillDirectory(location: SkillLocation): string {
   }
 }
 
-function ensureSkillDirectoryExists(location: SkillLocation, skillName: string): string {
+function ensureSkillDirectoryExists(
+  location: SkillLocation,
+  skillName: string,
+  options?: { allowExisting?: boolean }
+): string {
   const baseDir = getSkillDirectory(location)
   const skillDir = join(baseDir, skillName)
-  if (!existsSync(skillDir)) {
-    mkdirSync(skillDir, { recursive: true })
+  const allowExisting = options?.allowExisting ?? true
+
+  if (existsSync(skillDir)) {
+    if (!allowExisting) {
+      throw new Error(`Skill "${skillName}" already exists`)
+    }
+    return skillDir
   }
+  mkdirSync(skillDir, { recursive: true })
   return skillDir
 }
 
@@ -169,9 +217,22 @@ async function saveSkill(
   description: string,
   instructions: string
 ): Promise<void> {
-  const skillDir = ensureSkillDirectoryExists(location, skillName)
+  const normalizedName = normalizeSkillName(skillName)
+  const nameError = validateSkillName(normalizedName)
+  if (nameError) throw new Error(nameError)
+
+  const normalizedDescription = normalizeSkillDescription(description)
+  const descError = validateSkillDescription(normalizedDescription)
+  if (descError) throw new Error(descError)
+
+  const normalizedInstructions = instructions.trim()
+  if (!normalizedInstructions) {
+    throw new Error('Instructions are required')
+  }
+
+  const skillDir = ensureSkillDirectoryExists(location, normalizedName, { allowExisting: false })
   const filePath = join(skillDir, 'SKILL.md')
-  const content = generateSkillFileContent(skillName, description, instructions)
+  const content = generateSkillFileContent(normalizedName, normalizedDescription, normalizedInstructions)
   writeFileSync(filePath, content, 'utf-8')
   clearSkillCache()
 }
@@ -303,8 +364,17 @@ async function learnFromConversation(
   }
 
   return {
-    name: String(parsed.name || suggestedName || 'learned-skill').slice(0, 50),
-    description: String(parsed.description || '从对话中学习的技能').slice(0, 200),
+    name: (() => {
+      const raw = String(parsed.name || suggestedName || 'learned-skill')
+      const normalized = normalizeSkillName(raw)
+      if (isValidSkillName(normalized)) return normalized
+      return `learned-skill-${randomUUID().slice(0, 8)}`
+    })(),
+    description: (() => {
+      const raw = String(parsed.description || '从对话中学习的技能')
+      const normalized = normalizeSkillDescription(raw)
+      return normalized.slice(0, 1024)
+    })(),
     instructions: String(parsed.instructions || transcript).slice(0, 10000),
   }
 }
@@ -702,23 +772,24 @@ interface NameStepProps {
 
 function NameStep({ createState, setCreateState, setModeState, existingSkills }: NameStepProps) {
   const handleSubmit = () => {
-    const name = createState.skillName.trim()
-    if (!name) {
-      setCreateState(prev => ({ ...prev, error: 'Skill name is required' }))
+    const raw = createState.skillName.trim()
+    const normalized = normalizeSkillName(raw)
+
+    const error = validateSkillName(normalized)
+    if (error) {
+      setCreateState(prev => ({ ...prev, skillName: normalized, error }))
       return
     }
-    if (!/^[a-zA-Z][a-zA-Z0-9-]*$/.test(name)) {
-      setCreateState(prev => ({
-        ...prev,
-        error: 'Name must start with letter, contain only letters, numbers, hyphens',
-      }))
+
+    if (
+      createState.location &&
+      existingSkills.some(s => s.name === normalized && s.location === createState.location)
+    ) {
+      setCreateState(prev => ({ ...prev, skillName: normalized, error: 'Skill with this name already exists in this location' }))
       return
     }
-    if (existingSkills.some(s => s.name === name)) {
-      setCreateState(prev => ({ ...prev, error: 'Skill with this name already exists' }))
-      return
-    }
-    setCreateState(prev => ({ ...prev, error: null }))
+
+    setCreateState(prev => ({ ...prev, skillName: normalized, error: null }))
     setModeState({ mode: 'create-description', location: createState.location! })
   }
 
@@ -753,11 +824,13 @@ interface DescriptionStepProps {
 
 function DescriptionStep({ createState, setCreateState, setModeState }: DescriptionStepProps) {
   const handleSubmit = () => {
-    if (!createState.description.trim()) {
-      setCreateState(prev => ({ ...prev, error: 'Description is required' }))
+    const normalized = normalizeSkillDescription(createState.description)
+    const error = validateSkillDescription(normalized)
+    if (error) {
+      setCreateState(prev => ({ ...prev, description: normalized, error }))
       return
     }
-    setCreateState(prev => ({ ...prev, error: null }))
+    setCreateState(prev => ({ ...prev, description: normalized, error: null }))
     setModeState({ mode: 'create-instructions', location: createState.location! })
   }
 

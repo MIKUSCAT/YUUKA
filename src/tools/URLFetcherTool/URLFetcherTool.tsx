@@ -5,7 +5,7 @@ import { Cost } from '@components/Cost'
 import { FallbackToolUseRejectedMessage } from '@components/FallbackToolUseRejectedMessage'
 import { Tool, ToolUseContext, ValidationResult } from '@tool'
 import { DESCRIPTION, TOOL_NAME_FOR_PROMPT } from './prompt'
-import { queryGeminiToolsOnly } from '@services/gemini/query'
+import { queryGeminiToolsOnlyDetailed } from '@services/gemini/query'
 import { getTheme } from '@utils/theme'
 import { TREE_END } from '@constants/figures'
 
@@ -18,6 +18,8 @@ type Input = z.infer<typeof inputSchema>
 type Output = {
   url: string
   aiAnalysis: string
+  aiAnalysisWithCitations: string
+  sources: Array<{ uri: string; title?: string }>
   durationMs: number
 }
 
@@ -86,18 +88,33 @@ export const URLFetcherTool = {
     )
   },
   renderResultForAssistant(output: Output) {
-    if (!output.aiAnalysis.trim()) {
-      return `No content could be analyzed from URL: ${output.url}`
+    const lines: string[] = []
+    lines.push(`URL: ${output.url}`)
+
+    const sources = output.sources.length > 0 ? output.sources : [{ uri: output.url }]
+    lines.push('SOURCES:')
+    sources.forEach((src, idx) => {
+      const title = src.title?.trim() || 'Untitled'
+      lines.push(`[${idx + 1}] ${title} (${src.uri})`)
+    })
+
+    const analysis = output.aiAnalysisWithCitations.trim() || output.aiAnalysis.trim()
+    if (!analysis) {
+      lines.push('ANALYSIS:')
+      lines.push('No content could be analyzed from this URL.')
+      return lines.join('\n').trim()
     }
-    
-    return output.aiAnalysis
+
+    lines.push('ANALYSIS:')
+    lines.push(analysis)
+    return lines.join('\n').trim()
   },
   async *call({ url, prompt }: Input, context: ToolUseContext) {
     const normalizedUrl = normalizeUrl(url)
     const start = Date.now()
     
     try {
-      const aiAnalysis = await queryGeminiToolsOnly({
+      const result = await queryGeminiToolsOnlyDetailed({
         modelKey: 'web-fetch',
         prompt: `URL: ${normalizedUrl}\nRequest: ${prompt}`,
         signal: context.abortController?.signal,
@@ -105,7 +122,9 @@ export const URLFetcherTool = {
 
       const output: Output = {
         url: normalizedUrl,
-        aiAnalysis: aiAnalysis || 'Unable to analyze content',
+        aiAnalysis: result.text || 'Unable to analyze content',
+        aiAnalysisWithCitations: result.textWithCitations || '',
+        sources: result.sources,
         durationMs: Date.now() - start,
       }
 
@@ -118,6 +137,8 @@ export const URLFetcherTool = {
       const output: Output = {
         url: normalizedUrl,
         aiAnalysis: '',
+        aiAnalysisWithCitations: '',
+        sources: [],
         durationMs: Date.now() - start,
       }
       

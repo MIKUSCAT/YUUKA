@@ -4,7 +4,6 @@ import { BashTool, inputSchema } from './tools/BashTool/BashTool'
 import { FileEditTool } from './tools/FileEditTool/FileEditTool'
 import { FileWriteTool } from './tools/FileWriteTool/FileWriteTool'
 import { NotebookEditTool } from './tools/NotebookEditTool/NotebookEditTool'
-import { getCommandSubcommandPrefix, splitCommand } from './utils/commands'
 import {
   getCurrentProjectConfig,
   saveCurrentProjectConfig,
@@ -12,7 +11,6 @@ import {
 import { AbortError } from './utils/errors'
 import { logError } from './utils/log'
 import { grantWritePermissionForOriginalDir } from './utils/permissions/filesystem'
-import { getCwd } from './utils/state'
 import { PRODUCT_NAME } from './constants/product'
 
 // Commands that are known to be safe for execution
@@ -38,15 +36,8 @@ export const bashToolCommandHasExactMatchPermission = (
   if (SAFE_COMMANDS.has(command)) {
     return true
   }
-  // Check exact match first
-  if (allowedTools.includes(getPermissionKey(tool, { command }, null))) {
-    return true
-  }
-  // Check if command is an exact match with an approved prefix
-  if (allowedTools.includes(getPermissionKey(tool, { command }, command))) {
-    return true
-  }
-  return false
+  // 只允许“完整命令”匹配（不做 prefix/注入检测的后台解析）
+  return allowedTools.includes(getPermissionKey(tool, { command }, null))
 }
 
 export const bashToolCommandHasPermission = (
@@ -55,11 +46,9 @@ export const bashToolCommandHasPermission = (
   prefix: string | null,
   allowedTools: string[],
 ): boolean => {
-  // Check exact match first
-  if (bashToolCommandHasExactMatchPermission(tool, command, allowedTools)) {
-    return true
-  }
-  return allowedTools.includes(getPermissionKey(tool, { command }, prefix))
+  // 保留签名兼容，但不再支持 prefix 匹配（避免额外模型解析）
+  void prefix
+  return bashToolCommandHasExactMatchPermission(tool, command, allowedTools)
 }
 
 export const bashToolHasPermission = async (
@@ -67,86 +56,16 @@ export const bashToolHasPermission = async (
   command: string,
   context: ToolUseContext,
   allowedTools: string[],
-  getCommandSubcommandPrefixFn = getCommandSubcommandPrefix,
 ): Promise<PermissionResult> => {
-  if (bashToolCommandHasExactMatchPermission(tool, command, allowedTools)) {
-    // This is an exact match for a command that is allowed, so we can skip the prefix check
-    return { result: true }
-  }
-
-  const subCommands = splitCommand(command).filter(_ => {
-    // Denim likes to add this, we strip it out so we don't need to prompt the user each time
-    if (_ === `cd ${getCwd()}`) {
-      return false
-    }
-    return true
-  })
-  const commandSubcommandPrefix = await getCommandSubcommandPrefixFn(
-    command,
-    context.abortController.signal,
-  )
   if (context.abortController.signal.aborted) {
     throw new AbortError()
   }
 
-  if (commandSubcommandPrefix === null) {
-    // Fail closed and ask for user approval if the command prefix query failed (e.g. due to network error)
-    // This is NOT the same as `fullCommandPrefix.commandPrefix === null`, which means no prefix was detected
-    return {
-      result: false,
-      message: `${PRODUCT_NAME} requested permissions to use ${tool.name}, but you haven't granted it yet.`,
-    }
-  }
-
-  if (commandSubcommandPrefix.commandInjectionDetected) {
-    // Only allow exact matches for potential command injections
-    if (bashToolCommandHasExactMatchPermission(tool, command, allowedTools)) {
-      return { result: true }
-    } else {
-      return {
-        result: false,
-        message: `${PRODUCT_NAME} requested permissions to use ${tool.name}, but you haven't granted it yet.`,
-      }
-    }
-  }
-
-  // If there is only one command, no need to process subCommands
-  if (subCommands.length < 2) {
-    if (
-      bashToolCommandHasPermission(
-        tool,
-        command,
-        commandSubcommandPrefix.commandPrefix,
-        allowedTools,
-      )
-    ) {
-      return { result: true }
-    } else {
-      return {
-        result: false,
-        message: `${PRODUCT_NAME} requested permissions to use ${tool.name}, but you haven't granted it yet.`,
-      }
-    }
-  }
-  if (
-    subCommands.every(subCommand => {
-      const prefixResult =
-        commandSubcommandPrefix.subcommandPrefixes.get(subCommand)
-      if (prefixResult === undefined || prefixResult.commandInjectionDetected) {
-        // If prefix result is missing or command injection is detected, always ask for permission
-        return false
-      }
-      const hasPermission = bashToolCommandHasPermission(
-        tool,
-        subCommand,
-        prefixResult ? prefixResult.commandPrefix : null,
-        allowedTools,
-      )
-      return hasPermission
-    })
-  ) {
+  if (bashToolCommandHasExactMatchPermission(tool, command, allowedTools)) {
     return { result: true }
   }
+
+  // 不再做“命令前缀/注入检测”的后台解析：直接请示用户确认
   return {
     result: false,
     message: `${PRODUCT_NAME} requested permissions to use ${tool.name}, but you haven't granted it yet.`,

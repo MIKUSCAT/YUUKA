@@ -39,6 +39,7 @@ import {
 import { BashTool } from '@tools/BashTool/BashTool'
 import { getCwd } from './utils/state'
 import { checkAutoCompact } from './utils/autoCompactCore'
+import { setSessionState } from '@utils/sessionState'
 
 // Extended ToolUseContext for query functions
 interface ExtendedToolUseContext extends ToolUseContext {
@@ -99,6 +100,131 @@ export type ProgressMessage = {
 export type Message = UserMessage | AssistantMessage | ProgressMessage
 
 const MAX_TOOL_USE_CONCURRENCY = 10
+
+function isAbortError(error: unknown): boolean {
+  if (!error) return false
+  if (typeof error === 'object') {
+    const name = (error as any).name
+    if (name === 'AbortError') return true
+    const code = (error as any).code
+    if (code === 'ABORT_ERR') return true
+  }
+  if (error instanceof Error) {
+    if (error.name === 'AbortError') return true
+    if (typeof error.message === 'string' && /aborted/i.test(error.message)) {
+      return true
+    }
+  }
+  return false
+}
+
+function isRetryableNetworkError(
+  error: unknown,
+): { retryable: boolean; reason: string } {
+  if (!error) return { retryable: false, reason: 'unknown' }
+  if (isAbortError(error)) return { retryable: false, reason: 'aborted' }
+
+  // Gemini transport errors（HTTP 状态）
+  if (typeof error === 'object' && (error as any).name === 'GeminiHttpError') {
+    const status = Number((error as any).status)
+    if (status === 408 || status === 429) {
+      return { retryable: true, reason: `HTTP ${status}` }
+    }
+    if (status >= 500 && status <= 599) {
+      return { retryable: true, reason: `HTTP ${status}` }
+    }
+    return { retryable: false, reason: `HTTP ${status}` }
+  }
+
+  const msg =
+    error instanceof Error
+      ? error.message
+      : typeof error === 'string'
+        ? error
+        : String(error)
+
+  if (
+    /fetch failed/i.test(msg) ||
+    /network/i.test(msg) ||
+    /ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|socket hang up/i.test(
+      msg,
+    )
+  ) {
+    return { retryable: true, reason: 'network' }
+  }
+
+  return { retryable: false, reason: 'non-retryable' }
+}
+
+function computeReconnectBackoffMs(attempt: number): number {
+  const base = 1500
+  const cap = 20000
+  const exp = Math.min(cap, Math.floor(base * Math.pow(2, Math.max(0, attempt - 1))))
+  const jitter = Math.floor(Math.random() * 300)
+  return Math.min(cap, exp + jitter)
+}
+
+async function sleepWithAbort(ms: number, signal: AbortSignal): Promise<boolean> {
+  if (signal.aborted) return true
+  return await new Promise(resolve => {
+    const t = setTimeout(() => {
+      cleanup()
+      resolve(false)
+    }, ms)
+    const onAbort = () => {
+      cleanup()
+      resolve(true)
+    }
+    const cleanup = () => {
+      clearTimeout(t)
+      signal.removeEventListener('abort', onAbort)
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
+function applyToolUseSerialGate(
+  assistantMessage: AssistantMessage,
+  tools: Tool[],
+): AssistantMessage {
+  const content = assistantMessage.message.content
+  if (!Array.isArray(content)) return assistantMessage
+
+  const toolByName = new Map(tools.map(tool => [tool.name, tool]))
+
+  let sawNonConcurrencySafeToolUse = false
+  let didChange = false
+  const filtered = content.filter(block => {
+    if (!block || typeof block !== 'object' || (block as any).type !== 'tool_use') {
+      return true
+    }
+
+    if (sawNonConcurrencySafeToolUse) {
+      didChange = true
+      return false
+    }
+
+    const toolName = String((block as any).name ?? '')
+    const tool = toolByName.get(toolName)
+    const concurrencySafe = tool?.isConcurrencySafe() ?? false
+
+    if (!concurrencySafe) {
+      sawNonConcurrencySafeToolUse = true
+    }
+
+    return true
+  })
+
+  if (!didChange) return assistantMessage
+
+  return {
+    ...assistantMessage,
+    message: {
+      ...assistantMessage.message,
+      content: filtered,
+    },
+  }
+}
 
 // Returns a message if we got one, or `null` if the user cancelled
 async function queryWithBinaryFeedback(
@@ -190,30 +316,37 @@ export async function* query(
     timestamp: Date.now(),
   })
 
-  // Inject reminders into the latest user message
+  // Inject reminders into the latest *text* user message.
+  // IMPORTANT: Do NOT inject into tool_result messages, or it will break Gemini's
+  // "functionResponse must be adjacent to functionCall" requirement.
   if (reminders && messages.length > 0) {
     // Find the last user message
     for (let i = messages.length - 1; i >= 0; i--) {
       const msg = messages[i]
-      if (msg?.type === 'user') {
-        const lastUserMessage = msg as UserMessage
-        messages[i] = {
-          ...lastUserMessage,
-          message: {
-            ...lastUserMessage.message,
-            content:
-              typeof lastUserMessage.message.content === 'string'
-                ? reminders + lastUserMessage.message.content
-                : [
-                    ...(Array.isArray(lastUserMessage.message.content)
-                      ? lastUserMessage.message.content
-                      : []),
-                    { type: 'text', text: reminders },
-                  ],
-          },
-        }
-        break
+      if (msg?.type !== 'user') continue
+
+      const lastUserMessage = msg as UserMessage
+      const content = lastUserMessage.message?.content
+      const isToolResultMessage =
+        Array.isArray(content) && content[0]?.type === 'tool_result'
+
+      // If the last user message is tool_result, skip reminders injection for this turn.
+      if (isToolResultMessage) break
+
+      messages[i] = {
+        ...lastUserMessage,
+        message: {
+          ...lastUserMessage.message,
+          content:
+            typeof content === 'string'
+              ? reminders + content
+              : [
+                  ...(Array.isArray(content) ? content : []),
+                  { type: 'text', text: reminders },
+                ],
+        },
       }
+      break
     }
   }
 
@@ -235,9 +368,49 @@ export async function* query(
     )
   }
 
+  async function getAssistantResponseWithReconnect(): Promise<AssistantMessage> {
+    const MAX_OUTER_ATTEMPTS = 3
+
+    for (let attempt = 1; attempt <= MAX_OUTER_ATTEMPTS; attempt++) {
+      try {
+        const resp = await getAssistantResponse()
+        setSessionState('currentError', null)
+        return resp
+      } catch (error) {
+        if (toolUseContext.abortController.signal.aborted) {
+          setSessionState('currentError', null)
+          throw error
+        }
+
+        const meta = isRetryableNetworkError(error)
+        if (attempt >= MAX_OUTER_ATTEMPTS || !meta.retryable) {
+          setSessionState('currentError', null)
+          throw error
+        }
+
+        const backoff = computeReconnectBackoffMs(attempt)
+        setSessionState(
+          'currentError',
+          `网络波动，外层重试 ${attempt}/${MAX_OUTER_ATTEMPTS}（${meta.reason}，等待 ${backoff}ms）`,
+        )
+        const aborted = await sleepWithAbort(
+          backoff,
+          toolUseContext.abortController.signal,
+        )
+        if (aborted) {
+          setSessionState('currentError', null)
+          throw error
+        }
+      }
+    }
+
+    // 理论上不会到这
+    return await getAssistantResponse()
+  }
+
   const result = await queryWithBinaryFeedback(
     toolUseContext,
-    getAssistantResponse,
+    getAssistantResponseWithReconnect,
     getBinaryFeedbackResponse,
   )
 
@@ -252,8 +425,16 @@ export async function* query(
     return
   }
 
-  const assistantMessage = result.message
+  let assistantMessage = result.message
   const shouldSkipPermissionCheck = result.shouldSkipPermissionCheck
+
+  // 稳妥策略：如果同一条 assistant message 里既有并行安全工具（读/搜）
+  // 又有会改动状态/执行的工具（Bash/Edit/Replace/...），只执行“第一个非并行安全工具”，
+  // 并丢弃它之后的所有 tool_use，迫使模型等 tool_result 再决定下一步。
+  assistantMessage = applyToolUseSerialGate(
+    assistantMessage,
+    toolUseContext.options.tools,
+  )
 
   yield assistantMessage
 

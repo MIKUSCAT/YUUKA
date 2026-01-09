@@ -203,3 +203,8 @@ const description = typeof tool.description === 'function'
 2. Place in appropriate directory based on scope
 3. Test with `/agents` command
 4. Verify tool permissions work correctly
+
+## User Preferences
+
+### Interaction Style
+- **Direct Reporting**: 用户偏好直接在对话中获取结果（“讲给我听”），而不是生成文件。除非用户明确要求生成文件或内容极长，否则应直接在回复中展示摘要或全文。

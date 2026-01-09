@@ -407,15 +407,15 @@ async function getMessagesForSlashCommand(
             .call(r => {
               setToolJSX(null)
               const trimmed = typeof r === 'string' ? r.trim() : ''
-              if (!trimmed) {
-                resolve([
-                  createUserMessage(`<command-name>${command.userFacingName()}</command-name>
-          <command-message>${command.userFacingName()}</command-message>
-          <command-args>${args}</command-args>`),
-                  createAssistantMessage(''),
-                ])
-                return
-              }
+	              if (!trimmed) {
+	                resolve([
+	                  createUserMessage(`<command-name>${command.userFacingName()}</command-name>
+	          <command-message>${command.userFacingName()}</command-message>
+	          <command-args>${args}</command-args>`),
+	                  createAssistantMessage(NO_RESPONSE_REQUESTED),
+	                ])
+	                return
+	              }
 
               resolve([
                 createUserMessage(`<command-name>${command.userFacingName()}</command-name>
@@ -449,10 +449,10 @@ async function getMessagesForSlashCommand(
             }
           })
 
-          const trimmed = typeof result === 'string' ? result.trim() : ''
-          if (!trimmed) {
-            return [userMessage, createAssistantMessage('')]
-          }
+	          const trimmed = typeof result === 'string' ? result.trim() : ''
+	          if (!trimmed) {
+	            return [userMessage, createAssistantMessage(NO_RESPONSE_REQUESTED)]
+	          }
 
           return [
             userMessage,

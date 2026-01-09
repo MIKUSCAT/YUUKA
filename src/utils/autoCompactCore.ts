@@ -95,6 +95,89 @@ async function shouldAutoCompact(messages: Message[]): Promise<boolean> {
   return isAboveAutoCompactThreshold
 }
 
+function isProgressMessage(message: Message | undefined): boolean {
+  return !!message && message.type === 'progress'
+}
+
+function isToolResultUserMessage(message: Message | undefined): boolean {
+  if (!message || message.type !== 'user') return false
+  const content = (message as any)?.message?.content
+  return Array.isArray(content) && content[0]?.type === 'tool_result'
+}
+
+function lastNonProgressIndex(messages: Message[]): number {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (!isProgressMessage(messages[i])) return i
+  }
+  return -1
+}
+
+function prevNonProgressIndex(messages: Message[], start: number): number {
+  for (let i = start; i >= 0; i--) {
+    if (!isProgressMessage(messages[i])) return i
+  }
+  return -1
+}
+
+function collectToolResultIds(messages: Message[]): Set<string> {
+  const ids = new Set<string>()
+  for (const msg of messages) {
+    if (!isToolResultUserMessage(msg)) continue
+    const content = (msg as any)?.message?.content
+    if (!Array.isArray(content)) continue
+    for (const block of content) {
+      if (block?.type === 'tool_result' && typeof block.tool_use_id === 'string') {
+        ids.add(block.tool_use_id)
+      }
+    }
+  }
+  return ids
+}
+
+function findTailStartIndex(messages: Message[]): number {
+  const end = lastNonProgressIndex(messages)
+  if (end < 0) return 0
+
+  // 1) 默认至少保留最后一条非 progress 消息（通常是当前用户输入/或 tool_result）
+  let tailStart = end
+
+  // 2) 如果尾部是一串 tool_result，全部一起保留（避免只留一半）
+  if (isToolResultUserMessage(messages[tailStart])) {
+    while (true) {
+      const prev = prevNonProgressIndex(messages, tailStart - 1)
+      if (prev < 0) break
+      if (!isToolResultUserMessage(messages[prev])) break
+      tailStart = prev
+    }
+  }
+
+  // 3) 如果保留段里包含 tool_result，必须把对应的 tool_use assistant 一起保留（Gemini 邻接约束）
+  const toolUseIds = collectToolResultIds(messages.slice(tailStart, end + 1))
+  if (toolUseIds.size === 0) return tailStart
+
+  for (let i = tailStart - 1; i >= 0 && toolUseIds.size > 0; i--) {
+    const msg = messages[i]
+    if (!msg || msg.type !== 'assistant') continue
+    const content = (msg as any)?.message?.content
+    if (!Array.isArray(content)) continue
+
+    let hit = false
+    for (const block of content) {
+      if (block?.type === 'tool_use' && typeof block.id === 'string') {
+        if (toolUseIds.has(block.id)) {
+          toolUseIds.delete(block.id)
+          hit = true
+        }
+      }
+    }
+    if (hit) {
+      tailStart = i
+    }
+  }
+
+  return tailStart
+}
+
 /**
  * Main entry point for automatic context compression
  *
@@ -147,10 +230,17 @@ async function executeAutoCompact(
   messages: Message[],
   toolUseContext: any,
 ): Promise<Message[]> {
+  const endIndex = lastNonProgressIndex(messages)
+  const tailStartIndex = findTailStartIndex(messages)
+  const tailMessages =
+    endIndex >= 0 ? messages.slice(tailStartIndex, endIndex + 1) : []
+  const olderMessages =
+    tailStartIndex > 0 ? messages.slice(0, tailStartIndex) : []
+
   const summaryRequest = createUserMessage(COMPRESSION_PROMPT)
 
   const summaryResponse = await queryLLM(
-    normalizeMessagesForAPI([...messages, summaryRequest]),
+    normalizeMessagesForAPI([...olderMessages, summaryRequest]),
     [
       'You are a helpful AI assistant tasked with creating comprehensive conversation summaries that preserve all essential context for continuing development work.',
     ],
@@ -191,7 +281,7 @@ async function executeAutoCompact(
 
   const compactedMessages = [
     createUserMessage(
-      'Context automatically compressed due to token limit. Essential information preserved.',
+      '（已自动压缩上下文，保留摘要与关键内容；请继续完成我最新的请求。）',
     ),
     summaryResponse,
   ]
@@ -214,10 +304,15 @@ async function executeAutoCompact(
 
   // State cleanup to ensure fresh context after compression
   // Mirrors the cleanup sequence from manual /compact command
-  getMessagesSetter()([])
+  const nextMessages = [
+    ...compactedMessages,
+    // 关键：保留“尾部”真实上下文（尤其是最后一条用户消息 / tool_result），否则会像“开新对话”
+    ...tailMessages.filter(m => !isProgressMessage(m)),
+  ]
+  getMessagesSetter()(nextMessages)
   getContext.cache.clear?.()
   getCodeStyle.cache.clear?.()
   resetFileFreshnessSession()
 
-  return compactedMessages
+  return nextMessages
 }

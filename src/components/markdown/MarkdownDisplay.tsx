@@ -103,7 +103,7 @@ export function MarkdownDisplay({ text, terminalWidth }: Props): React.ReactNode
   const pushLine = (key: string, line: string, dim = false) => {
     const ansi = renderInlineAnsi(line, { defaultColor: theme.text })
     contentBlocks.push(
-      <Box key={key}>
+      <Box key={key} width="100%" minWidth={0}>
         <Text wrap="wrap" dimColor={dim}>
           {ansi}
         </Text>
@@ -325,11 +325,11 @@ export function MarkdownDisplay({ text, terminalWidth }: Props): React.ReactNode
       const itemText = ulMatch[3] ?? ''
       const indent = leading.length
       contentBlocks.push(
-        <Box key={`ul-${index}`} paddingLeft={indent + 1} flexDirection="row">
+        <Box key={`ul-${index}`} paddingLeft={indent + 1} flexDirection="row" width="100%" minWidth={0}>
           <Box width={2}>
             <Text>{chalk.hex(theme.secondaryText)(`${marker}`)}</Text>
           </Box>
-          <Box flexGrow={1}>
+          <Box flexGrow={1} minWidth={0}>
             <Text wrap="wrap">{renderInlineAnsi(itemText, { defaultColor: theme.text })}</Text>
           </Box>
         </Box>,
@@ -347,11 +347,11 @@ export function MarkdownDisplay({ text, terminalWidth }: Props): React.ReactNode
       const indent = leading.length
       const prefix = `${marker}.`
       contentBlocks.push(
-        <Box key={`ol-${index}`} paddingLeft={indent + 1} flexDirection="row">
+        <Box key={`ol-${index}`} paddingLeft={indent + 1} flexDirection="row" width="100%" minWidth={0}>
           <Box width={prefix.length + 1}>
             <Text>{chalk.hex(theme.secondaryText)(`${prefix} `)}</Text>
           </Box>
-          <Box flexGrow={1}>
+          <Box flexGrow={1} minWidth={0}>
             <Text wrap="wrap">{renderInlineAnsi(itemText, { defaultColor: theme.text })}</Text>
           </Box>
         </Box>,

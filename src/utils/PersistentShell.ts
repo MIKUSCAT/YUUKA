@@ -299,6 +299,22 @@ export class PersistentShell {
   killChildren() {
     const parentPid = this.shell.pid
     try {
+      if (!parentPid) {
+        return
+      }
+
+      // Windows：Git Bash/MSYS 下通常没有 pgrep；用 taskkill 兜底，确保 Esc 取消能真正停掉正在跑的命令
+      if (process.platform === 'win32') {
+        try {
+          execSync(`taskkill /PID ${parentPid} /T /F`, { stdio: 'ignore' })
+        } catch (error) {
+          logError(`Failed to taskkill process tree ${parentPid}: ${error}`)
+        } finally {
+          this.isAlive = false
+        }
+        return
+      }
+
       const childPids = execSync(`pgrep -P ${parentPid}`)
         .toString()
         .trim()
@@ -470,10 +486,13 @@ export class PersistentShell {
             statusFileSize = fs.statSync(this.statusFile).size
           }
 
+          const timedOut = Date.now() - start > commandTimeout
+          const interrupted = this.commandInterrupted
+
           if (
             statusFileSize > 0 ||
-            Date.now() - start > commandTimeout ||
-            this.commandInterrupted
+            timedOut ||
+            interrupted
           ) {
             clearInterval(checkCompletion)
             const stdout = fs.existsSync(this.stdoutFile)
@@ -485,18 +504,23 @@ export class PersistentShell {
             let code: number
             if (statusFileSize) {
               code = Number(fs.readFileSync(this.statusFile, 'utf8'))
+            } else if (interrupted) {
+              // 用户取消：不要误报成超时
+              code = SIGTERM_CODE
+              if (!stderr.trim()) {
+                stderr = 'Command was cancelled'
+              }
             } else {
               // Timeout occurred - kill any running processes
               this.killChildren()
               code = SIGTERM_CODE
               stderr += (stderr ? '\n' : '') + 'Command execution timed out'
-              
             }
             resolve({
               stdout,
               stderr,
               code,
-              interrupted: this.commandInterrupted,
+              interrupted: interrupted || timedOut,
             })
           }
         } catch {

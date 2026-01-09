@@ -5,7 +5,7 @@ import { Cost } from '@components/Cost'
 import { FallbackToolUseRejectedMessage } from '@components/FallbackToolUseRejectedMessage'
 import { Tool, ToolUseContext } from '@tool'
 import { DESCRIPTION, TOOL_NAME_FOR_PROMPT } from './prompt'
-import { queryGeminiToolsOnly } from '@services/gemini/query'
+import { queryGeminiToolsOnlyDetailed } from '@services/gemini/query'
 import { getTheme } from '@utils/theme'
 import { TREE_END } from '@constants/figures'
 
@@ -15,8 +15,12 @@ const inputSchema = z.strictObject({
 
 type Input = z.infer<typeof inputSchema>
 type Output = {
+  query: string
   durationMs: number
-  response: string
+  text: string
+  textWithCitations: string
+  sources: Array<{ uri: string; title?: string }>
+  webSearchQueries: string[]
 }
 
 
@@ -57,19 +61,51 @@ export const WebSearchTool = {
     )
   },
   renderResultForAssistant(output: Output) {
-    return output.response.trim() || 'No results returned by Gemini.'
+    const lines: string[] = []
+    lines.push(`WEB_SEARCH_QUERY: ${JSON.stringify(output.query)}`)
+
+    if (output.sources.length > 0) {
+      lines.push('SOURCES:')
+      output.sources.forEach((src, idx) => {
+        const title = src.title?.trim() || 'Untitled'
+        lines.push(`[${idx + 1}] ${title} (${src.uri})`)
+      })
+    } else {
+      lines.push('SOURCES: (none)')
+    }
+
+    if (output.webSearchQueries.length > 0) {
+      lines.push('SUGGESTED_QUERIES:')
+      for (const q of output.webSearchQueries) {
+        lines.push(`- ${q}`)
+      }
+    }
+
+    const notes = output.textWithCitations.trim() || output.text.trim()
+    if (notes) {
+      lines.push('NOTES:')
+      lines.push(notes)
+    }
+
+    return lines.join('\n').trim()
   },
   async *call({ query }: Input, context: ToolUseContext) {
     const start = Date.now()
 
     try {
+      const result = await queryGeminiToolsOnlyDetailed({
+        modelKey: 'web-search',
+        prompt: query,
+        signal: context.abortController?.signal,
+      })
+
       const output: Output = {
+        query,
         durationMs: Date.now() - start,
-        response: await queryGeminiToolsOnly({
-          modelKey: 'web-search',
-          prompt: query,
-          signal: context.abortController?.signal,
-        }),
+        text: result.text,
+        textWithCitations: result.textWithCitations,
+        sources: result.sources,
+        webSearchQueries: result.webSearchQueries,
       }
 
       yield {
@@ -79,8 +115,12 @@ export const WebSearchTool = {
       }
     } catch (error: any) {
       const output: Output = {
+        query,
         durationMs: Date.now() - start,
-        response: '',
+        text: '',
+        textWithCitations: '',
+        sources: [],
+        webSearchQueries: [],
       }
       yield {
         type: 'result' as const,

@@ -400,7 +400,11 @@ export function geminiResponseToAssistantMessage(
   flushText()
 
   if (contentBlocks.length === 0) {
-    contentBlocks.push({ type: 'text', text: '(No content)', citations: [] })
+    contentBlocks.push({
+      type: 'text',
+      text: '（模型没有输出可见内容，请重试）',
+      citations: [],
+    })
   }
 
   const inputTokens = response.usageMetadata?.promptTokenCount ?? 0

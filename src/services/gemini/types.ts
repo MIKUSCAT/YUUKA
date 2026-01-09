@@ -63,12 +63,14 @@ export type GeminiGenerateContentResponse = {
   candidates?: Array<{
     content?: GeminiContent
     finishReason?: string
+    groundingMetadata?: unknown
   }>
   usageMetadata?: {
     promptTokenCount?: number
     candidatesTokenCount?: number
     totalTokenCount?: number
   }
+  groundingMetadata?: unknown
   // Gemini CLI 会补一个方便字段；这里也保留以便统一处理
   functionCalls?: GeminiFunctionCall[]
 }

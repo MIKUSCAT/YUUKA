@@ -53,7 +53,7 @@ export function Spinner(): React.ReactNode {
             '思考中') + '… '}
         </Text>
         <Text color={getTheme().secondaryText}>
-          ({elapsedTime}s · <Text bold>esc</Text>/<Text bold>Ctrl-C</Text> 取消)
+          ({elapsedTime}s · <Text bold>Esc</Text> 取消)
         </Text>
         {getSessionState('currentError') ? (
           <Text color={getTheme().secondaryText}>

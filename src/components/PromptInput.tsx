@@ -154,7 +154,7 @@ function PromptInput({
             {suggestions.map((suggestion, index) => {
               const isSelected = index === selectedIndex
               const name = suggestion.value
-              const desc = commandDescByName.get(name) || ''
+              const desc = commandDescByName.get(name) || suggestion.metadata?.description || ''
               return (
                 <Box key={`cmd-${name}-${index}`} flexDirection="column">
                   <Box flexDirection="row" gap={1}>
@@ -518,33 +518,33 @@ function PromptInput({
         </Box>
       )}
       {/* 底部状态栏 - 简约设计 */}
-      {!completionActive && suggestions.length === 0 && !isLoading && (
-        <Box
-          flexDirection="row"
-          justifyContent="space-between"
-          paddingX={2}
-          marginTop={1}
-        >
-          <Text dimColor>
-            / 命令  Shift+Tab 模式  Ctrl+G 编辑器{messages.length > 0 ? '  Esc 历史' : ''}
-          </Text>
-          <Text dimColor>
-            {(() => {
-              try {
-                const settingsPath = getWorkspaceGeminiSettingsPath()
-                const settings = readGeminiSettingsFile(settingsPath)
-                const modelName = settings.model?.name
-                if (modelName) {
-                  return modelName.replace(/^models\//, '')
-                }
-              } catch {
-                // ignore
+      <Box
+        flexDirection="row"
+        justifyContent="space-between"
+        paddingX={2}
+        marginTop={1}
+      >
+        <Text dimColor>
+          / 命令  Shift+Tab 模式  Ctrl+G 编辑器  Alt+M 自动模式：
+          {autoMode ? '开' : '关'}
+          {isLoading ? '  Esc 取消' : messages.length > 0 ? '  Esc 历史' : ''}
+        </Text>
+        <Text dimColor>
+          {(() => {
+            try {
+              const settingsPath = getWorkspaceGeminiSettingsPath()
+              const settings = readGeminiSettingsFile(settingsPath)
+              const modelName = settings.model?.name
+              if (modelName) {
+                return modelName.replace(/^models\//, '')
               }
-              return ''
-            })()}
-          </Text>
-        </Box>
-      )}
+            } catch {
+              // ignore
+            }
+            return ''
+          })()}
+        </Text>
+      </Box>
     </Box>
   )
 }

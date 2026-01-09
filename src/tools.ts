@@ -62,12 +62,55 @@ export const getTools = memoize(
     }
 
     const isEnabled = await Promise.all(tools.map(tool => tool.isEnabled()))
-    return tools.filter((_, i) => isEnabled[i])
+    const enabledTools = tools.filter((_, i) => isEnabled[i])
+
+    // 预先缓存工具描述：适配器/权限弹窗等地方需要同步描述字符串
+    await Promise.all(
+      enabledTools.map(async tool => {
+        if (tool.cachedDescription) return
+        try {
+          if (typeof tool.description === 'function') {
+            tool.cachedDescription = await tool.description()
+            return
+          }
+          if (typeof tool.description === 'string') {
+            tool.cachedDescription = tool.description
+            return
+          }
+        } catch {
+          // ignore and fall back
+        }
+        tool.cachedDescription = `Tool: ${tool.name}`
+      }),
+    )
+
+    return enabledTools
   },
 )
 
 export const getReadOnlyTools = memoize(async (): Promise<Tool[]> => {
   const tools = getAllTools().filter(tool => tool.isReadOnly())
   const isEnabled = await Promise.all(tools.map(tool => tool.isEnabled()))
-  return tools.filter((_, index) => isEnabled[index])
+  const enabledTools = tools.filter((_, index) => isEnabled[index])
+
+  await Promise.all(
+    enabledTools.map(async tool => {
+      if (tool.cachedDescription) return
+      try {
+        if (typeof tool.description === 'function') {
+          tool.cachedDescription = await tool.description()
+          return
+        }
+        if (typeof tool.description === 'string') {
+          tool.cachedDescription = tool.description
+          return
+        }
+      } catch {
+        // ignore and fall back
+      }
+      tool.cachedDescription = `Tool: ${tool.name}`
+    }),
+  )
+
+  return enabledTools
 })

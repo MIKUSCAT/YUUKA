@@ -19,6 +19,41 @@ import type { GeminiContent, GeminiGenerateContentResponse, GeminiPart } from '.
 import { setSessionState } from '@utils/sessionState'
 import { parseThought } from '@utils/thought'
 import { GeminiHttpError } from './transport'
+import { applyGroundingCitations, extractGeminiGrounding, type GroundingSource } from './grounding'
+
+const NO_CONTENT_TEXTS = new Set([
+  '(no content)',
+  '(No content)',
+  '（模型没有输出可见内容，请重试）',
+])
+
+function isNoContentAssistantMessage(message: AssistantMessage): boolean {
+  const raw = (message as any)?.message?.content
+
+  if (!raw) return true
+
+  if (typeof raw === 'string') {
+    const text = raw.trim()
+    return text.length === 0 || NO_CONTENT_TEXTS.has(text)
+  }
+
+  if (Array.isArray(raw)) {
+    for (const block of raw as any[]) {
+      if (!block || typeof block !== 'object') continue
+      const type = String((block as any).type ?? '')
+      if (type === 'tool_use' || type === 'image') return false
+      if (type === 'text') {
+        const text = String((block as any).text ?? '').trim()
+        if (text && !NO_CONTENT_TEXTS.has(text)) {
+          return false
+        }
+      }
+    }
+    return true
+  }
+
+  return false
+}
 
 function isAbortError(error: unknown): boolean {
   if (!error) return false
@@ -175,15 +210,147 @@ function resolveModelKey(model: string | 'main' | 'task' | 'reasoning' | 'quick'
 }
 
 function aggregateStreamParts(chunks: GeminiGenerateContentResponse[]): GeminiPart[] {
-  const parts: GeminiPart[] = []
+  const parts: any[] = []
+
+  // Gemini 的 streamGenerateContent 在 functionCall 时可能会“多次更新同一个调用”（同 id，或无 id 但同名连续片段）。
+  // 这里做一次聚合/去重，避免上层把同一个 tool_call 当成多次调用，从而出现 Bash 重复执行/对话循环。
+  const functionCallIndexById = new Map<string, number>()
+  let lastAnonFunctionCallIndex: number | null = null
+  let accumulatedVisibleText = ''
+
+  const isThoughtPart = (part: any): boolean => {
+    const thoughtFlag = part?.thought
+    return thoughtFlag === true || typeof thoughtFlag === 'string'
+  }
+
+  const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+    !!value && typeof value === 'object' && !Array.isArray(value)
+
+  const deepMergeArgs = (prev: unknown, next: unknown): unknown => {
+    if (!isPlainObject(prev) || !isPlainObject(next)) {
+      return next ?? prev
+    }
+    const merged: Record<string, unknown> = { ...prev }
+    for (const [k, v] of Object.entries(next)) {
+      if (k in merged) {
+        merged[k] = deepMergeArgs(merged[k], v)
+      } else {
+        merged[k] = v
+      }
+    }
+    return merged
+  }
+
   for (const chunk of chunks) {
     const chunkParts = chunk.candidates?.[0]?.content?.parts ?? []
-    for (const part of chunkParts as any[]) {
-      // 绝大多数情况下 streamGenerateContent 是增量片段，直接 append 即可
+    for (const rawPart of chunkParts as any[]) {
+      const part = rawPart as any
+
+      if (part?.functionCall) {
+        const call = part.functionCall as any
+        const callId =
+          typeof call?.id === 'string' && call.id.trim() ? call.id.trim() : null
+        const callName = typeof call?.name === 'string' ? call.name : ''
+        const nextArgs = isPlainObject(call?.args) ? call.args : undefined
+
+        if (callId) {
+          const existingIndex = functionCallIndexById.get(callId)
+          if (existingIndex !== undefined) {
+            const prevPart = parts[existingIndex] as any
+            const prevCall = prevPart?.functionCall ?? {}
+            const mergedArgs = deepMergeArgs(prevCall?.args, nextArgs) as any
+
+            parts[existingIndex] = {
+              ...prevPart,
+              ...part,
+              functionCall: {
+                ...prevCall,
+                ...call,
+                id: callId,
+                name: callName || prevCall?.name,
+                args: mergedArgs ?? (nextArgs ?? prevCall?.args ?? {}),
+              },
+              ...(prevPart?.thoughtSignature && !part?.thoughtSignature
+                ? { thoughtSignature: prevPart.thoughtSignature }
+                : {}),
+            }
+          } else {
+            parts.push({
+              ...part,
+              functionCall: {
+                ...call,
+                id: callId,
+                name: callName,
+                args: nextArgs ?? call.args ?? {},
+              },
+            })
+            functionCallIndexById.set(callId, parts.length - 1)
+          }
+
+          lastAnonFunctionCallIndex = null
+          continue
+        }
+
+        // 无 id：尽量把同名的连续 functionCall 合并成一次调用
+        if (
+          lastAnonFunctionCallIndex !== null &&
+          (parts[lastAnonFunctionCallIndex] as any)?.functionCall &&
+          !String((parts[lastAnonFunctionCallIndex] as any).functionCall?.id ?? '').trim() &&
+          String((parts[lastAnonFunctionCallIndex] as any).functionCall?.name ?? '') === callName
+        ) {
+          const prevPart = parts[lastAnonFunctionCallIndex] as any
+          const prevCall = prevPart?.functionCall ?? {}
+          const mergedArgs = deepMergeArgs(prevCall?.args, nextArgs) as any
+
+          parts[lastAnonFunctionCallIndex] = {
+            ...prevPart,
+            ...part,
+            functionCall: {
+              ...prevCall,
+              ...call,
+              name: callName || prevCall?.name,
+              args: mergedArgs ?? (nextArgs ?? prevCall?.args ?? {}),
+            },
+            ...(prevPart?.thoughtSignature && !part?.thoughtSignature
+              ? { thoughtSignature: prevPart.thoughtSignature }
+              : {}),
+          }
+          continue
+        }
+
+        parts.push(part)
+        lastAnonFunctionCallIndex = parts.length - 1
+        continue
+      }
+
+      // 文本：兼容“快照式”流（每次都发到目前为止的全文），避免重复拼接
+      if (typeof part?.text === 'string' && !isThoughtPart(part)) {
+        const nextText = String(part.text ?? '')
+        if (nextText) {
+          if (
+            accumulatedVisibleText &&
+            nextText.startsWith(accumulatedVisibleText)
+          ) {
+            const suffix = nextText.slice(accumulatedVisibleText.length)
+            if (suffix) {
+              parts.push({ ...part, text: suffix })
+              accumulatedVisibleText += suffix
+            }
+          } else {
+            parts.push(part)
+            accumulatedVisibleText += nextText
+          }
+          lastAnonFunctionCallIndex = null
+          continue
+        }
+      }
+
       parts.push(part)
+      lastAnonFunctionCallIndex = null
     }
   }
-  return parts
+
+  return parts as GeminiPart[]
 }
 
 const SYNTHETIC_THOUGHT_SIGNATURE = 'skip_thought_signature_validator'
@@ -270,9 +437,20 @@ export async function queryGeminiLLM(options: {
           }
         : undefined
 
-    const contents = ensureActiveLoopHasThoughtSignatures(
+    const baseContents = ensureActiveLoopHasThoughtSignatures(
       kodeMessagesToGeminiContents(options.messages),
     )
+
+    const MAX_NO_CONTENT_RETRIES = 2
+    let noContentRetries = 0
+    const noContentHint: GeminiContent = {
+      role: 'user',
+      parts: [
+        {
+          text: '（系统提醒：你刚才没有输出任何可见回答。请这次务必输出最终可见内容（文字/下一步动作），不要只输出 thought，也不要返回空内容。）',
+        },
+      ],
+    }
 
     const MAX_ATTEMPTS = 10
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
@@ -286,11 +464,15 @@ export async function queryGeminiLLM(options: {
 
       try {
         setSessionState('currentError', null)
+        const requestContents =
+          noContentRetries > 0
+            ? [...baseContents, noContentHint]
+            : baseContents
 
         if (!options.stream) {
           const resp = await transport.generateContent({
             model: resolved.model,
-            contents,
+            contents: requestContents,
             config: {
               ...resolved.config,
               abortSignal: options.signal,
@@ -298,15 +480,36 @@ export async function queryGeminiLLM(options: {
             },
           })
 
-          return geminiResponseToAssistantMessage(resp, {
+          const assistantMessage = geminiResponseToAssistantMessage(resp, {
             model: resolved.model,
             durationMs: Date.now() - start,
           })
+          if (
+            isNoContentAssistantMessage(assistantMessage) &&
+            noContentRetries < MAX_NO_CONTENT_RETRIES &&
+            !options.signal.aborted
+          ) {
+            noContentRetries++
+            setSessionState(
+              'currentError',
+              `模型返回空内容，自动重试 ${noContentRetries}/${MAX_NO_CONTENT_RETRIES}`,
+            )
+            const aborted = await sleepWithAbort(200, options.signal)
+            if (aborted) {
+              return geminiResponseToAssistantMessage(
+                { candidates: [{ content: { role: 'model', parts: [] } }] } as any,
+                { model: resolved.model, durationMs: Date.now() - start },
+              )
+            }
+            continue
+          }
+
+          return assistantMessage
         }
 
         const stream = await transport.generateContentStream({
           model: resolved.model,
-          contents,
+          contents: requestContents,
           config: {
             ...resolved.config,
             abortSignal: options.signal,
@@ -351,10 +554,31 @@ export async function queryGeminiLLM(options: {
           usageMetadata: lastUsage,
         }
 
-        return geminiResponseToAssistantMessage(synthetic, {
+        const assistantMessage = geminiResponseToAssistantMessage(synthetic, {
           model: resolved.model,
           durationMs: Date.now() - start,
         })
+        if (
+          isNoContentAssistantMessage(assistantMessage) &&
+          noContentRetries < MAX_NO_CONTENT_RETRIES &&
+          !options.signal.aborted
+        ) {
+          noContentRetries++
+          setSessionState(
+            'currentError',
+            `模型返回空内容，自动重试 ${noContentRetries}/${MAX_NO_CONTENT_RETRIES}`,
+          )
+          const aborted = await sleepWithAbort(200, options.signal)
+          if (aborted) {
+            return geminiResponseToAssistantMessage(
+              { candidates: [{ content: { role: 'model', parts: [] } }] } as any,
+              { model: resolved.model, durationMs: Date.now() - start },
+            )
+          }
+          continue
+        }
+
+        return assistantMessage
       } catch (error) {
         const meta = isRetryableGeminiError(error)
         if (attempt >= MAX_ATTEMPTS || !meta.retryable || options.signal.aborted || isAbortError(error)) {
@@ -393,6 +617,22 @@ export async function queryGeminiToolsOnly(options: {
   prompt: string
   signal?: AbortSignal
 }): Promise<string> {
+  const result = await queryGeminiToolsOnlyDetailed(options)
+  return result.text
+}
+
+export type GeminiToolsOnlyResult = {
+  text: string
+  textWithCitations: string
+  sources: GroundingSource[]
+  webSearchQueries: string[]
+}
+
+export async function queryGeminiToolsOnlyDetailed(options: {
+  modelKey: 'web-search' | 'web-fetch'
+  prompt: string
+  signal?: AbortSignal
+}): Promise<GeminiToolsOnlyResult> {
   const { settings, path } = getProjectSettings()
   const auth = getGeminiAuth(settings, path)
 
@@ -412,10 +652,18 @@ export async function queryGeminiToolsOnly(options: {
   })
 
   const parts = resp.candidates?.[0]?.content?.parts ?? []
-  const text = parts
+  const rawText = parts
     .map(p => (p as any).text)
     .filter((t): t is string => typeof t === 'string')
     .join('')
 
-  return text.trim()
+  const { sources, webSearchQueries, supports } = extractGeminiGrounding(resp as any)
+  const textWithCitations = applyGroundingCitations(rawText, supports)
+
+  return {
+    text: rawText.trim(),
+    textWithCitations: textWithCitations.trim(),
+    sources,
+    webSearchQueries,
+  }
 }

@@ -1,13 +1,13 @@
 
 export const TOOL_NAME_FOR_PROMPT = 'WebSearch'
-export const DESCRIPTION = `- Allows Kode to search the web and use the results to inform responses
+export const DESCRIPTION = `- Allows Kode to search the web via Gemini hosted tool: googleSearch
 - Provides up-to-date information for current events and recent data
-- Returns search result information formatted as search result blocks
+- Returns a deduplicated SOURCES list (real URLs extracted from Gemini groundingMetadata)
+- The NOTES section may include citation markers like [1][2] that map to SOURCES indices
 - Use this tool for accessing information beyond the Kode's knowledge cutoff
-- Searches are performed automatically within a single API call using DuckDuckGo
 
 Usage notes:
 - Use when you need current information not in training data
 - Effective for recent news, current events, product updates, or real-time data
 - Search queries should be specific and well-targeted for best results
-- Results include both title and snippet content for context`
+- Prefer citing URLs from the SOURCES section; do NOT invent URLs`

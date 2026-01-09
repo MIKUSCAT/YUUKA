@@ -2,7 +2,7 @@
 import { ModelAPIAdapter, StreamingEvent, normalizeTokens } from './base'
 import { UnifiedRequestParams, UnifiedResponse, ModelCapabilities, ReasoningStreamingContext } from '@kode-types/modelCapabilities'
 import { ModelProfile } from '@utils/config'
-import { Tool } from '@tool'
+import { Tool, getToolDescription } from '@tool'
 import { zodToJsonSchema } from 'zod-to-json-schema'
 
 // Re-export normalizeTokens and StreamingEvent for subclasses
@@ -238,7 +238,7 @@ export abstract class OpenAIAdapter extends ModelAPIAdapter {
       type: 'function',
       function: {
         name: tool.name,
-        description: tool.description,
+        description: getToolDescription(tool),
         parameters: zodToJsonSchema(tool.inputSchema)
       }
     }))

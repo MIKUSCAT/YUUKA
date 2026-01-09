@@ -1,7 +1,5 @@
 import React, { useCallback } from 'react'
 import { hasPermissionsToUseTool } from '@permissions'
-import { BashTool, inputSchema } from '@tools/BashTool/BashTool'
-import { getCommandSubcommandPrefix } from '@utils/commands'
 import { REJECT_MESSAGE } from '@utils/messages'
 import type { Tool as ToolType, ToolUseContext } from '@tool'
 import { AssistantMessage } from '@query'
@@ -57,15 +55,20 @@ function useCanUseTool(
               return
             }
 
-            const [description, commandPrefix] = await Promise.all([
-              tool.description(input as never),
-              tool === BashTool
-                ? getCommandSubcommandPrefix(
-                    inputSchema.parse(input).command, // already validated upstream, so ok to parse (as opposed to safeParse)
-                    toolUseContext.abortController.signal,
-                  )
-                : Promise.resolve(null),
-            ])
+            const description = await (async () => {
+              try {
+                if (tool.cachedDescription) return tool.cachedDescription
+                if (typeof tool.description === 'function') {
+                  return await tool.description()
+                }
+                if (typeof tool.description === 'string') {
+                  return tool.description
+                }
+              } catch (error) {
+                logError(error)
+              }
+              return `Tool: ${tool.name}`
+            })()
 
             if (toolUseContext.abortController.signal.aborted) {
               logCancelledEvent()
@@ -79,7 +82,8 @@ function useCanUseTool(
               tool,
               description,
               input,
-              commandPrefix,
+              // 立刻弹确认：不做“命令前缀/注入检测”的后台解析
+              commandPrefix: null,
               riskScore: null,
               onAbort() {
                 logCancelledEvent()

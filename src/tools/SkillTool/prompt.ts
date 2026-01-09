@@ -8,8 +8,10 @@ export async function getPrompt(): Promise<string> {
 
 <skills_instructions>
 No skills are currently available. Skills can be added by creating directories with SKILL.md files in:
-- ~/.gemini/skills/skill-name/SKILL.md (personal skills)
-- ./.gemini/skills/skill-name/SKILL.md (project skills)
+- ~/.gemini/skills/ (personal skills)
+- ./.gemini/skills/ (project skills)
+
+Any subdirectory containing SKILL.md will be discovered (e.g., ~/.gemini/skills/category/skill-name/SKILL.md).
 
 Each SKILL.md should have YAML frontmatter with 'name' and 'description' fields.
 </skills_instructions>`
@@ -23,6 +25,11 @@ Each SKILL.md should have YAML frontmatter with 'name' and 'description' fields.
 
 <skills_instructions>
 When users ask you to perform tasks, check if any of the available skills below can help complete the task more effectively. Skills provide specialized capabilities and domain knowledge.
+
+Explicit invocation (slash):
+- If the user message starts with "/<skill-name>", and <skill-name> exists in <available_skills>, treat it as an explicit request to invoke that skill.
+- You MUST invoke this tool immediately as your first action with that skill name.
+- If the user provided additional text after the skill name, treat that remaining text as the actual task/request after loading the skill.
 
 How to invoke:
 - Use this tool with the skill name only (no arguments)

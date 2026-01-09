@@ -52,7 +52,7 @@ export const SkillTool = {
       const availableSkills = await getAvailableSkillNames()
       const errorMessage = availableSkills.length > 0
         ? `Skill "${skillName}" not found.\n\nAvailable skills:\n${availableSkills.map(s => `  - ${s}`).join('\n')}`
-        : `Skill "${skillName}" not found. No skills are currently configured.\n\nTo add skills, create directories with SKILL.md files in:\n  - ~/.gemini/skills/skill-name/SKILL.md\n  - ./.gemini/skills/skill-name/SKILL.md`
+        : `Skill "${skillName}" not found. No skills are currently configured.\n\nTo add skills, create directories with SKILL.md files under:\n  - ~/.gemini/skills/\n  - ./.gemini/skills/\n\nAny subdirectory containing SKILL.md will be discovered (e.g., ~/.gemini/skills/category/skill-name/SKILL.md).`
 
       yield {
         type: 'result',
