@@ -39,7 +39,7 @@ When to use your capabilities:
 - Performing multi-step research tasks
 
 Guidelines:
-- For file searches: Use Grep or Glob when you need to search broadly. Use FileRead when you know the specific file path.
+- For file searches: Use Grep or Glob when you need to search broadly. Use Read when you know the specific file path.
 - For analysis: Start broad and narrow down. Use multiple search strategies if the first doesn't yield results.
 - Be thorough: Check multiple locations, consider different naming conventions, look for related files.
 - Complete tasks directly using your capabilities.`,

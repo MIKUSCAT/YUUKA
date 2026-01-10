@@ -429,7 +429,7 @@ export async function* query(
   const shouldSkipPermissionCheck = result.shouldSkipPermissionCheck
 
   // 稳妥策略：如果同一条 assistant message 里既有并行安全工具（读/搜）
-  // 又有会改动状态/执行的工具（Bash/Edit/Replace/...），只执行“第一个非并行安全工具”，
+  // 又有会改动状态/执行的工具（Bash/Edit/Write/...），只执行“第一个非并行安全工具”，
   // 并丢弃它之后的所有 tool_use，迫使模型等 tool_result 再决定下一步。
   assistantMessage = applyToolUseSerialGate(
     assistantMessage,
@@ -746,9 +746,9 @@ async function* checkPermissionsAndCallTool(
     // Create a more helpful error message for common cases
     let errorMessage = `InputValidationError: ${isValidInput.error.message}`
     
-    // Special handling for the "View" tool (FileReadTool) being called with empty parameters
-    if (tool.name === 'View' && Object.keys(input).length === 0) {
-      errorMessage = `Error: The View tool requires a 'file_path' parameter to specify which file to read. Please provide the absolute path to the file you want to view. For example: {"file_path": "/path/to/file.txt"}`
+    // Special handling for the "Read" tool being called with empty parameters
+    if (tool.name === 'Read' && Object.keys(input).length === 0) {
+      errorMessage = `Error: The Read tool requires a 'file_path' parameter to specify which file to read. Please provide the absolute path to the file you want to read. For example: {"file_path": "E:/path/to/file.txt"} (Windows) or {"file_path": "/path/to/file.txt"} (macOS/Linux)`
     }
     
     
@@ -801,7 +801,11 @@ async function* checkPermissionsAndCallTool(
 
   // Call the tool
   try {
-    const generator = tool.call(normalizedInput as never, context)
+    const generator = tool.call(normalizedInput as never, {
+      ...context,
+      // 透传权限回调，方便像 TaskTool 这种“工具里再跑 query”时还能弹授权确认
+      canUseTool,
+    })
     for await (const result of generator) {
       switch (result.type) {
         case 'result':

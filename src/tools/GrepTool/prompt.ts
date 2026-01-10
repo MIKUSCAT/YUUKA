@@ -1,4 +1,4 @@
-export const TOOL_NAME_FOR_PROMPT = 'GrepTool'
+export const TOOL_NAME_FOR_PROMPT = 'Grep'
 
 export const DESCRIPTION = `
 - Fast content search tool that works with any codebase size

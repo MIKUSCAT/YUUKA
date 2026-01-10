@@ -399,7 +399,7 @@ export const DocWriteTool = {
     if (!SUPPORTED_EXTENSIONS.has(ext)) {
       return {
         result: false,
-        message: `Unsupported file format: ${ext}. Supported formats: ${[...SUPPORTED_EXTENSIONS].join(', ')}. If you want to write a plain Markdown file (.md), use the Replace tool instead.`,
+        message: `Unsupported file format: ${ext}. Supported formats: ${[...SUPPORTED_EXTENSIONS].join(', ')}. If you want to write a plain Markdown file (.md), use the Write tool instead.`,
       }
     }
 

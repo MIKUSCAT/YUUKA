@@ -34,7 +34,7 @@ WARNING:
 When making edits:
 - Ensure all edits result in idiomatic, correct code
 - Do not leave the code in a broken state
-- Always use absolute file paths (starting with /)
+- Always use absolute file paths (Windows: C:\\... or E:/..., macOS/Linux: /...)
 - Use replace_all for replacing and renaming strings across the file. This parameter is useful if you want to rename a variable for instance.
 
 If you want to create a new file, use:

@@ -234,6 +234,7 @@ async function connectToServer(
             ...serverRef.env,
           } as Record<string, string>,
           stderr: 'pipe', // prevents error output from the MCP server from printing to the UI
+          cwd: serverRef.cwd,
         })
 
   const client = new Client(

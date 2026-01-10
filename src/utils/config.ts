@@ -23,6 +23,7 @@ export type McpStdioServerConfig = {
   command: string
   args: string[]
   env?: Record<string, string>
+  cwd?: string
 }
 
 export type McpSSEServerConfig = {
@@ -36,7 +37,6 @@ export type ProjectConfig = {
   allowedTools: string[]
   context: Record<string, string>
   contextFiles?: string[]
-  history: string[]
   dontCrawlDirectory?: boolean
   enableArchitectTool?: boolean
   mcpContextUris: string[]
@@ -56,7 +56,6 @@ export type ProjectConfig = {
 const DEFAULT_PROJECT_CONFIG: ProjectConfig = {
   allowedTools: [],
   context: {},
-  history: [],
   dontCrawlDirectory: false,
   enableArchitectTool: false,
   mcpContextUris: [],
@@ -599,6 +598,13 @@ export function saveCurrentProjectConfig(projectConfig: ProjectConfig): void {
   const merged = mergeGeminiSettings(existingSettings, {
     yuuka: { project: projectConfig },
   })
+  // 历史记录已迁移到 .gemini/yuuka/history.json，不再写回 settings.json
+  if ((merged as any)?.yuuka?.project && 'history' in (merged as any).yuuka.project) {
+    delete (merged as any).yuuka.project.history
+  }
+  if ((merged as any)?.kode?.project && 'history' in (merged as any).kode.project) {
+    delete (merged as any).kode.project.history
+  }
   if ('kode' in (merged as any)) {
     delete (merged as any).kode
   }

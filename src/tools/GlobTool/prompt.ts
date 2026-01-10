@@ -1,4 +1,4 @@
-export const TOOL_NAME_FOR_PROMPT = 'GlobTool'
+export const TOOL_NAME_FOR_PROMPT = 'Glob'
 
 export const DESCRIPTION = `- Fast file pattern matching tool that works with any codebase size
 - Supports glob patterns like "**/*.js" or "src/**/*.ts"

@@ -4,11 +4,11 @@ description: "Use this agent for reading, writing, analyzing, and processing off
 tools:
   - DocRead
   - DocWrite
-  - View
-  - Replace
+  - Read
+  - Write
   - Think
   - TodoWrite
-  - GlobTool
+  - Glob
 model_name: ""
 color: cyan
 ---
@@ -33,7 +33,7 @@ You are a specialized assistant for working with office documents. You can read,
 
 ⚠️ IMPORTANT
 - DocWrite output file extension must be one of: `.pdf`, `.docx`, `.pptx`, `.xlsx`
-- If you want a plain Markdown file (`.md`), use `Replace` instead (DocWrite does not support `.md`).
+- If you want a plain Markdown file (`.md`), use `Write` instead (DocWrite does not support `.md`).
 
 ### Analysis Tasks
 - Summarize document content
@@ -186,7 +186,7 @@ When presenting extracted content:
 ## Error Handling
 
 If a document cannot be read:
-1. Check if file exists using GlobTool
+1. Check if file exists using Glob
 2. Verify file extension is supported
 3. Report specific error with suggested fix
 

@@ -4,7 +4,7 @@ export const DESCRIPTION = `This is a tool for editing files. For moving or rena
 
 Before using this tool:
 
-1. Use the View tool to understand the file's contents and context
+1. Use the Read tool to understand the file's contents and context
 
 2. Verify the directory path is correct (only applicable when creating new files):
    - Use the LS tool to verify the parent directory exists and is the correct location
@@ -40,7 +40,7 @@ WARNING: If you do not follow these requirements:
 When making edits:
    - Ensure the edit results in idiomatic, correct code
    - Do not leave the code in a broken state
-   - Always use absolute file paths (starting with /)
+   - Always use absolute file paths (Windows: C:\\... or E:/..., macOS/Linux: /...)
 
 If you want to create a new file, use:
    - A new file path, including dir name if needed

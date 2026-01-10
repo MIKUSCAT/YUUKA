@@ -1,25 +1,52 @@
-import {
-  getCurrentProjectConfig,
-  saveCurrentProjectConfig,
-} from '@utils/config'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
+import { dirname, join, resolve } from 'path'
+import { getOriginalCwd } from '@utils/state'
+import { logError } from '@utils/log'
 
 const MAX_HISTORY_ITEMS = 100
+const HISTORY_FILE_RELATIVE_PATH = join('.gemini', 'yuuka', 'history.json')
+
+function getHistoryFilePath(): string {
+  return resolve(getOriginalCwd(), HISTORY_FILE_RELATIVE_PATH)
+}
+
+function readHistoryFile(filePath: string): string[] {
+  if (!existsSync(filePath)) return []
+  try {
+    const text = readFileSync(filePath, 'utf-8')
+    const parsed = JSON.parse(text)
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((item): item is string => typeof item === 'string')
+  } catch (error) {
+    logError(error)
+    return []
+  }
+}
+
+function writeHistoryFile(filePath: string, history: string[]): void {
+  try {
+    mkdirSync(dirname(filePath), { recursive: true })
+    writeFileSync(filePath, JSON.stringify(history, null, 2), 'utf-8')
+  } catch (error) {
+    logError(error)
+  }
+}
 
 export function getHistory(): string[] {
-  return getCurrentProjectConfig().history ?? []
+  return readHistoryFile(getHistoryFilePath())
 }
 
 export function addToHistory(command: string): void {
-  const projectConfig = getCurrentProjectConfig()
-  const history = projectConfig.history ?? []
+  const trimmed = command.trim()
+  if (!trimmed) return
 
-  if (history[0] === command) {
+  const filePath = getHistoryFilePath()
+  const history = readHistoryFile(filePath)
+
+  if (history[0] === trimmed) {
     return
   }
 
-  history.unshift(command)
-  saveCurrentProjectConfig({
-    ...projectConfig,
-    history: history.slice(0, MAX_HISTORY_ITEMS),
-  })
+  history.unshift(trimmed)
+  writeHistoryFile(filePath, history.slice(0, MAX_HISTORY_ITEMS))
 }

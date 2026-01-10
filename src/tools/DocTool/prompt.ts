@@ -51,7 +51,7 @@ This tool creates office documents using Python libraries.
 
 ⚠️ IMPORTANT
 - Output file extension must be one of: .pdf, .docx, .pptx, .xlsx
-- **.md is NOT supported**. If you want a plain Markdown file, use the Replace tool to write a .md file.
+- **.md is NOT supported**. If you want a plain Markdown file, use the Write tool to write a .md file.
 
 ### Parameters
 - \`file_path\`: Absolute path for the output document

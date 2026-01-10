@@ -68,17 +68,19 @@ export const TaskTool = {
   
   async *call(
     { description, prompt, model_name, subagent_type },
-    {
-      abortController,
-      options: { safeMode = false, forkNumber, messageLogName, verbose },
-      readFileTimestamps,
-    },
+    toolUseContext,
   ): AsyncGenerator<
     | { type: 'result'; data: TextBlock[]; resultForAssistant?: string }
     | { type: 'progress'; content: any; normalizedMessages?: any[]; tools?: any[] },
     void,
     unknown
   > {
+    const {
+      abortController,
+      options: { safeMode = false, forkNumber, messageLogName, verbose },
+      readFileTimestamps,
+    } = toolUseContext as any
+
     const startTime = Date.now()
     
     // Default to general-purpose if no subagent_type specified
@@ -143,6 +145,13 @@ export const TaskTool = {
 
     // Model already resolved in effectiveModel variable above
     const modelToUse = effectiveModel
+
+    // 关键：优先复用主 REPL 的交互式授权回调（能弹确认框）。
+    // 非交互模式（或未提供）才退回到纯判断的 hasPermissionsToUseTool。
+    const canUseTool =
+      typeof (toolUseContext as any)?.canUseTool === 'function'
+        ? ((toolUseContext as any).canUseTool as any)
+        : hasPermissionsToUseTool
 
     // Display initial task information with separate progress lines
     yield {
@@ -213,7 +222,7 @@ export const TaskTool = {
       messages,
       taskPrompt,
       context,
-      hasPermissionsToUseTool,
+      canUseTool,
       {
         abortController,
         options: queryOptions,

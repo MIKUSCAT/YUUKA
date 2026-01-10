@@ -62,7 +62,7 @@ const inputSchema = z.strictObject({
 })
 
 export const FileReadTool = {
-  name: 'View',
+  name: 'Read',
   async description() {
     return DESCRIPTION
   },
@@ -290,7 +290,7 @@ export const FileReadTool = {
 >
 
 const formatFileSizeError = (sizeInBytes: number) =>
-  `File content (${Math.round(sizeInBytes / 1024)}KB) exceeds maximum allowed size (${Math.round(MAX_OUTPUT_SIZE / 1024)}KB). Please use offset and limit parameters to read specific portions of the file, or use the GrepTool to search for specific content.`
+  `File content (${Math.round(sizeInBytes / 1024)}KB) exceeds maximum allowed size (${Math.round(MAX_OUTPUT_SIZE / 1024)}KB). Please use offset and limit parameters to read specific portions of the file, or use the Grep tool to search for specific content.`
 
 function createImageResponse(
   buffer: Buffer,

@@ -110,6 +110,7 @@ import { showInvalidConfigDialog } from '@components/InvalidConfigDialog'
 import { ConfigParseError } from '@utils/errors'
 import { grantReadPermissionForOriginalDir } from '@utils/permissions/filesystem'
 import { MACRO } from '@constants/macros'
+import { runProjectMigrations } from '@utils/migrations'
 export function completeOnboarding(): void {
   const config = getGlobalConfig()
   saveGlobalConfig({
@@ -194,6 +195,12 @@ async function setup(cwd: string, safeMode?: boolean): Promise<void> {
 
   // Always grant read permissions for original working dir
   grantReadPermissionForOriginalDir()
+
+  // Ensure project config exists (legacy config migrations may create settings.json)
+  getCurrentProjectConfig()
+
+  // One-time migrations (history/tool names) for the current project
+  runProjectMigrations()
   
   // Start watching agent configuration files for changes
   // Try ESM-friendly path first (compiled dist), then fall back to extensionless (dev/tsx)

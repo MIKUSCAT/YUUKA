@@ -35,7 +35,7 @@ export const GlobTool = {
     return DESCRIPTION
   },
   userFacingName() {
-    return 'Search'
+    return 'Glob'
   },
   inputSchema,
   async isEnabled() {

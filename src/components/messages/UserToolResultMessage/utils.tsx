@@ -38,18 +38,9 @@ export function useGetToolFromMessages(
         `Tool use not found for tool_use_id ${toolUseID}`,
       )
     }
-    // Hack: we don't expose GlobTool and GrepTool in getTools anymore,
-    // but we still want to be able to load old transcripts.
-    // TODO: Remove this when logging hits zero
-    const tool = [...tools, GlobTool, GrepTool].find(
-      _ => _.name === toolUse.name,
-    )
-    if (tool === GlobTool || tool === GrepTool) {
-      
-    }
-    if (!tool) {
-      throw new ReferenceError(`Tool not found for ${toolUse.name}`)
-    }
+
+    // 兼容：旧日志里可能存在已改名/已移除的工具；不要让 UI 崩溃
+    const tool = [...tools, GlobTool, GrepTool].find(_ => _.name === toolUse.name) ?? null
     return { tool, toolUse }
   }, [toolUseID, messages, tools])
 }

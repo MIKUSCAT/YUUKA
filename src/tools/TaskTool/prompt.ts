@@ -1,5 +1,5 @@
 import { type Tool } from '@tool'
-import { getTools, getReadOnlyTools } from '@tools'
+import { getTools } from '@tools'
 import { TaskTool } from './TaskTool'
 import { BashTool } from '@tools/BashTool/BashTool'
 import { FileWriteTool } from '@tools/FileWriteTool/FileWriteTool'
@@ -10,11 +10,9 @@ import { FileReadTool } from '@tools/FileReadTool/FileReadTool'
 import { getModelManager } from '@utils/model'
 import { getActiveAgents } from '@utils/agentLoader'
 
-export async function getTaskTools(safeMode: boolean): Promise<Tool[]> {
-  // No recursive tasks, yet..
-  return (await (!safeMode ? getTools() : getReadOnlyTools())).filter(
-    _ => _.name !== TaskTool.name,
-  )
+export async function getTaskTools(_safeMode: boolean): Promise<Tool[]> {
+  // Task 子代理需要完整工具集；是否允许执行由 safeMode + 权限系统控制
+  return (await getTools()).filter(_ => _.name !== TaskTool.name)
 }
 
 export async function getPrompt(safeMode: boolean): Promise<string> {

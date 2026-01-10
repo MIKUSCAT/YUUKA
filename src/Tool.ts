@@ -17,6 +17,11 @@ export interface ToolUseContext {
   safeMode?: boolean
   abortController: AbortController
   readFileTimestamps: { [filePath: string]: number }
+  /**
+   * 可选：交互式权限回调（用于 TaskTool 等“嵌套 query”场景）。
+   * 主 REPL 会提供一个能弹确认框的 canUseTool；非交互场景可能为空。
+   */
+  canUseTool?: unknown
   options?: {
     commands?: any[]
     tools?: any[]

@@ -61,7 +61,7 @@ export const URLFetcherTool = {
       return {
         result: false,
         message:
-          'URLFetcher 只支持 http(s) URL，不能读取本地文件/文件夹（例如 file://... 或 E:/...）。要看本地内容请用 View/GlobTool/GrepTool，或把内容写进文件再处理。',
+          'URLFetcher 只支持 http(s) URL，不能读取本地文件/文件夹（例如 file://... 或 E:/...）。要看本地内容请用 Read/Glob/Grep，或把内容写进文件再处理。',
       }
     }
     return { result: true }

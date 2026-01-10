@@ -304,12 +304,12 @@ export async function getSystemPrompt(): Promise<string[]> {
 # 工具使用
 
 - 文件搜索优先用 Task 工具节省上下文
-- 读/搜类工具（View/GlobTool/GrepTool/ls/WebSearch/URLFetcher 等）可以并行一次调用多个，提高效率
-- 会改动状态/执行的工具（Bash/Edit/Replace/MultiEdit/NotebookEditCell/TodoWrite/mcp 等）一次只调用一个，**等 tool_result 回来再继续下一步**
+- 读/搜类工具（Read/Glob/Grep/LS/WebSearch/URLFetcher 等）可以并行一次调用多个，提高效率
+- 会改动状态/执行的工具（Bash/Edit/Write/MultiEdit/NotebookEditCell/TodoWrite/mcp 等）一次只调用一个，**等 tool_result 回来再继续下一步**
 - Bash 需要跑多条命令时，尽量合并到一次 Bash 调用里**顺序执行**（用 &&/换行），保证输出可读
 - 批量读取可能有用的文件
 - 对同一个文件的多次编辑用 MultiEdit
-- 写 Markdown（.md）文件用 Replace；DocWrite 只用于 .pdf/.docx/.pptx/.xlsx
+- 写 Markdown（.md）文件用 Write；DocWrite 只用于 .pdf/.docx/.pptx/.xlsx
 - **重要**: 积极使用 TodoWrite 跟踪进度！
 
 # Agent调用规范（极其重要！）
@@ -349,7 +349,7 @@ export async function getSystemPrompt(): Promise<string[]> {
 
 0. **先询问确认**：在调用任何工具（包括 TodoWrite/Task/WebSearch/URLFetcher）之前，先问老师是否现在开始深度研究（回复“开始/确认”才继续；确认前不要创建 TODO）
 1. **老师确认后**：调用 research-executor，由它在 subagent 内创建 TODO 并生成/覆写 Markdown 报告文件（并行 WebSearch + URLFetcher），它最终只返回 REPORT_PATH: <绝对路径>
-2. **完成后**：我会用 View 读取报告摘要段（不要用 DocRead 读 .md），给老师**2-4句简短讲解**，并只输出**报告文件绝对路径**（不在对话里粘贴全文）
+2. **完成后**：我会用 Read 读取报告摘要段（不要用 DocRead 读 .md），给老师**2-4句简短讲解**，并只输出**报告文件绝对路径**（不在对话里粘贴全文）
 
 ## 流程示例
 

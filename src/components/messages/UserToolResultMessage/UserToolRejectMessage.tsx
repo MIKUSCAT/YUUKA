@@ -20,6 +20,9 @@ export function UserToolRejectMessage({
 }: Props): React.ReactNode {
   const { columns } = useTerminalSize()
   const { tool, toolUse } = useGetToolFromMessages(toolUseID, tools, messages)
+  if (!tool) {
+    return <FallbackToolUseRejectedMessage />
+  }
   const input = tool.inputSchema.safeParse(toolUse.input)
   if (input.success) {
     return tool.renderToolUseRejectedMessage(input.data, {

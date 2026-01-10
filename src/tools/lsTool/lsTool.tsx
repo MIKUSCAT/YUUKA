@@ -33,7 +33,7 @@ export const LSTool = {
   },
   inputSchema,
   userFacingName() {
-    return 'List'
+    return 'LS'
   },
   async isEnabled() {
     return true

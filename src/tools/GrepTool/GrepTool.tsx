@@ -49,7 +49,7 @@ export const GrepTool = {
     return DESCRIPTION
   },
   userFacingName() {
-    return 'Search'
+    return 'Grep'
   },
   inputSchema,
   isReadOnly() {

@@ -2,11 +2,11 @@
 name: research-executor
 description: "一键深度研究：自动制定计划→并行搜索/抓取→最多2轮自检补搜→写入超长Markdown报告留档；最终只返回报告文件绝对路径（Gemini原生 WebSearch+URLFetcher）。"
 tools:
-  - View
+  - Read
   - WebSearch
   - URLFetcher
   - TodoWrite
-  - Replace
+  - Write
 model_name: ""
 color: blue
 ---
@@ -42,7 +42,7 @@ color: blue
 
 - `WebSearch`：只负责“搜”。tool_result 里会包含 `SOURCES:`（从 Gemini groundingMetadata 自动提取的真实 URL 列表）。**你只能引用这些 URL**；不要自己编链接。正文里可能会出现类似 `[1][2]` 的引用标记，对应 `SOURCES:` 列表序号；写报告时可以保留这些标记便于追溯。注意：search snippet/NOTES 不等于你已经读过网页全文。
 - `URLFetcher`：只负责抓取并分析 **HTTP(S) 网页**；严禁拿它去读本地文件/文件夹路径（例如 `E:/...`、`E:\\...`、`/mnt/...`、`file://...`），那会直接诱发幻觉。
-  - 看到这类“本地路径”，你要明确：不要用 URLFetcher 读取本地内容；如果确实需要读本地文件（例如写完报告后的自检），用 View。其他本地文件内容请让主 Agent 用 View/GlobTool/GrepTool 读取，或让用户把内容贴出来。
+  - 看到这类“本地路径”，你要明确：不要用 URLFetcher 读取本地内容；如果确实需要读本地文件（例如写完报告后的自检），用 Read。其他本地文件内容请让主 Agent 用 Read/Glob/Grep 读取，或让用户把内容贴出来。
 
 ### 如何并行搜索（必须）
 
@@ -156,11 +156,11 @@ WebSearch({ query: "Claude API 开发者反馈" })
    - 如果主 Agent 在输入里给了 `REPORT_PATH: ...`，你必须使用该路径并覆写同一个文件
    - 如果没给，就自己生成一个绝对路径，写到：`<工作目录>/deep-research/`
 3) **写入前自检（防止“说写了但其实没写”）**：
-   - 如果目标文件已存在（需要覆写）：先用 View 读取一次该文件（哪怕只读前 60 行），再用 Replace 覆写（否则 Replace 可能会拒绝“未读先写”）
-4) 用 Replace 工具把终稿写入该 `.md` 文件（必须是绝对路径）
+   - 如果目标文件已存在（需要覆写）：先用 Read 读取一次该文件（哪怕只读前 60 行），再用 Write 覆写（否则 Write 可能会拒绝“未读先写”）
+4) 用 Write 工具把终稿写入该 `.md` 文件（必须是绝对路径）
 5) **写入后强制验收（必须）**：
-   - 立刻用 View 读取报告开头（建议前 80 行），确认：文件真实存在、包含 `NOW:` 行、并且标题结构正常
-   - 如果读不到/内容为空/明显没写进去：必须修复（换一个绝对路径重写也行），直到 View 能读到正确内容，再返回
+   - 立刻用 Read 读取报告开头（建议前 80 行），确认：文件真实存在、包含 `NOW:` 行、并且标题结构正常
+   - 如果读不到/内容为空/明显没写进去：必须修复（换一个绝对路径重写也行），直到 Read 能读到正确内容，再返回
 6) **最终回复只允许输出一行**（不要输出报告正文）：
 
 ```
@@ -217,7 +217,7 @@ WebSearch({ query: "Claude Code reviews 2024" })
 
 ## 注意事项（你必须记住）
 
-- **只用允许的工具**：WebSearch、URLFetcher、TodoWrite、Replace
+- **只用允许的工具**：WebSearch、URLFetcher、TodoWrite、Write
 - **最大化并发**：能并行就并行（尤其是 WebSearch / URLFetcher）
 - **信息密度**：不许敷衍输出，必须完整报告
 - **诚实标注**：没找到就说没找到，不要编

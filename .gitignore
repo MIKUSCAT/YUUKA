@@ -70,6 +70,7 @@ web_modules/
 # Optional npm cache directory
 
 .npm
+.npm-cache/
 
 # Optional eslint cache
 
@@ -180,6 +181,8 @@ cli.js
 # Gemini settings (may contain secrets)
 .gemini/settings.json
 **/.gemini/settings.json
+.gemini/yuuka/
+**/.gemini/yuuka/
 
 # Lock files
 bun.lock
@@ -192,3 +195,9 @@ pnpm-lock.yaml
 cli.mjs
 cli.mjs.map
 source-maps/
+
+# Local research outputs
+deep-research/
+
+# Large local MCP server checkout (keep local, don't commit)
+mcp-servers/chrome-devtools-mcp/
