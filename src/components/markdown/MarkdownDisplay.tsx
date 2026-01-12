@@ -101,14 +101,29 @@ export function MarkdownDisplay({ text, terminalWidth }: Props): React.ReactNode
   }
 
   const pushLine = (key: string, line: string, dim = false) => {
-    const ansi = renderInlineAnsi(line, { defaultColor: theme.text })
-    contentBlocks.push(
-      <Box key={key} width="100%" minWidth={0}>
-        <Text wrap="wrap" dimColor={dim}>
-          {ansi}
-        </Text>
-      </Box>,
-    )
+    // 检查是否有需要特殊渲染的内联元素
+    const hasInlineMarkup = /[*_~`<[!$\\]|https?:/.test(line)
+    if (hasInlineMarkup) {
+      // 有内联标记时使用 renderInlineAnsi 处理，并用 wrapAnsi 确保换行后颜色正确
+      const ansi = renderInlineAnsi(line, { defaultColor: theme.text })
+      const wrapped = wrapAnsi(ansi, Math.max(10, terminalWidth), { hard: true, trim: false })
+      contentBlocks.push(
+        <Box key={key} width="100%" minWidth={0} flexDirection="column">
+          {wrapped.split('\n').map((wrappedLine, i) => (
+            <Text key={i} dimColor={dim}>{wrappedLine}</Text>
+          ))}
+        </Box>,
+      )
+    } else {
+      // 纯文本直接用 Text 组件渲染，让 Ink 处理换行和颜色
+      contentBlocks.push(
+        <Box key={key} width="100%" minWidth={0}>
+          <Text wrap="wrap" color={theme.text} dimColor={dim}>
+            {line}
+          </Text>
+        </Box>,
+      )
+    }
     lastLineEmpty = false
   }
 

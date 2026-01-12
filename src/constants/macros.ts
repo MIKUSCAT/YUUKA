@@ -17,6 +17,6 @@ try {
 export const MACRO = {
   VERSION: pkg.version ?? '',
   README_URL: '',
-  PACKAGE_URL: 'yuuka',
+  PACKAGE_URL: 'YUUKA',
   ISSUES_EXPLAINER: 'report the issue in your repository issues',
 }

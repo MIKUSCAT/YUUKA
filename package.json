@@ -1,6 +1,6 @@
 {
-  "name": "yuuka",
-  "version": "1.1.23",
+  "name": "YUUKA",
+  "version": "1.0.0",
   "type": "module",
   "bin": {
     "yuuka": "cli.cjs"
@@ -37,11 +37,7 @@
     "format:check": "prettier --check \"src/**/*.{ts,tsx,js,jsx,json}\"",
     "lint": "eslint . --ext .ts,.tsx,.js --max-warnings 0",
     "lint:fix": "eslint . --ext .ts,.tsx,.js --fix",
-    "test": "vitest run",
-    "typecheck": "tsc --noEmit",
-    "prepare": "",
-    "publish:dev": "node scripts/publish-dev.cjs",
-    "publish:release": "node scripts/publish-release.cjs"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@anthropic-ai/bedrock-sdk": "^0.12.6",
@@ -91,11 +87,9 @@
     "zod-to-json-schema": "^3.24.6"
   },
   "devDependencies": {
-    "@types/jest": "^30.0.0",
     "@types/node": "^24.1.0",
     "esbuild": "^0.25.9",
     "prettier": "^3.6.2",
-    "typescript": "^5.9.2",
-    "vitest": "^3.2.4"
+    "typescript": "^5.9.2"
   }
 }

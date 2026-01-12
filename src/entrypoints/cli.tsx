@@ -66,7 +66,6 @@ import {
   getConfigForCLI,
   listConfigForCLI,
   enableConfigs,
-  validateAndRepairAllGPT5Profiles,
 } from '@utils/config'
 import { cwd } from 'process'
 import { dateToFilename, logError, parseLogFilename } from '@utils/log'
@@ -201,20 +200,20 @@ async function setup(cwd: string, safeMode?: boolean): Promise<void> {
 
   // One-time migrations (history/tool names) for the current project
   runProjectMigrations()
-  
-  // Start watching agent configuration files for changes
-  // Try ESM-friendly path first (compiled dist), then fall back to extensionless (dev/tsx)
-  let agentLoader: any
-  try {
-    agentLoader = await import('@utils/agentLoader')
-  } catch {
-    agentLoader = await import('@utils/agentLoader')
-  }
-  const { startAgentWatcher, clearAgentCache } = agentLoader
-  await startAgentWatcher(() => {
-    // Cache is already cleared in the watcher, just log
-    console.log('✅ Agent configurations hot-reloaded')
-  })
+
+  // 🚀 Non-blocking: Start agent watcher in background (don't await)
+  ;(async () => {
+    try {
+      const agentLoader = await import('@utils/agentLoader')
+      const { startAgentWatcher } = agentLoader
+      await startAgentWatcher(() => {
+        // Cache is already cleared in the watcher, just log
+        console.log('✅ Agent configurations hot-reloaded')
+      })
+    } catch (e) {
+      // Silently ignore agent watcher errors - not critical for startup
+    }
+  })()
 
   // If --safe mode is enabled, prevent root/sudo usage for security
   if (safeMode) {
@@ -235,40 +234,25 @@ async function setup(cwd: string, safeMode?: boolean): Promise<void> {
     return
   }
 
+  // 🚀 Non-blocking: Run cleanup and context prefetch in background
   cleanupOldMessageFilesInBackground()
-  getContext() // Pre-fetch all context data at once
+  // Note: getContext() is now called lazily in REPL when needed, not here
 
-  // Migrate old iterm2KeyBindingInstalled config to new shiftEnterKeyBindingInstalled
-  const globalConfig = getGlobalConfig()
-  if (
-    globalConfig.iterm2KeyBindingInstalled === true &&
-    globalConfig.shiftEnterKeyBindingInstalled !== true
-  ) {
-    const updatedConfig = {
-      ...globalConfig,
-      shiftEnterKeyBindingInstalled: true,
+  // 🚀 Non-blocking: Migrate config in background
+  setImmediate(() => {
+    const globalConfig = getGlobalConfig()
+    if (
+      globalConfig.iterm2KeyBindingInstalled === true &&
+      globalConfig.shiftEnterKeyBindingInstalled !== true
+    ) {
+      const updatedConfig = {
+        ...globalConfig,
+        shiftEnterKeyBindingInstalled: true,
+      }
+      delete updatedConfig.iterm2KeyBindingInstalled
+      saveGlobalConfig(updatedConfig)
     }
-    // Remove the old config property
-    delete updatedConfig.iterm2KeyBindingInstalled
-    saveGlobalConfig(updatedConfig)
-  }
-
-  // Check for last session's cost and duration
-  const projectConfig = getCurrentProjectConfig()
-  if (
-    projectConfig.lastCost !== undefined &&
-    projectConfig.lastDuration !== undefined
-  ) {
-        
-    // Clear the values after logging
-    // saveCurrentProjectConfig({
-    //   ...projectConfig,
-    //   lastCost: undefined,
-    //   lastAPIDuration: undefined,
-    //   lastDuration: undefined,
-    //   lastSessionId: undefined,
-    // })
-  }
+  })
 
   // Skip interactive auto-updater permission prompts during startup
   // Users can still run the doctor command manually if desired.
@@ -281,17 +265,6 @@ async function main() {
   // Validate configs are valid and enable configuration system
   try {
     enableConfigs()
-    
-    // 🔧 Validate and auto-repair GPT-5 model profiles
-    try {
-      const repairResult = validateAndRepairAllGPT5Profiles()
-      if (repairResult.repaired > 0) {
-        console.log(`🔧 Auto-repaired ${repairResult.repaired} GPT-5 model configurations`)
-      }
-    } catch (repairError) {
-      // Don't block startup if GPT-5 validation fails
-      console.warn('⚠️ GPT-5 configuration validation failed:', repairError)
-    }
   } catch (error: unknown) {
     if (error instanceof ConfigParseError) {
       // Show the invalid config dialog with the error object
@@ -305,7 +278,7 @@ async function main() {
   let inputPrompt = ''
   let renderContext: RenderOptions | undefined = {
     exitOnCtrlC: false,
-  
+
     onFlicker() {},
   } as any
 
@@ -413,23 +386,11 @@ ${commandList}`,
           console.log(response)
           process.exit(0)
         } else {
-          // Prefetch update info before first render to place banner at top
-          const updateInfo = await (async () => {
-            try {
-              const latest = await getLatestVersion()
-              if (latest && gt(latest, MACRO.VERSION)) {
-                const cmds = await getUpdateCommandSuggestions()
-                return { version: latest as string, commands: cmds as string[] }
-              }
-            } catch {}
-            return { version: null as string | null, commands: null as string[] | null }
-          })()
-
-          {
-            const { render } = await import('ink')
-            const { REPL } = await import('@screens/REPL')
-            render(
-              <REPL
+          // 🚀 Render REPL immediately, check for updates in background
+          const { render } = await import('ink')
+          const { REPL } = await import('@screens/REPL')
+          render(
+            <REPL
               commands={commands}
               debug={debug}
               initialPrompt={inputPrompt}
@@ -440,8 +401,20 @@ ${commandList}`,
               safeMode={safe}
             />,
             renderContext,
-            )
-          }
+          )
+
+          // 🚀 Non-blocking: Check for updates in background (after render)
+          setImmediate(async () => {
+            try {
+              const latest = await getLatestVersion()
+              if (latest && gt(latest, MACRO.VERSION)) {
+                // Update info is available but we don't block render for it
+                // Users can run `yuuka update` to see update commands
+              }
+            } catch {
+              // Silently ignore update check errors
+            }
+          })
         }
       },
     )

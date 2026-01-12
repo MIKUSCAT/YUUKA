@@ -342,15 +342,7 @@ function PromptInput({
 
     // Alt+M: toggle auto mode for this session
     if (key.meta && (_inputChar === 'm' || _inputChar === 'M')) {
-      const next = !autoMode
       onToggleAutoMode()
-      setMessage({
-        show: true,
-        text: next
-          ? '已开启自动模式：不再逐条确认'
-          : '已关闭自动模式：恢复逐条确认',
-      })
-      setTimeout(() => setMessage({ show: false }), 2500)
       return true
     }
 

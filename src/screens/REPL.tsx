@@ -472,7 +472,7 @@ export function REPL({
       {
         type: 'static',
         jsx: (
-          <Box flexDirection="column" key={`logo${forkNumber}`}>
+          <Box flexDirection="column" width="100%" key={`logo${forkNumber}`}>
             <Logo />
             <ProjectOnboarding workspaceDir={getOriginalCwd()} />
           </Box>

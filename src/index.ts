@@ -21,7 +21,7 @@ if (hasFlag('--version', '-v')) {
 }
 
 if (hasFlag('--help-lite')) {
-  console.log(`Usage: yuuka [options] [command] [prompt]\n\n` +
+  console.log(`Usage: YUUKA [options] [command] [prompt]\n\n` +
     `Common options:\n` +
     `  -h, --help           Show full help\n` +
     `  -v, --version        Show version\n` +
