@@ -19,6 +19,8 @@ import { launchExternalEditor } from '@utils/externalEditor'
 import { usePermissionContext } from '@context/PermissionContext'
 import { getWorkspaceGeminiSettingsPath, readGeminiSettingsFile } from '@utils/geminiSettings'
 import figures from 'figures'
+import { getTodos } from '@utils/todoStorage'
+import { TodoPanel } from './TodoPanel'
 
 type Props = {
   commands: Command[]
@@ -95,6 +97,7 @@ function PromptInput({
   const [placeholder, setPlaceholder] = useState('')
   const [pastedText, setPastedText] = useState<string | null>(null)
   const [isEditingExternally, setIsEditingExternally] = useState(false)
+  const [showTodoPanel, setShowTodoPanel] = useState(false)
 
   // Permission context for mode management
   const { cycleMode } = usePermissionContext()
@@ -346,7 +349,14 @@ function PromptInput({
       return true
     }
 
-    if (key.shift && key.tab) {
+    // Alt+T: toggle todo panel
+    if (key.meta && (_inputChar === 't' || _inputChar === 'T')) {
+      setShowTodoPanel(prev => !prev)
+      return true
+    }
+
+    // Alt+P: cycle permission modes
+    if (key.meta && (_inputChar === 'p' || _inputChar === 'P')) {
       cycleMode()
       return true // Explicitly handled
     }
@@ -407,8 +417,8 @@ function PromptInput({
       return true
     }
 
-    // Ctrl+G -> open external editor
-    if (key.ctrl && (inputChar === 'g' || inputChar === 'G')) {
+    // Alt+G -> open external editor
+    if (key.meta && (inputChar === 'g' || inputChar === 'G')) {
       void handleExternalEdit()
       return true
     }
@@ -419,6 +429,16 @@ function PromptInput({
   const textInputColumns = useTerminalSize().columns - 6
   const tokenUsage = useMemo(() => countTokens(messages), [messages])
   const showTokenWarning = tokenUsage >= 600000
+  const todos = getTodos()
+  const todoStats = useMemo(() => {
+    const total = todos.length
+    const completed = todos.filter(t => t.status === 'completed').length
+    return { total, completed }
+  }, [todos])
+  const todoShortcutLabel =
+    todoStats.total > 0
+      ? `Todo(${todoStats.completed}/${todoStats.total})`
+      : 'Todo'
 
   return (
     <Box flexDirection="column">
@@ -469,6 +489,7 @@ function PromptInput({
           />
         </Box>
       </Box>
+      {showTodoPanel && <TodoPanel todos={todos} />}
       {!completionActive && suggestions.length === 0 && (exitMessage.show || message.show || showTokenWarning) && (
         <Box
           flexDirection="row"
@@ -517,7 +538,7 @@ function PromptInput({
         marginTop={1}
       >
         <Text dimColor>
-          / 命令  Shift+Tab 模式  Ctrl+G 编辑器  Alt+M 自动模式：
+          / 命令  Alt+P 模式  Alt+G 编辑器  Alt+T {todoShortcutLabel}  Alt+M 自动模式：
           {autoMode ? '开' : '关'}
           {isLoading ? '  Esc 取消' : messages.length > 0 ? '  Esc 历史' : ''}
         </Text>

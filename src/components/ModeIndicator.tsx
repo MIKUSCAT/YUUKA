@@ -35,7 +35,7 @@ export function ModeIndicator({
 
         <Box flexDirection="row" justifyContent="space-between" marginTop={1}>
           <Text color="gray" dimColor>
-            Press Shift+Tab to cycle modes
+            Press Alt+P to cycle modes
           </Text>
           {showTransitionCount && (
             <Text color="gray" dimColor>

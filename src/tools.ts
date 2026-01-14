@@ -15,6 +15,7 @@ import { MultiEditTool } from './tools/MultiEditTool/MultiEditTool'
 import { NotebookEditTool } from './tools/NotebookEditTool/NotebookEditTool'
 import { NotebookReadTool } from './tools/NotebookReadTool/NotebookReadTool'
 import { ThinkTool } from './tools/ThinkTool/ThinkTool'
+import { TodoReadTool } from './tools/TodoReadTool/TodoReadTool'
 import { TodoWriteTool } from './tools/TodoWriteTool/TodoWriteTool'
 import { WebSearchTool } from './tools/WebSearchTool/WebSearchTool'
 import { URLFetcherTool } from './tools/URLFetcherTool/URLFetcherTool'
@@ -44,6 +45,7 @@ export const getAllTools = (): Tool[] => {
     DocReadTool as unknown as Tool,
     DocWriteTool as unknown as Tool,
     ThinkTool as unknown as Tool,
+    TodoReadTool as unknown as Tool,
     TodoWriteTool as unknown as Tool,
     WebSearchTool as unknown as Tool,
     URLFetcherTool as unknown as Tool,

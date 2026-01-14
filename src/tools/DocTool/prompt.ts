@@ -41,22 +41,23 @@ Use this tool when you need to create office documents programmatically.`
 
 export const WRITE_PROMPT = `## DocWrite Tool
 
-This tool creates office documents using Python libraries.
+This tool creates office documents. For **DOCX/PPTX**, it uses **Pandoc (Markdown → DOCX/PPTX)** to keep formatting stable; other formats use Python libraries.
 
 ### Supported Formats
 - **PDF**: Uses reportlab for PDF generation
-- **Word (.docx)**: Uses python-docx for document creation
-- **PowerPoint (.pptx)**: Uses python-pptx for presentation creation
+- **Word (.docx)**: Uses Pandoc for document creation (recommended)
+- **PowerPoint (.pptx)**: Uses Pandoc for presentation creation (recommended)
 - **Excel (.xlsx)**: Uses openpyxl for spreadsheet creation
 
 ⚠️ IMPORTANT
 - Output file extension must be one of: .pdf, .docx, .pptx, .xlsx
 - **.md is NOT supported**. If you want a plain Markdown file, use the Write tool to write a .md file.
+- Install Pandoc on Windows: \`winget install --id JohnMacFarlane.Pandoc -e\`
 
 ### Parameters
 - \`file_path\`: Absolute path for the output document
 - \`content\`: Content to write (text, markdown, or JSON structure)
-- \`template\`: Optional template file path
+- \`template\`: Optional reference file for Pandoc: \`reference.docx\` (DOCX) or \`reference.pptx\` (PPTX)
 - \`options\`: Format-specific options (font, size, etc.)
 
 ### Content Format

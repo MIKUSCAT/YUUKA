@@ -4,6 +4,7 @@ import { relative } from 'node:path'
 import * as React from 'react'
 import { z } from 'zod'
 import { spawn } from 'node:child_process'
+import { promises as fs } from 'node:fs'
 import type { Tool } from '@tool'
 import { getCwd } from '@utils/state'
 import { normalizeFilePath } from '@utils/file'
@@ -26,6 +27,376 @@ type DocWriteOutput = {
     filePath: string
     format: string
     size: number
+  }
+}
+
+function isWindowsDrivePath(filePath: string): boolean {
+  return /^[a-zA-Z]:[\\/]/.test(filePath)
+}
+
+function isWslMountPath(filePath: string): boolean {
+  return /^\/mnt\/[a-zA-Z]\//.test(filePath)
+}
+
+function wslMountPathToWindowsPath(filePath: string): string | null {
+  if (!isWslMountPath(filePath)) return null
+  const driveLetter = filePath[5]
+  const rest = filePath.slice('/mnt/x/'.length)
+  const windowsRest = rest.split('/').join('\\')
+  return `${driveLetter.toUpperCase()}:\\${windowsRest}`
+}
+
+function windowsPathToWslMountPath(filePath: string): string | null {
+  if (!isWindowsDrivePath(filePath)) return null
+  const driveLetter = filePath[0].toLowerCase()
+  const rest = filePath
+    .slice(2)
+    .replace(/^[\\/]+/, '')
+    .split('\\')
+    .join('/')
+  return `/mnt/${driveLetter}/${rest}`
+}
+
+function normalizeInputPath(filePath: string): string {
+  const trimmed = filePath.trim()
+  if (isWindowsDrivePath(trimmed)) return trimmed
+  if (isWslMountPath(trimmed)) {
+    const windowsPath = wslMountPathToWindowsPath(trimmed)
+    return process.platform === 'win32' && windowsPath ? windowsPath : trimmed
+  }
+  return normalizeFilePath(trimmed)
+}
+
+function jsonContentToMarkdown(content: string): string {
+  try {
+    const parsed = JSON.parse(content) as any
+
+    if (parsed && typeof parsed === 'object') {
+      if (Array.isArray(parsed.slides)) {
+        const slides = parsed.slides as any[]
+        const parts: string[] = []
+        for (const slide of slides) {
+          if (!slide || typeof slide !== 'object') continue
+          const slideTitle =
+            typeof slide.title === 'string' && slide.title.trim()
+              ? slide.title.trim()
+              : 'Slide'
+
+          const slideParts: string[] = [`# ${slideTitle}`]
+
+          if (typeof slide.content === 'string' && slide.content.trim()) {
+            slideParts.push(slide.content.trim())
+          }
+
+          if (Array.isArray(slide.bullets) && slide.bullets.length > 0) {
+            for (const bullet of slide.bullets) {
+              if (bullet === null || bullet === undefined) continue
+              const text = String(bullet).trim()
+              if (!text) continue
+              slideParts.push(`- ${text}`)
+            }
+          }
+
+          parts.push(slideParts.join('\n\n'))
+        }
+
+        if (parts.length > 0) return parts.join('\n\n---\n\n') + '\n'
+      }
+
+      if (Array.isArray(parsed.sections)) {
+        const parts: string[] = []
+        for (const section of parsed.sections) {
+          if (!section || typeof section !== 'object') continue
+          if (typeof section.heading === 'string' && section.heading.trim()) {
+            parts.push(`## ${section.heading.trim()}`)
+          }
+          if (typeof section.content === 'string' && section.content.trim()) {
+            parts.push(section.content.trim())
+          }
+        }
+        if (parts.length > 0) return parts.join('\n\n') + '\n'
+      }
+
+      if (Array.isArray(parsed.table)) {
+        const rows = parsed.table as unknown[]
+        const normalized = rows
+          .filter(row => Array.isArray(row))
+          .map(row => (row as unknown[]).map(cell => String(cell ?? '')).map(s => s.replace(/\r?\n/g, ' ')))
+
+        if (normalized.length > 0 && normalized[0]!.length > 0) {
+          const header = normalized[0]!
+          const separator = header.map(() => '---')
+          const body = normalized.slice(1)
+          const toRow = (cells: string[]) => `| ${cells.join(' | ')} |`
+          return [toRow(header), toRow(separator), ...body.map(toRow)].join('\n') + '\n'
+        }
+      }
+    }
+  } catch {
+    // ignore and fallback to plain text
+  }
+
+  return content
+}
+
+function resolvePandocReferencePath(
+  templatePath: string | undefined,
+  expectedExt: '.docx' | '.pptx',
+): { windowsPath: string; localPath: string } | null {
+  if (!templatePath || !templatePath.trim()) return null
+  const normalized = normalizeInputPath(templatePath)
+  if (path.extname(normalized).toLowerCase() !== expectedExt) return null
+
+  const windowsPath = isWindowsDrivePath(normalized)
+    ? normalized
+    : wslMountPathToWindowsPath(normalized)
+  if (!windowsPath) return null
+
+  const localPath =
+    process.platform === 'win32'
+      ? windowsPath
+      : windowsPathToWslMountPath(windowsPath) ?? windowsPath
+
+  return { windowsPath, localPath }
+}
+
+function looksLikeMarkdown(text: string): boolean {
+  if (/\n\s*\n/.test(text)) return true
+  if (/^\s*#{1,6}\s+/m.test(text)) return true
+  if (/^\s*[-*+]\s+/m.test(text)) return true
+  if (/^\s*\d+\.\s+/m.test(text)) return true
+  if (/^\s*```/m.test(text)) return true
+  if (/^\s*>/m.test(text)) return true
+  if (/\|\s*---\s*\|/.test(text)) return true
+  return false
+}
+
+function plainTextToMarkdown(text: string): string {
+  const lines = text.replace(/\r\n/g, '\n').split('\n')
+  const parts: string[] = []
+  for (const line of lines) {
+    if (line.trim().length === 0) {
+      parts.push('')
+      continue
+    }
+    parts.push(line)
+    parts.push('')
+  }
+  return parts.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd() + '\n'
+}
+
+async function runPandoc(pandocArgs: string[]): Promise<{
+  success?: boolean
+  error?: string
+}> {
+  return new Promise(resolve => {
+    const proc = spawn('pandoc', pandocArgs)
+
+    let stdout = ''
+    let stderr = ''
+
+    proc.stdout.on('data', (data: Buffer) => {
+      stdout += data.toString()
+    })
+
+    proc.stderr.on('data', (data: Buffer) => {
+      stderr += data.toString()
+    })
+
+    proc.on('close', (code: number) => {
+      if (code !== 0) {
+        resolve({
+          error: (stderr || stdout || `pandoc exited with code ${code}`).trim(),
+        })
+        return
+      }
+
+      resolve({ success: true })
+    })
+
+    proc.on('error', (err: Error) => {
+      resolve({
+        error:
+          err.message.includes('ENOENT') || err.message.includes('not found')
+            ? '找不到 pandoc。先装：winget install --id JohnMacFarlane.Pandoc -e'
+            : err.message,
+      })
+    })
+  })
+}
+
+async function writeDocxWithPandoc(args: {
+  file_path: string
+  content: string
+  title?: string
+  template?: string
+}): Promise<{ success?: boolean; size?: number; error?: string }> {
+  const normalizedOutput = normalizeInputPath(args.file_path)
+
+  const windowsOutputPath = isWindowsDrivePath(normalizedOutput)
+    ? normalizedOutput
+    : wslMountPathToWindowsPath(normalizedOutput)
+
+  if (!windowsOutputPath) {
+    return {
+      error:
+        '导出 .docx 需要写到 Windows 盘（比如 E:\\... 或 /mnt/e/...），你现在的路径我转不成 Windows 路径。',
+    }
+  }
+
+  const localOutputPath =
+    process.platform === 'win32'
+      ? windowsOutputPath
+      : windowsPathToWslMountPath(windowsOutputPath)
+
+  if (!localOutputPath) {
+    return {
+      error:
+        '导出 .docx 需要写到 /mnt/<盘符>/... 这种路径（让 Windows 侧 pandoc 能访问），你现在的路径不行。',
+    }
+  }
+
+  const outputDir = path.dirname(localOutputPath)
+  await fs.mkdir(outputDir, { recursive: true })
+
+  let markdown = jsonContentToMarkdown(args.content)
+  if (!looksLikeMarkdown(markdown)) {
+    markdown = plainTextToMarkdown(markdown)
+  }
+
+  if (args.title && args.title.trim()) {
+    markdown = `# ${args.title.trim()}\n\n${markdown}`
+  }
+
+  const baseName = path.basename(localOutputPath, path.extname(localOutputPath))
+  const tempMarkdownLocalPath = path.join(
+    outputDir,
+    `.${baseName}.yuuka-docwrite.${Date.now()}.md`,
+  )
+
+  const windowsMarkdownPath =
+    process.platform === 'win32'
+      ? tempMarkdownLocalPath
+      : wslMountPathToWindowsPath(tempMarkdownLocalPath)
+
+  if (!windowsMarkdownPath) {
+    return { error: '创建临时 Markdown 文件失败（路径转 Windows 失败）。' }
+  }
+
+  const referenceDocx = resolvePandocReferencePath(args.template, '.docx')
+
+  try {
+    await fs.writeFile(tempMarkdownLocalPath, markdown, 'utf8')
+
+    const pandocFrom = 'markdown+tex_math_dollars+tex_math_single_backslash+raw_tex'
+    const pandocOutputPath =
+      process.platform === 'win32' ? windowsOutputPath : localOutputPath
+    const pandocInputPath =
+      process.platform === 'win32' ? windowsMarkdownPath : tempMarkdownLocalPath
+
+    const pandocArgs = ['-f', pandocFrom, '-t', 'docx']
+    if (referenceDocx?.localPath) pandocArgs.push('--reference-doc', referenceDocx.localPath)
+
+    pandocArgs.push('-o', pandocOutputPath, pandocInputPath)
+
+    const pandocRes = await runPandoc(pandocArgs)
+    if (pandocRes.error) return pandocRes
+
+    const stat = await fs.stat(localOutputPath)
+    return { success: true, size: stat.size }
+  } finally {
+    try {
+      await fs.unlink(tempMarkdownLocalPath)
+    } catch {
+      // ignore
+    }
+  }
+}
+
+async function writePptxWithPandoc(args: {
+  file_path: string
+  content: string
+  title?: string
+  template?: string
+}): Promise<{ success?: boolean; size?: number; error?: string }> {
+  const normalizedOutput = normalizeInputPath(args.file_path)
+
+  const windowsOutputPath = isWindowsDrivePath(normalizedOutput)
+    ? normalizedOutput
+    : wslMountPathToWindowsPath(normalizedOutput)
+
+  if (!windowsOutputPath) {
+    return {
+      error:
+        '导出 .pptx 需要写到 Windows 盘（比如 E:\\... 或 /mnt/e/...），你现在的路径我转不成 Windows 路径。',
+    }
+  }
+
+  const localOutputPath =
+    process.platform === 'win32'
+      ? windowsOutputPath
+      : windowsPathToWslMountPath(windowsOutputPath)
+
+  if (!localOutputPath) {
+    return {
+      error:
+        '导出 .pptx 需要写到 /mnt/<盘符>/... 这种路径（让 Windows 侧 pandoc 能访问），你现在的路径不行。',
+    }
+  }
+
+  const outputDir = path.dirname(localOutputPath)
+  await fs.mkdir(outputDir, { recursive: true })
+
+  let markdown = jsonContentToMarkdown(args.content)
+  if (!looksLikeMarkdown(markdown)) {
+    markdown = plainTextToMarkdown(markdown)
+  }
+
+  if (args.title && args.title.trim()) {
+    markdown = `# ${args.title.trim()}\n\n${markdown}`
+  }
+
+  const baseName = path.basename(localOutputPath, path.extname(localOutputPath))
+  const tempMarkdownLocalPath = path.join(
+    outputDir,
+    `.${baseName}.yuuka-docwrite.${Date.now()}.md`,
+  )
+
+  const windowsMarkdownPath =
+    process.platform === 'win32'
+      ? tempMarkdownLocalPath
+      : wslMountPathToWindowsPath(tempMarkdownLocalPath)
+
+  if (!windowsMarkdownPath) {
+    return { error: '创建临时 Markdown 文件失败（路径转 Windows 失败）。' }
+  }
+
+  const referencePptx = resolvePandocReferencePath(args.template, '.pptx')
+
+  try {
+    await fs.writeFile(tempMarkdownLocalPath, markdown, 'utf8')
+
+    const pandocFrom = 'markdown+tex_math_dollars+tex_math_single_backslash+raw_tex'
+    const pandocOutputPath =
+      process.platform === 'win32' ? windowsOutputPath : localOutputPath
+    const pandocInputPath =
+      process.platform === 'win32' ? windowsMarkdownPath : tempMarkdownLocalPath
+
+    const pandocArgs = ['-f', pandocFrom, '-t', 'pptx']
+    if (referencePptx?.localPath) pandocArgs.push('--reference-doc', referencePptx.localPath)
+    pandocArgs.push('-o', pandocOutputPath, pandocInputPath)
+
+    const pandocRes = await runPandoc(pandocArgs)
+    if (pandocRes.error) return pandocRes
+
+    const stat = await fs.stat(localOutputPath)
+    return { success: true, size: stat.size }
+  } finally {
+    try {
+      await fs.unlink(tempMarkdownLocalPath)
+    } catch {
+      // ignore
+    }
   }
 }
 
@@ -210,9 +581,49 @@ def write_pptx(file_path, content, title=None):
 def write_xlsx(file_path, content, title=None):
     try:
         from openpyxl import Workbook
-        from openpyxl.styles import Font, Alignment
+        from openpyxl.styles import Font, Alignment, PatternFill
     except ImportError:
         return {"error": "openpyxl not installed. Run: pip install openpyxl"}
+
+    def beautify_sheet(ws):
+        # Freeze header row
+        if ws.max_row and ws.max_row >= 2:
+            ws.freeze_panes = 'A2'
+
+        # Header styling (keep default font, just make it bold + light fill)
+        if ws.max_row and ws.max_row >= 1 and ws.max_column and ws.max_column >= 1:
+            header_font = Font(bold=True)
+            header_fill = PatternFill(fill_type='solid', fgColor='F2F2F2')
+            header_alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+            for col_idx in range(1, ws.max_column + 1):
+                cell = ws.cell(row=1, column=col_idx)
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = header_alignment
+
+            ws.row_dimensions[1].height = 18
+            ws.auto_filter.ref = ws.dimensions
+
+        # Wrap text for all cells
+        wrap_alignment = Alignment(vertical='top', wrap_text=True)
+        for row in ws.iter_rows(min_row=2, max_row=ws.max_row, max_col=ws.max_column):
+            for cell in row:
+                cell.alignment = wrap_alignment
+
+    def auto_adjust_column_width(ws):
+        for col in ws.columns:
+            max_length = 0
+            column = col[0].column_letter
+            for cell in col:
+                try:
+                    if cell.value is None:
+                        continue
+                    length = len(str(cell.value))
+                    if length > max_length:
+                        max_length = length
+                except:
+                    pass
+            ws.column_dimensions[column].width = min(max(max_length + 2, 10), 50)
 
     wb = Workbook()
 
@@ -233,17 +644,8 @@ def write_xlsx(file_path, content, title=None):
                     for col_idx, value in enumerate(row, 1):
                         ws.cell(row=row_idx, column=col_idx, value=value)
 
-                # Auto-adjust column widths
-                for col in ws.columns:
-                    max_length = 0
-                    column = col[0].column_letter
-                    for cell in col:
-                        try:
-                            if len(str(cell.value)) > max_length:
-                                max_length = len(str(cell.value))
-                        except:
-                            pass
-                    ws.column_dimensions[column].width = min(max_length + 2, 50)
+                auto_adjust_column_width(ws)
+                beautify_sheet(ws)
 
         elif isinstance(data, list):
             # Single sheet with list of rows
@@ -255,9 +657,13 @@ def write_xlsx(file_path, content, title=None):
                         ws.cell(row=row_idx, column=col_idx, value=value)
                 else:
                     ws.cell(row=row_idx, column=1, value=str(row))
+            auto_adjust_column_width(ws)
+            beautify_sheet(ws)
         else:
             ws = wb.active
             ws.cell(row=1, column=1, value=str(data))
+            auto_adjust_column_width(ws)
+            beautify_sheet(ws)
 
     except json.JSONDecodeError:
         # Parse CSV-like or tab-separated content
@@ -269,6 +675,8 @@ def write_xlsx(file_path, content, title=None):
             cells = line.split('\\t') if '\\t' in line else line.split(',')
             for col_idx, value in enumerate(cells, 1):
                 ws.cell(row=row_idx, column=col_idx, value=value.strip())
+        auto_adjust_column_width(ws)
+        beautify_sheet(ws)
 
     wb.save(file_path)
     return {"success": True, "size": os.path.getsize(file_path)}
@@ -393,7 +801,7 @@ export const DocWriteTool = {
     )
   },
   async validateInput({ file_path, content }: { file_path: string; content: string }) {
-    const fullFilePath = normalizeFilePath(file_path)
+    const fullFilePath = normalizeInputPath(file_path)
     const ext = path.extname(fullFilePath).toLowerCase()
 
     if (!SUPPORTED_EXTENSIONS.has(ext)) {
@@ -416,15 +824,30 @@ export const DocWriteTool = {
     { file_path, content, title, template }: z.infer<typeof inputSchema>,
     context: any,
   ) {
-    const fullFilePath = normalizeFilePath(file_path)
+    const fullFilePath = normalizeInputPath(file_path)
     const ext = path.extname(fullFilePath).toLowerCase()
 
-    const result = await runPythonScript({
-      file_path: fullFilePath,
-      content,
-      title,
-      template,
-    })
+    const result =
+      ext === '.docx'
+        ? await writeDocxWithPandoc({
+            file_path: fullFilePath,
+            content,
+            title,
+            template,
+          })
+        : ext === '.pptx'
+          ? await writePptxWithPandoc({
+              file_path: fullFilePath,
+              content,
+              title,
+              template,
+            })
+        : await runPythonScript({
+            file_path: fullFilePath,
+            content,
+            title,
+            template,
+          })
 
     if (result.error) {
       throw new Error(result.error)

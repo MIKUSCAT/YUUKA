@@ -1267,7 +1267,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             {
               extension: '.xlsx',
               name: 'Excel Spreadsheet (OpenXML)',
-              capabilities: ['read sheets', 'get as JSON', 'list sheets', 'read ranges'],
+              capabilities: [
+                'read sheets',
+                'get as JSON',
+                'list sheets',
+                'read ranges',
+              ],
             },
             {
               extension: '.xls',
