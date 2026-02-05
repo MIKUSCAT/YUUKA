@@ -77,7 +77,7 @@ export async function executeBashCommands(content: string): Promise<string> {
 export async function resolveFileReferences(content: string): Promise<string> {
   // Match patterns like @src/file.js or @path/to/file.txt
   // Use consistent file mention pattern from mentionProcessor
-  // Exclude agent and ask-model patterns to avoid conflicts
+  // Exclude agent patterns to avoid conflicts
   const fileRefRegex = /@([a-zA-Z0-9/._-]+(?:\.[a-zA-Z0-9]+)?)/g
   const matches = [...content.matchAll(fileRefRegex)]
 
@@ -92,7 +92,7 @@ export async function resolveFileReferences(content: string): Promise<string> {
     const filePath = match[1]
 
     // Skip agent mentions - these are handled by the mention processor
-    if (filePath.startsWith('agent-')) {
+    if (filePath.startsWith('run-agent-') || filePath.startsWith('agent-') || filePath.startsWith('ask-')) {
       continue
     }
 

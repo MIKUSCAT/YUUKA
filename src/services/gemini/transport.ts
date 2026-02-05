@@ -4,6 +4,7 @@ import type {
   GeminiGenerateContentResponse,
   GeminiPart,
 } from './types'
+import { fetch } from 'undici'
 
 const REQUEST_TIMEOUT_MS = 90_000
 const STREAM_IDLE_TIMEOUT_MS = 90_000
@@ -84,7 +85,7 @@ function withConvenienceFields(
 
 type GeminiApiKeyAuthMode = 'x-goog-api-key' | 'query' | 'bearer'
 
-async function readErrorBody(resp: Response): Promise<string> {
+async function readErrorBody(resp: { text: () => Promise<string> }): Promise<string> {
   try {
     return await resp.text()
   } catch {
@@ -249,7 +250,7 @@ export class GeminiTransport {
       apiKeyAuthMode: this.apiKeyAuthMode,
     })
     const headers = this.buildHeaders()
-    let resp: Response
+    let resp: Awaited<ReturnType<typeof fetch>>
     const managed = createManagedAbortController({
       upstream: request.config?.abortSignal,
       requestTimeoutMs: REQUEST_TIMEOUT_MS,
@@ -310,7 +311,7 @@ export class GeminiTransport {
       requestTimeoutMs: REQUEST_TIMEOUT_MS,
     })
 
-    let resp: Response
+    let resp: Awaited<ReturnType<typeof fetch>>
     try {
       resp = await fetch(url, {
         method: 'POST',
@@ -354,7 +355,7 @@ export class GeminiTransport {
     if (contentType.includes('text/event-stream')) {
       // 连接已建立：不限制总时长，改用“空闲超时”避免卡死
       managed.clearRequestTimeout()
-      const reader = stream.getReader()
+      const reader = (stream as ReadableStream<Uint8Array>).getReader()
       const decoder = new TextDecoder()
       let buffer = ''
       let idleTimeoutId: ReturnType<typeof setTimeout> | null = null

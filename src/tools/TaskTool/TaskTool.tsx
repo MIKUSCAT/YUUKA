@@ -188,9 +188,6 @@ export const TaskTool = {
       getMaxThinkingTokens(messages),
     ])
     
-    // Inject model context to prevent self-referential expert consultations
-    taskPrompt.push(`\nIMPORTANT: You are currently running as ${modelToUse}. You do not need to consult ${modelToUse} via AskExpertModel since you ARE ${modelToUse}. Complete tasks directly using your capabilities.`)
-
     let toolUseCount = 0
 
     const getSidechainNumber = memoize(() =>

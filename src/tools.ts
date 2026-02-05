@@ -1,9 +1,7 @@
 import { Tool } from './Tool'
 import { TaskTool } from './tools/TaskTool/TaskTool'
-import { ArchitectTool } from './tools/ArchitectTool/ArchitectTool'
 import { BashTool } from './tools/BashTool/BashTool'
 import { TaskOutputTool } from './tools/TaskOutputTool/TaskOutputTool'
-import { AskExpertModelTool } from './tools/AskExpertModelTool/AskExpertModelTool'
 import { FileEditTool } from './tools/FileEditTool/FileEditTool'
 import { FileReadTool } from './tools/FileReadTool/FileReadTool'
 import { FileWriteTool } from './tools/FileWriteTool/FileWriteTool'
@@ -31,7 +29,6 @@ const ANT_ONLY_TOOLS = [MemoryReadTool as unknown as Tool, MemoryWriteTool as un
 export const getAllTools = (): Tool[] => {
   return [
     TaskTool as unknown as Tool,
-    AskExpertModelTool as unknown as Tool,
     BashTool as unknown as Tool,
     TaskOutputTool as unknown as Tool,
     GlobTool as unknown as Tool,
@@ -55,13 +52,8 @@ export const getAllTools = (): Tool[] => {
 }
 
 export const getTools = memoize(
-  async (enableArchitect?: boolean): Promise<Tool[]> => {
+  async (): Promise<Tool[]> => {
     const tools = [...getAllTools(), ...(await getMCPTools())]
-
-    // Only include Architect tool if enabled via config or CLI flag
-    if (enableArchitect) {
-      tools.push(ArchitectTool as unknown as Tool)
-    }
 
     const isEnabled = await Promise.all(tools.map(tool => tool.isEnabled()))
     const enabledTools = tools.filter((_, i) => isEnabled[i])

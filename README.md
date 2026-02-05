@@ -59,7 +59,6 @@ YUUKA is a personal computer agent that lives in your terminal. It can understan
 ### Core Capabilities
 - **AI-Powered Assistance** - Uses advanced AI models to understand and respond to your requests
 - **Gemini-only** - This version uses Gemini native API only
-- **Expert Model Consultation** - Use `@ask-model-name` to consult specific AI models for specialized analysis
 - **Intelligent Agent System** - Use `@run-agent-name` to delegate tasks to specialized subagents
 - **Code Editing** - Directly edit files with intelligent suggestions and improvements
 - **Codebase Understanding** - Analyzes your project structure and code relationships
@@ -80,9 +79,8 @@ Our state-of-the-art completion system provides unparalleled coding assistance:
 - **Multi-Algorithm Fusion** - Combines 7+ matching algorithms for best results
 
 #### Intelligent Context Detection
-- **No @ Required** - Type `gp5` directly to match `@ask-gpt-5`
-- **Auto-Prefix Addition** - Tab/Enter automatically adds `@` for agents and models
-- **Mixed Completion** - Seamlessly switch between commands, files, agents, and models
+- **Auto-Prefix Addition** - Tab/Enter automatically adds `@` for agents and file references
+- **Mixed Completion** - Seamlessly switch between commands, files, and agents
 - **Smart Prioritization** - Results ranked by relevance and usage frequency
 
 #### Unix Command Optimization
@@ -136,15 +134,7 @@ yuuka -p "explain this function" path/to/file.js
 
 YUUKA supports a powerful @ mention system for intelligent completions:
 
-#### Expert Model Consultation
-```bash
-# Consult specific AI models for expert opinions
-@ask-claude-sonnet-4 How should I optimize this React component for performance?
-@ask-gpt-5 What are the security implications of this authentication method?
-@ask-o1-preview Analyze the complexity of this algorithm
-```
-
-#### Specialized Agent Delegation  
+#### Specialized Agent Delegation
 ```bash
 # Delegate tasks to specialized subagents
 @run-agent-simplicity-auditor Review this code for over-engineering
@@ -160,7 +150,7 @@ YUUKA supports a powerful @ mention system for intelligent completions:
 @.env.example
 ```
 
-The @ mention system provides intelligent completions as you type, showing available models, agents, and files.
+The @ mention system provides intelligent completions as you type, showing available agents and files.
 
 ### AGENTS.md Memory
 
@@ -220,16 +210,10 @@ We designed a unified `ModelManager` system that supports:
   - `quick`: Fast model for simple NLP tasks (security identification, title generation, etc.)
 
 #### 2. **TaskTool Intelligent Task Distribution**
-Our specially designed `TaskTool` (Architect tool) implements:
+Our specially designed `TaskTool` implements:
 - **Subagent Mechanism**: Can launch multiple sub-agents to process tasks in parallel
 - **Model Parameter Passing**: Users can specify which model SubAgents should use in their requests
 - **Default Model Configuration**: SubAgents use the model configured by the `task` pointer by default
-
-#### 3. **AskExpertModel Expert Consultation Tool**
-We specially designed the `AskExpertModel` tool:
-- **Expert Model Invocation**: Allows temporarily calling specific expert models to solve difficult problems during conversations
-- **Model Isolation Execution**: Expert model responses are processed independently without affecting the main conversation flow
-- **Knowledge Integration**: Integrates expert model insights into the current task
 
 #### Intelligent Work Allocation Strategy
 
@@ -246,10 +230,6 @@ We specially designed the `AskExpertModel` tool:
 - These models have strong performance in code generation, file editing, and engineering implementation
 - Support parallel processing of multiple coding tasks through subagents
 
-**Problem Solving**
-- When encountering complex problems, consult expert models like **o3 model**, **Claude Opus 4.1 model**, or **Grok 4 model**
-- Obtain deep technical insights and innovative solutions
-
 #### Practical Application Scenarios
 
 ```bash
@@ -261,9 +241,6 @@ We specially designed the `AskExpertModel` tool:
 
 # Example 3: Parallel Task Processing
 "Use Qwen Coder model as subagent to refactor these three modules simultaneously"
-
-# Example 4: Expert Consultation
-"This memory leak issue is tricky, ask Claude Opus 4.1 model separately for solutions"
 
 # Example 5: Code Review
 "Have Kimi k2 model review the code quality of this PR"
@@ -319,7 +296,6 @@ We specially designed the `AskExpertModel` tool:
 | Parallel Processing | Multiple SubAgents work in parallel | Single-threaded processing |
 | Cost Tracking | Separate statistics for multiple models | Single model cost |
 | Task Model Configuration | Different default models for different purposes | Same model for all tasks |
-| Expert Consultation | AskExpertModel tool | Not supported |
 
 This multi-model collaboration capability makes YUUKA a true **AI Development Workbench**, not just a single AI assistant.
 

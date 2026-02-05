@@ -6,6 +6,7 @@ import type {
 } from './types'
 import { GEMINI_CLI_USER_AGENT } from './codeAssistAuth'
 import { GeminiHttpError } from './transport'
+import { fetch } from 'undici'
 
 const REQUEST_TIMEOUT_MS = 90_000
 const STREAM_IDLE_TIMEOUT_MS = 90_000
@@ -48,7 +49,7 @@ function withConvenienceFields(
   return response
 }
 
-async function readErrorBody(resp: Response): Promise<string> {
+async function readErrorBody(resp: { text: () => Promise<string> }): Promise<string> {
   try {
     return await resp.text()
   } catch {
@@ -259,7 +260,7 @@ export class CodeAssistTransport {
       requestTimeoutMs: REQUEST_TIMEOUT_MS,
     })
 
-    let resp: Response
+    let resp: Awaited<ReturnType<typeof fetch>>
     try {
       resp = await fetch(url, {
         method: 'POST',
@@ -302,7 +303,7 @@ export class CodeAssistTransport {
 
     if (contentType.includes('text/event-stream')) {
       managed.clearRequestTimeout()
-      const reader = stream.getReader()
+      const reader = (stream as ReadableStream<Uint8Array>).getReader()
       const decoder = new TextDecoder()
       let buffer = ''
       let idleTimeoutId: ReturnType<typeof setTimeout> | null = null

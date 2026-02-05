@@ -342,6 +342,66 @@ function migrateMcpServersToGlobalAndNpx(): void {
   }
 }
 
+function mergeNoProxy(existing: string, additions: string[]): string {
+  const items = [...existing.split(','), ...additions]
+    .map(s => s.trim())
+    .filter(Boolean)
+
+  const seen = new Set<string>()
+  const result: string[] = []
+  for (const item of items) {
+    const key = item.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    result.push(item)
+  }
+  return result.join(',')
+}
+
+async function applyGlobalProxyFromConfig(): Promise<void> {
+  try {
+    const globalConfig = getGlobalConfig()
+    const configuredProxy =
+      typeof globalConfig.proxy === 'string' ? globalConfig.proxy.trim() : ''
+
+    const envProxy = String(
+      process.env['YUUKA_PROXY'] ||
+        process.env['HTTPS_PROXY'] ||
+        process.env['HTTP_PROXY'] ||
+        '',
+    ).trim()
+
+    const proxy = configuredProxy || envProxy
+    if (!proxy) return
+
+    // 给其他 HTTP 库兜底（node-fetch 等）
+    if (!process.env['HTTP_PROXY']) process.env['HTTP_PROXY'] = proxy
+    if (!process.env['HTTPS_PROXY']) process.env['HTTPS_PROXY'] = proxy
+
+    // 默认不要代理本地回环地址，避免影响本机服务
+    const existingNoProxy =
+      String(process.env['NO_PROXY'] || process.env['no_proxy'] || '').trim()
+    const noProxy = mergeNoProxy(existingNoProxy, [
+      '127.0.0.1',
+      'localhost',
+      '::1',
+    ])
+    if (noProxy) process.env['NO_PROXY'] = noProxy
+
+    const { EnvHttpProxyAgent, setGlobalDispatcher } = await import('undici')
+    setGlobalDispatcher(
+      new EnvHttpProxyAgent({
+        httpProxy: proxy,
+        httpsProxy: proxy,
+        noProxy,
+      }),
+    )
+  } catch (error) {
+    // 不要打断启动，但把错误写入日志（方便 doctor/调试）
+    logError(error)
+  }
+}
+
 async function setup(cwd: string, safeMode?: boolean): Promise<void> {
   // Set both current and original working directory if --cwd was provided
   if (cwd !== process.cwd()) {
@@ -363,6 +423,9 @@ async function setup(cwd: string, safeMode?: boolean): Promise<void> {
 
   // 迁移：把 MCP servers 从项目配置搬到全局，并把本地 npm run start 形态改成 npx
   migrateMcpServersToGlobalAndNpx()
+
+  // 应用全局代理（用于 Gemini OAuth / Code Assist / fetch 等网络请求）
+  await applyGlobalProxyFromConfig()
 
   // Non-blocking: Start agent watcher in background (don't await)
   ;(async () => {
@@ -518,7 +581,6 @@ ${commandList}`,
       'Override verbose mode setting from config',
       () => true,
     )
-    .option('-e, --enable-architect', 'Enable the Architect tool', () => true)
     .option(
       '-p, --print',
       'Print response and exit (useful for pipes)',
@@ -530,16 +592,14 @@ ${commandList}`,
       () => true,
     )
     .action(
-      async (prompt, { cwd, debug, verbose, enableArchitect, print, safe }) => {
+      async (prompt, { cwd, debug, verbose, print, safe }) => {
         await showSetupScreens(safe, print)
         
         await setup(cwd, safe)
 
         assertMinVersion()
 
-        const tools = await getTools(
-          enableArchitect ?? getCurrentProjectConfig().enableArchitectTool,
-        )
+        const tools = await getTools()
         const inputPrompt = [prompt, stdinContent].filter(Boolean).join('\n')
         if (print) {
           if (!inputPrompt) {
@@ -1426,21 +1486,18 @@ ${commandList}`,
       'A number (0, 1, 2, etc.) or file path to resume a specific conversation',
     )
     .option('-c, --cwd <cwd>', 'The current working directory', String, cwd())
-    .option('-e, --enable-architect', 'Enable the Architect tool', () => true)
     .option('-v, --verbose', 'Do not truncate message output', () => true)
     .option(
       '--safe',
       'Enable strict permission checking mode (default is permissive)',
       () => true,
     )
-    .action(async (identifier, { cwd, enableArchitect, safe, verbose }) => {
+    .action(async (identifier, { cwd, safe, verbose }) => {
       await setup(cwd, safe)
       assertMinVersion()
 
       const [tools, commands, logs] = await Promise.all([
-        getTools(
-          enableArchitect ?? getCurrentProjectConfig().enableArchitectTool,
-        ),
+        getTools(),
         getCommands(),
         loadLogList(CACHE_PATHS.messages()),
       ])

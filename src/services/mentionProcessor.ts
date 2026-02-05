@@ -31,7 +31,6 @@ class MentionProcessorService {
   private static readonly MENTION_PATTERNS = {
     runAgent: /@(run-agent-[\w\-]+)/g,
     agent: /@(agent-[\w\-]+)/g,  // Legacy support
-    askModel: /@(ask-[\w\-]+)/g,
     file: /@([a-zA-Z0-9/._-]+(?:\.[a-zA-Z0-9]+)?)/g
   } as const
 
@@ -58,34 +57,33 @@ class MentionProcessorService {
     if (agentMentions.length > 0) {
       await this.refreshAgentCache()
       
-      for (const { mention, agentType, isAskModel } of agentMentions) {
-        if (isAskModel || this.agentCache.has(agentType)) {
+      for (const { mention, agentType } of agentMentions) {
+        if (this.agentCache.has(agentType)) {
           result.agents.push({
             type: 'agent',
             mention,
             resolved: agentType,
             exists: true,
-            metadata: isAskModel ? { type: 'ask-model' } : undefined
           })
           result.hasAgentMentions = true
           
           // Emit appropriate event based on mention type
-          this.emitAgentMentionEvent(mention, agentType, isAskModel)
+          this.emitAgentMentionEvent(mention, agentType)
         }
       }
     }
     
     // No longer process @xxx format - treat as regular text (emails, etc.)
 
-    // Process file mentions (exclude agent and ask-model mentions)
+    // Process file mentions (exclude agent mentions)
     const fileMatches = [...input.matchAll(MentionProcessorService.MENTION_PATTERNS.file)]
     const processedAgentMentions = new Set(agentMentions.map(am => am.mention))
     
     for (const match of fileMatches) {
       const mention = match[1]
       
-      // Skip if this is an agent or ask-model mention (already processed)
-      if (mention.startsWith('run-agent-') || mention.startsWith('agent-') || mention.startsWith('ask-') || processedAgentMentions.has(mention)) {
+      // Skip if this is an agent mention (already processed)
+      if (mention.startsWith('run-agent-') || mention.startsWith('agent-') || processedAgentMentions.has(mention)) {
         continue
       }
       
@@ -178,17 +176,17 @@ class MentionProcessorService {
 
   /**
    * Extract agent mentions with unified pattern matching
-   * Consolidates run-agent, agent, and ask-model detection logic
+   * Consolidates run-agent and agent detection logic
    */
-  private extractAgentMentions(input: string): Array<{ mention: string; agentType: string; isAskModel: boolean }> {
-    const mentions: Array<{ mention: string; agentType: string; isAskModel: boolean }> = []
+  private extractAgentMentions(input: string): Array<{ mention: string; agentType: string }> {
+    const mentions: Array<{ mention: string; agentType: string }> = []
     
     // Process @run-agent-xxx format (preferred)
     const runAgentMatches = [...input.matchAll(MentionProcessorService.MENTION_PATTERNS.runAgent)]
     for (const match of runAgentMatches) {
       const mention = match[1]
       const agentType = mention.replace(/^run-agent-/, '')
-      mentions.push({ mention, agentType, isAskModel: false })
+      mentions.push({ mention, agentType })
     }
     
     // Process @agent-xxx format (legacy)
@@ -196,14 +194,7 @@ class MentionProcessorService {
     for (const match of agentMatches) {
       const mention = match[1]
       const agentType = mention.replace(/^agent-/, '')
-      mentions.push({ mention, agentType, isAskModel: false })
-    }
-    
-    // Process @ask-model mentions
-    const askModelMatches = [...input.matchAll(MentionProcessorService.MENTION_PATTERNS.askModel)]
-    for (const match of askModelMatches) {
-      const mention = match[1]
-      mentions.push({ mention, agentType: mention, isAskModel: true })
+      mentions.push({ mention, agentType })
     }
     
     return mentions
@@ -213,36 +204,28 @@ class MentionProcessorService {
    * Emit agent mention event with proper typing
    * Centralized event emission to ensure consistency
    */
-  private emitAgentMentionEvent(mention: string, agentType: string, isAskModel: boolean): void {
+  private emitAgentMentionEvent(mention: string, agentType: string): void {
     try {
       const eventData = {
         originalMention: mention,
         timestamp: Date.now(),
       }
 
-      if (isAskModel) {
-        emitReminderEvent('ask-model:mentioned', {
-          ...eventData,
-          modelName: mention,
-        })
-      } else {
-        emitReminderEvent('agent:mentioned', {
-          ...eventData,
-          agentType,
-        })
-      }
+      emitReminderEvent('agent:mentioned', {
+        ...eventData,
+        agentType,
+      })
       
       // Debug log for mention event emission tracking
       debugLogger.info('MENTION_PROCESSOR_EVENT_EMITTED', {
-        type: isAskModel ? 'ask-model' : 'agent',
+        type: 'agent',
         mention,
-        agentType: isAskModel ? undefined : agentType,
+        agentType,
       })
     } catch (error) {
       debugLogger.error('MENTION_PROCESSOR_EVENT_FAILED', {
         mention,
         agentType,
-        isAskModel,
         error: error instanceof Error ? error.message : error,
       })
     }

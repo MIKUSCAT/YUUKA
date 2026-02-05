@@ -37,7 +37,6 @@ export type ProjectConfig = {
   context: Record<string, string>
   contextFiles?: string[]
   dontCrawlDirectory?: boolean
-  enableArchitectTool?: boolean
   mcpContextUris: string[]
   mcpServers?: Record<string, McpServerConfig>
   approvedMcprcServers?: string[]
@@ -56,7 +55,6 @@ const DEFAULT_PROJECT_CONFIG: ProjectConfig = {
   allowedTools: [],
   context: {},
   dontCrawlDirectory: false,
-  enableArchitectTool: false,
   mcpContextUris: [],
   mcpServers: {},
   approvedMcprcServers: [],
@@ -209,6 +207,7 @@ export const GLOBAL_CONFIG_KEYS = [
   'lastOnboardingVersion',
   'lastReleaseNotesSeen',
   'verbose',
+  'proxy',
   'customApiKeyResponses',
   'primaryProvider',
   'preferredNotifChannel',
@@ -224,7 +223,6 @@ export function isGlobalConfigKey(key: string): key is GlobalConfigKey {
 
 export const PROJECT_CONFIG_KEYS = [
   'dontCrawlDirectory',
-  'enableArchitectTool',
   'hasTrustDialogAccepted',
   'hasCompletedProjectOnboarding',
 ] as const
@@ -273,6 +271,9 @@ function extractGlobalConfigFromSettings(settings: GeminiSettings): GlobalConfig
   if (settings.ui?.theme) {
     mergedConfig.theme = settings.ui.theme as ThemeNames
   }
+  if (typeof settings.proxy === 'string' && settings.proxy.trim() && !mergedConfig.proxy) {
+    mergedConfig.proxy = settings.proxy.trim()
+  }
   if (settings.mcpServers && typeof settings.mcpServers === 'object') {
     mergedConfig.mcpServers = settings.mcpServers as any
   }
@@ -290,6 +291,12 @@ function applyGlobalConfigToSettings(
 
   next.ui = next.ui ?? {}
   next.ui.theme = config.theme
+
+  if (config.proxy) {
+    next.proxy = config.proxy
+  } else {
+    delete (next as any).proxy
+  }
 
   // 顶层 mcpServers 优先作为“对外兼容字段”，yuuka 内也可保留（但运行时读顶层）
   if (config.mcpServers) {

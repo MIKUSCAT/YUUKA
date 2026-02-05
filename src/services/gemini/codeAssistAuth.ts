@@ -5,6 +5,7 @@ import { promises as fs } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 import { openBrowser } from '@utils/browser'
+import { fetch } from 'undici'
 
 const OAUTH_CLIENT_ID =
   'REDACTED_OAUTH_CLIENT_ID'
@@ -130,7 +131,7 @@ function buildAuthUrl(options: { redirectUri: string; state: string }): string {
   return `${OAUTH_AUTH_URL}?${params.toString()}`
 }
 
-async function readResponseText(resp: Response): Promise<string> {
+async function readResponseText(resp: { text: () => Promise<string> }): Promise<string> {
   try {
     return await resp.text()
   } catch {

@@ -390,16 +390,6 @@ class SystemReminderService {
       })
     })
 
-    this.addEventListener('ask-model:mentioned', context => {
-      this.createMentionReminder({
-        type: 'ask_model_mention',
-        key: `ask_model_mention_${context.modelName}_${context.timestamp}`,
-        category: 'task',
-        priority: 'high',
-        content: `The user mentioned @${context.modelName}. You MUST use the AskExpertModelTool to consult this specific model for expert opinions and analysis. Provide the user's question or context clearly to get the most relevant response from ${context.modelName}.`,
-        timestamp: context.timestamp
-      })
-    })
   }
 
   public addEventListener(

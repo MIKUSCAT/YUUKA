@@ -6,7 +6,6 @@ import { getCwd } from '@utils/state'
 import { getCommand } from '@commands'
 import { getActiveAgents } from '@utils/agentLoader'
 import { getActiveSkills } from '@utils/skillLoader'
-import { getModelManager } from '@utils/model'
 import { glob } from 'glob'
 import { matchCommands } from '@utils/fuzzyMatcher'
 import { 
@@ -21,7 +20,7 @@ import type { Command } from '@commands'
 export interface UnifiedSuggestion {
   value: string
   displayValue: string
-  type: 'command' | 'agent' | 'file' | 'ask'
+  type: 'command' | 'agent' | 'file'
   icon?: string
   score: number
   metadata?: any
@@ -236,7 +235,7 @@ export function useUnifiedCompletion({
         return null
       }
       
-      // Trigger completion for @mentions (agents, ask-models, files)
+      // Trigger completion for @mentions (agents, files)
       return {
         type: 'agent', // This will trigger mixed agent+file completion
         prefix: content,
@@ -508,34 +507,6 @@ export function useUnifiedCompletion({
   // Agent suggestions cache
   const [agentSuggestions, setAgentSuggestions] = useState<UnifiedSuggestion[]>([])
   
-  // Model suggestions cache
-  const [modelSuggestions, setModelSuggestions] = useState<UnifiedSuggestion[]>([])
-
-  // Load model suggestions
-  useEffect(() => {
-    try {
-      const modelManager = getModelManager()
-      const allModels = modelManager.getAllAvailableModelNames()
-      
-	    const suggestions = allModels.map(modelId => {
-	      // Professional and clear description for expert model consultation
-	      return {
-	        value: `ask-${modelId}`,
-	        displayValue: `ask-${modelId} :: Consult ${modelId} for expert opinion and specialized analysis`,
-	        type: 'ask' as const,
-	        score: 90, // Higher than agents - put ask-models on top
-	        metadata: { modelId },
-	      }
-	    })
-      
-      setModelSuggestions(suggestions)
-    } catch (error) {
-      console.warn('[useUnifiedCompletion] Failed to load models:', error)
-      // No fallback - rely on dynamic loading only
-      setModelSuggestions([])
-    }
-  }, [])
-  
   // Load agent suggestions on mount
   useEffect(() => {
     getActiveAgents().then(agents => {
@@ -606,14 +577,14 @@ export function useUnifiedCompletion({
           shortDesc = findSmartBreak(config.whenToUse, 80)
         }
         
-	        return {
-	          value: `run-agent-${config.agentType}`,
-	          displayValue: `run-agent-${config.agentType} :: ${shortDesc}`, // run-agent前缀 + 简洁描述
-	          type: 'agent' as const,
-	          score: 85, // Lower than ask-models
-	          metadata: config,
-	        }
-      })
+		        return {
+		          value: `run-agent-${config.agentType}`,
+		          displayValue: `run-agent-${config.agentType} :: ${shortDesc}`, // run-agent前缀 + 简洁描述
+		          type: 'agent' as const,
+		          score: 85,
+		          metadata: config,
+		        }
+	      })
       // Agents loaded successfully
       setAgentSuggestions(suggestions)
     }).catch((error) => {
@@ -642,17 +613,11 @@ export function useUnifiedCompletion({
 
   // Generate agent and model suggestions using fuzzy matching
   const generateMentionSuggestions = useCallback((prefix: string): UnifiedSuggestion[] => {
-    // Combine agent and model suggestions
-    const allSuggestions = [...agentSuggestions, ...modelSuggestions]
+    const allSuggestions = agentSuggestions
     
     if (!prefix) {
       // Show all suggestions when prefix is empty (for single @)
-      return allSuggestions.sort((a, b) => {
-        // Ask models first (higher score), then agents
-        if (a.type === 'ask' && b.type === 'agent') return -1
-        if (a.type === 'agent' && b.type === 'ask') return 1
-        return b.score - a.score
-      })
+      return allSuggestions.sort((a, b) => b.score - a.score)
     }
     
     // Use fuzzy matching for intelligent completion
@@ -669,14 +634,11 @@ export function useUnifiedCompletion({
         }
       })
       .sort((a, b) => {
-        // Ask models first (for equal scores), then agents
-        if (a.type === 'ask' && b.type === 'agent') return -1
-        if (a.type === 'agent' && b.type === 'ask') return 1
         return b.score - a.score
       })
     
     return fuzzyResults
-  }, [agentSuggestions, modelSuggestions])
+  }, [agentSuggestions])
 
   // Unix-style path completion - preserves user input semantics
   const generateFileSuggestions = useCallback((prefix: string, isAtReference: boolean = false): UnifiedSuggestion[] => {
@@ -825,7 +787,6 @@ export function useUnifiedCompletion({
     if (!matchFound) return 0
     
     // Type preferences (small bonus)
-    if (suggestion.type === 'ask') score += 2
     if (suggestion.type === 'agent') score += 1
     
     return score
@@ -835,7 +796,7 @@ export function useUnifiedCompletion({
   const generateSmartMentionSuggestions = useCallback((prefix: string, sourceContext: 'file' | 'agent' = 'file'): UnifiedSuggestion[] => {
     if (!prefix || prefix.length < 2) return []
     
-    const allSuggestions = [...agentSuggestions, ...modelSuggestions]
+    const allSuggestions = agentSuggestions
     
     return allSuggestions
       .map(suggestion => {
@@ -855,7 +816,7 @@ export function useUnifiedCompletion({
       .filter(Boolean)
       .sort((a, b) => b.score - a.score)
       .slice(0, 5)
-  }, [agentSuggestions, modelSuggestions, calculateMatchScore])
+  }, [agentSuggestions, calculateMatchScore])
 
   // Generate all suggestions based on context
   const generateSuggestions = useCallback((context: CompletionContext): UnifiedSuggestion[] => {
@@ -953,11 +914,9 @@ export function useUnifiedCompletion({
     if (context.type === 'command') {
       completion = `/${suggestion.value} `
     } else if (context.type === 'agent') {
-	      // 万能@引用：根据建议类型决定补全格式
-	      if (suggestion.type === 'agent') {
-	        completion = `@${suggestion.value} ` // 代理补全
-      } else if (suggestion.type === 'ask') {
-        completion = `@${suggestion.value} ` // Ask模型补全
+		      // 万能@引用：根据建议类型决定补全格式
+		      if (suggestion.type === 'agent') {
+		        completion = `@${suggestion.value} ` // 代理补全
       } else {
         // File reference in @mention context - no space for directories to allow expansion
         const isDirectory = suggestion.value.endsWith('/')
@@ -1140,11 +1099,7 @@ export function useUnifiedCompletion({
         let completion: string
 
         if (state.context.type === 'agent') {
-          if (selectedSuggestion.type === 'agent' || selectedSuggestion.type === 'ask') {
-            completion = `@${selectedSuggestion.value} `
-          } else {
-            completion = `@${selectedSuggestion.value} `
-          }
+          completion = `@${selectedSuggestion.value} `
         } else if (selectedSuggestion.isSmartMatch) {
           completion = `@${selectedSuggestion.value} `
         } else {

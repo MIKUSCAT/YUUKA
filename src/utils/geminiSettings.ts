@@ -22,6 +22,7 @@ export type GeminiSettings = {
   model?: {
     name?: string
   }
+  proxy?: string
   mcpServers?: unknown
   ui?: {
     theme?: string
