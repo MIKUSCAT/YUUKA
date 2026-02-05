@@ -1,8 +1,7 @@
 /**
  * Agent configuration loader
  * Loads agent configurations from markdown files with YAML frontmatter.
- * Maintains compatibility with Claude Code `.claude` agent directories while
- * prioritizing Kode-specific overrides.
+ * Maintains compatibility with Claude Code `.claude` agent directories.
  */
 
 import { existsSync, readFileSync, readdirSync, statSync, watch, FSWatcher } from 'fs'
@@ -11,9 +10,6 @@ import { homedir } from 'os'
 import matter from 'gray-matter'
 import { getCwd } from './state'
 import { memoize } from 'lodash-es'
-
-// Track warned agents to avoid spam
-const warnedAgents = new Set<string>()
 
 export interface AgentConfig {
   agentType: string          // Agent identifier (matches subagent_type)
@@ -94,12 +90,7 @@ async function scanAgentDirectory(dirPath: string, location: 'user' | 'project')
           continue
         }
         
-        // Silently ignore deprecated 'model' field - no warnings by default
-        // Only warn if KODE_DEBUG_AGENTS environment variable is set
-        if (frontmatter.model && !frontmatter.model_name && !warnedAgents.has(frontmatter.name) && process.env.KODE_DEBUG_AGENTS) {
-          console.warn(`⚠️ Agent ${frontmatter.name}: 'model' field is deprecated and ignored. Use 'model_name' instead, or omit to use default 'task' model.`)
-          warnedAgents.add(frontmatter.name)
-        }
+        // Silently ignore deprecated 'model' field.
         
         // Build agent config
         const agent: AgentConfig = {
@@ -236,7 +227,7 @@ export async function startAgentWatcher(onChange?: () => void): Promise<void> {
     if (existsSync(dirPath)) {
       const watcher = watch(dirPath, { recursive: false }, async (eventType, filename) => {
         if (filename && filename.endsWith('.md')) {
-          console.log(`🔄 Agent configuration changed in ${label}: ${filename}`)
+          console.log(`Agent configuration changed in ${label}: ${filename}`)
           clearAgentCache()
           // Also clear any other related caches
           getAllAgents.cache?.clear?.()

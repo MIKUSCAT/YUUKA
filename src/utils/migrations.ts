@@ -52,8 +52,7 @@ function migrateHistoryFromSettings(settings: any, projectRoot: string): boolean
   const existingHistory = coerceHistory(readJsonFile(historyFilePath))
 
   const yuukaLegacy = coerceHistory(settings?.yuuka?.project?.history)
-  const kodeLegacy = coerceHistory(settings?.kode?.project?.history)
-  const legacyHistory = yuukaLegacy.length > 0 ? yuukaLegacy : kodeLegacy
+  const legacyHistory = yuukaLegacy
 
   let changed = false
 
@@ -69,10 +68,6 @@ function migrateHistoryFromSettings(settings: any, projectRoot: string): boolean
 
   if (settings?.yuuka?.project && 'history' in settings.yuuka.project) {
     delete settings.yuuka.project.history
-    changed = true
-  }
-  if (settings?.kode?.project && 'history' in settings.kode.project) {
-    delete settings.kode.project.history
     changed = true
   }
 
@@ -106,14 +101,6 @@ function migrateToolNamesInAllowedTools(settings: any): boolean {
     settings.yuuka = settings.yuuka ?? {}
     settings.yuuka.project = settings.yuuka.project ?? {}
     settings.yuuka.project.allowedTools = yuukaNext
-    changed = true
-  }
-
-  const kodeNext = migrate(settings?.kode?.project?.allowedTools)
-  if (kodeNext) {
-    settings.kode = settings.kode ?? {}
-    settings.kode.project = settings.kode.project ?? {}
-    settings.kode.project.allowedTools = kodeNext
     changed = true
   }
 

@@ -23,7 +23,7 @@ const AUTO_COMPACT_THRESHOLD_RATIO = 0.92
  */
 async function getCompressionModelContextLimit(): Promise<number> {
   try {
-    // 🔧 Fix: Use ModelManager instead of legacy config
+    // Fix: Use ModelManager instead of legacy config
     const modelManager = getModelManager()
     const modelProfile = modelManager.getModel('main')
 

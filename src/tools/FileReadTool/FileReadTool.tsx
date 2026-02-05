@@ -18,6 +18,7 @@ import {
 import { logError } from '@utils/log'
 import { getTheme } from '@utils/theme'
 import { emitReminderEvent } from '@services/systemReminder'
+import { PRODUCT_COMMAND } from '@constants/product'
 import {
   recordFileRead,
   generateFileModificationReminder,
@@ -38,6 +39,16 @@ const IMAGE_EXTENSIONS = new Set([
   '.gif',
   '.bmp',
   '.webp',
+])
+
+const OFFICE_DOCUMENT_EXTENSIONS = new Set([
+  '.pdf',
+  '.docx',
+  '.doc',
+  '.pptx',
+  '.ppt',
+  '.xlsx',
+  '.xls',
 ])
 
 // Maximum dimensions for images
@@ -168,6 +179,23 @@ export const FileReadTool = {
     const stats = fileCheck.stats!
     const fileSize = stats.size
     const ext = path.extname(fullFilePath).toLowerCase()
+
+    if (OFFICE_DOCUMENT_EXTENSIONS.has(ext)) {
+      return {
+        result: false,
+        message: [
+          `Read 工具不支持直接读取 ${ext} 这类 Office/二进制文档（会读出乱码/不完整）。`,
+          '',
+          '请先配置 MCP（全局）：',
+          `  ${PRODUCT_COMMAND} mcp add office-reader npx -y yuuka-mcp-office-reader`,
+          `  ${PRODUCT_COMMAND} mcp list`,
+          '',
+          '然后用 MCP 工具读取：',
+          '- mcp__office-reader__read_document',
+          '- mcp__office-reader__read_excel_sheet（Excel 结构化）',
+        ].join('\n'),
+      }
+    }
 
     // Skip size check for image files - they have their own size limits
     if (!IMAGE_EXTENSIONS.has(ext)) {

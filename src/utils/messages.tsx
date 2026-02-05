@@ -863,7 +863,7 @@ export function normalizeContentFromAPI(
 ): APIMessage['content'] {
   const filteredContent = content.filter(
     _ => {
-      // 🔧 Fix: Filter out thinking and redacted_thinking blocks to prevent them from being rendered
+      // Fix: Filter out thinking and redacted_thinking blocks to prevent them from being rendered
       if ((_.type as string) === 'thinking' || (_.type as string) === 'redacted_thinking') {
         return false
       }

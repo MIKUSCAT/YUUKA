@@ -120,7 +120,7 @@ export const MultiEditTool = {
   renderToolUseRejectedMessage() {
     return (
       <Box>
-        <Text color={getTheme().error}>⚠ Edit request rejected</Text>
+        <Text color={getTheme().error}>Edit request rejected</Text>
       </Box>
     )
   },

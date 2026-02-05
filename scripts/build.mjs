@@ -66,7 +66,7 @@ function fixRelativeImports(dir) {
 }
 
 async function main() {
-  console.log('🚀 Building YUUKA CLI for cross-platform compatibility...')
+  console.log('Building YUUKA CLI for cross-platform compatibility...')
   
   // 清空旧构建产物，避免遗留文件导致“看起来没更新/运行时引用错文件”
   if (existsSync(OUT_DIR)) {
@@ -110,7 +110,7 @@ async function main() {
   const mainEntrypoint = join(OUT_DIR, 'index.js')
   writeFileSync(mainEntrypoint, `#!/usr/bin/env node
 import('./entrypoints/cli.js').catch(err => {
-  console.error('❌ Failed to load CLI:', err.message);
+  console.error('ERROR: Failed to load CLI:', err.message);
   process.exit(1);
 });
 `)
@@ -118,9 +118,9 @@ import('./entrypoints/cli.js').catch(err => {
   // Copy yoga.wasm alongside outputs
   try {
     cpSync('yoga.wasm', join(OUT_DIR, 'yoga.wasm'))
-    console.log('✅ yoga.wasm copied to dist')
+    console.log('yoga.wasm copied to dist')
   } catch (err) {
-    console.warn('⚠️  Could not copy yoga.wasm:', err.message)
+    console.warn('WARN: Could not copy yoga.wasm:', err.message)
   }
 
   // Create cross-platform CLI wrapper
@@ -136,21 +136,21 @@ const path = require('path');
 const yuukaDir = __dirname;
 const distPath = path.join(yuukaDir, 'dist', 'index.js');
 
-// Check if we have a built version
-if (!existsSync(distPath)) {
-  console.error('❌ Built files not found. Run "npm run build" first.');
-  process.exit(1);
-}
+	// Check if we have a built version
+	if (!existsSync(distPath)) {
+	  console.error('ERROR: Built files not found. Run "npm run build" first.');
+	  process.exit(1);
+	}
 
 const proc = spawn('node', [distPath, ...process.argv.slice(2)], {
   stdio: 'inherit',
   cwd: process.cwd()  // Use current working directory, not installation directory
 });
 
-proc.on('error', (err) => {
-  console.error('❌ Failed to start with Node.js:', err.message);
-  process.exit(1);
-});
+	proc.on('error', (err) => {
+	  console.error('ERROR: Failed to start with Node.js:', err.message);
+	  process.exit(1);
+	});
 
 proc.on('close', (code) => {
   process.exit(code);
@@ -162,9 +162,9 @@ proc.on('close', (code) => {
   // Make cli.cjs executable
   try {
     chmodSync('cli.cjs', 0o755);
-    console.log('✅ cli.cjs made executable');
+    console.log('cli.cjs made executable');
   } catch (err) {
-    console.warn('⚠️  Could not make cli.cjs executable:', err.message);
+    console.warn('WARN: Could not make cli.cjs executable:', err.message);
   }
 
   // Create .npmrc file
@@ -175,8 +175,8 @@ save-exact=true
 
   writeFileSync('.npmrc', npmrcContent);
 
-  console.log('✅ Build completed for cross-platform compatibility!')
-  console.log('📋 Generated files:')
+  console.log('Build completed for cross-platform compatibility!')
+  console.log('Generated files:')
   console.log('  - dist/ (ESM modules)')
   console.log('  - dist/index.js (main entrypoint)')
   console.log('  - dist/entrypoints/cli.js (CLI main)')
@@ -185,6 +185,6 @@ save-exact=true
 }
 
 main().catch(err => {
-  console.error('❌ Build failed:', err)
+  console.error('ERROR: Build failed:', err)
   process.exit(1)
 })

@@ -1167,7 +1167,7 @@ function validateFilePath(filePath: string): void {
 // Create and run the server
 const server = new Server(
   {
-    name: 'mcp-office-reader',
+    name: 'yuuka-mcp-office-reader',
     version: '1.0.0',
   },
   {

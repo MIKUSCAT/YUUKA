@@ -18,7 +18,7 @@ interface InvalidConfigDialogProps {
 }
 
 /**
- * Dialog shown when the Kode config file contains invalid JSON
+ * Dialog shown when the YUUKA config file contains invalid JSON
  */
 function InvalidConfigDialog({
   filePath,

@@ -5,7 +5,8 @@ import * as React from 'react'
 const auth = {
   type: 'local-jsx',
   name: 'auth',
-  description: '配置 Gemini Base URL / API Key（写入当前项目 ./.gemini/settings.json）',
+  description:
+    '配置 Gemini API Key / Google OAuth（写入 ~/.gemini/settings.json 和 ~/.gemini/oauth_creds.json）',
   isEnabled: true,
   isHidden: false,
   async call(onDone) {

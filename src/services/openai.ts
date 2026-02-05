@@ -125,7 +125,7 @@ const GPT5_ERROR_HANDLERS: ErrorHandler[] = [
       )
     },
     fix: async opts => {
-      console.log(`🔧 GPT-5 Fix: Converting max_tokens (${opts.max_tokens}) to max_completion_tokens`)
+      console.log(`GPT-5 Fix: Converting max_tokens (${opts.max_tokens}) to max_completion_tokens`)
       if ('max_tokens' in opts) {
         opts.max_completion_tokens = opts.max_tokens
         delete opts.max_tokens
@@ -142,7 +142,7 @@ const GPT5_ERROR_HANDLERS: ErrorHandler[] = [
       )
     },
     fix: async opts => {
-      console.log(`🔧 GPT-5 Fix: Adjusting temperature from ${opts.temperature} to 1`)
+      console.log(`GPT-5 Fix: Adjusting temperature from ${opts.temperature} to 1`)
       opts.temperature = 1
     },
   },
@@ -349,11 +349,11 @@ function applyModelSpecificTransformations(
   const features = getModelFeatures(opts.model)
   const isGPT5 = opts.model.toLowerCase().includes('gpt-5')
 
-  // 🔥 Enhanced GPT-5 Detection and Transformation
+  // Enhanced GPT-5 Detection and Transformation
   if (isGPT5 || features.usesMaxCompletionTokens) {
     // Force max_completion_tokens for all GPT-5 models
     if ('max_tokens' in opts && !('max_completion_tokens' in opts)) {
-      console.log(`🔧 Transforming max_tokens (${opts.max_tokens}) to max_completion_tokens for ${opts.model}`)
+      console.log(`Transforming max_tokens (${opts.max_tokens}) to max_completion_tokens for ${opts.model}`)
       opts.max_completion_tokens = opts.max_tokens
       delete opts.max_tokens
     }
@@ -362,7 +362,7 @@ function applyModelSpecificTransformations(
     if (features.requiresTemperatureOne && 'temperature' in opts) {
       if (opts.temperature !== 1 && opts.temperature !== undefined) {
         console.log(
-          `🔧 GPT-5 temperature constraint: Adjusting temperature from ${opts.temperature} to 1 for ${opts.model}`
+          `GPT-5 temperature constraint: Adjusting temperature from ${opts.temperature} to 1 for ${opts.model}`
         )
         opts.temperature = 1
       }
@@ -421,7 +421,7 @@ async function tryWithEndpointFallback(
   headers: Record<string, string>,
   provider: string,
   proxy: any,
-  signal?: AbortSignal, // 🔧 Add AbortSignal support
+  signal?: AbortSignal, // Add AbortSignal support
 ): Promise<{ response: Response; endpoint: string }> {
   const endpointsToTry = []
 
@@ -440,7 +440,7 @@ async function tryWithEndpointFallback(
         headers,
         body: JSON.stringify(opts.stream ? { ...opts, stream: true } : opts),
         dispatcher: proxy,
-        signal: signal, // 🔧 Connect AbortSignal to fetch call
+        signal: signal, // Connect AbortSignal to fetch call
       })
 
       // If successful, return immediately
@@ -480,7 +480,7 @@ export async function getCompletionWithProfile(
   opts: OpenAI.ChatCompletionCreateParams,
   attempt: number = 0,
   maxAttempts: number = 10,
-  signal?: AbortSignal, // 🔧 CRITICAL FIX: Add AbortSignal support
+  signal?: AbortSignal, // CRITICAL FIX: Add AbortSignal support
 ): Promise<OpenAI.ChatCompletion | AsyncIterable<OpenAI.ChatCompletionChunk>> {
   if (attempt >= maxAttempts) {
     throw new Error('Max attempts reached')
@@ -508,7 +508,7 @@ export async function getCompletionWithProfile(
   applyModelSpecificTransformations(opts)
   await applyModelErrorFixes(opts, baseURL || '')
 
-  // 🔥 REAL-TIME API CALL DEBUG - 使用全局日志系统
+  // REAL-TIME API CALL DEBUG - 使用全局日志系统
   debugLogger.api('OPENAI_API_CALL_START', {
     endpoint: baseURL || 'DEFAULT_OPENAI',
     model: opts.model,
@@ -587,7 +587,7 @@ export async function getCompletionWithProfile(
           headers,
           provider,
           proxy,
-          signal, // 🔧 Pass AbortSignal to endpoint fallback
+          signal, // Pass AbortSignal to endpoint fallback
         )
         response = result.response
         usedEndpoint = result.endpoint
@@ -597,18 +597,18 @@ export async function getCompletionWithProfile(
           headers,
           body: JSON.stringify({ ...opts, stream: true }),
           dispatcher: proxy,
-          signal: signal, // 🔧 CRITICAL FIX: Connect AbortSignal to fetch call
+          signal: signal, // CRITICAL FIX: Connect AbortSignal to fetch call
         })
         usedEndpoint = endpoint
       }
 
       if (!response.ok) {
-        // 🔧 CRITICAL FIX: Check abort signal BEFORE showing retry message
+        // CRITICAL FIX: Check abort signal BEFORE showing retry message
         if (signal?.aborted) {
           throw new Error('Request cancelled by user')
         }
         
-        // 🔥 NEW: Parse error message to detect and handle specific API errors
+        // NEW: Parse error message to detect and handle specific API errors
         try {
           const errorData = await response.json()
           // Type guard for error data structure
@@ -625,14 +625,14 @@ export async function getCompletionWithProfile(
           
           for (const handler of handlers) {
             if (handler.detect(errorMessage)) {
-              console.log(`🔧 Detected ${handler.type} error for ${opts.model}: ${errorMessage}`)
+              console.log(`Detected ${handler.type} error for ${opts.model}: ${errorMessage}`)
               
               // Store this error for future requests
               setModelError(baseURL || '', opts.model, handler.type, errorMessage)
               
               // Apply the fix and retry immediately
               await handler.fix(opts)
-              console.log(`🔧 Applied fix for ${handler.type}, retrying...`)
+              console.log(`Applied fix for ${handler.type}, retrying...`)
               
               return getCompletionWithProfile(
                 modelProfile,
@@ -645,7 +645,7 @@ export async function getCompletionWithProfile(
           }
           
           // If no specific handler found, log the error for debugging
-          console.log(`⚠️  Unhandled API error (${response.status}): ${errorMessage}`)
+          console.log(`WARN: Unhandled API error (${response.status}): ${errorMessage}`)
           
           // Log API error using unified logger
           logAPIError({
@@ -659,7 +659,7 @@ export async function getCompletionWithProfile(
           })
         } catch (parseError) {
           // If we can't parse the error, fall back to generic retry
-          console.log(`⚠️  Could not parse error response (${response.status})`)
+          console.log(`WARN: Could not parse error response (${response.status})`)
           
           // Log parse error
           logAPIError({
@@ -691,7 +691,7 @@ export async function getCompletionWithProfile(
           opts,
           attempt + 1,
           maxAttempts,
-          signal, // 🔧 Pass AbortSignal to recursive call
+          signal, // Pass AbortSignal to recursive call
         )
       }
 
@@ -725,7 +725,7 @@ export async function getCompletionWithProfile(
         headers,
         provider,
         proxy,
-        signal, // 🔧 Pass AbortSignal to endpoint fallback
+        signal, // Pass AbortSignal to endpoint fallback
       )
       response = result.response
       usedEndpoint = result.endpoint
@@ -735,18 +735,18 @@ export async function getCompletionWithProfile(
         headers,
         body: JSON.stringify(opts),
         dispatcher: proxy,
-        signal: signal, // 🔧 CRITICAL FIX: Connect AbortSignal to non-streaming fetch call
+        signal: signal, // CRITICAL FIX: Connect AbortSignal to non-streaming fetch call
       })
       usedEndpoint = endpoint
     }
 
     if (!response.ok) {
-      // 🔧 CRITICAL FIX: Check abort signal BEFORE showing retry message
+      // CRITICAL FIX: Check abort signal BEFORE showing retry message
       if (signal?.aborted) {
         throw new Error('Request cancelled by user')
       }
       
-      // 🔥 NEW: Parse error message to detect and handle specific API errors
+      // NEW: Parse error message to detect and handle specific API errors
       try {
         const errorData = await response.json()
         // Type guard for error data structure
@@ -763,14 +763,14 @@ export async function getCompletionWithProfile(
         
         for (const handler of handlers) {
           if (handler.detect(errorMessage)) {
-            console.log(`🔧 Detected ${handler.type} error for ${opts.model}: ${errorMessage}`)
+            console.log(`Detected ${handler.type} error for ${opts.model}: ${errorMessage}`)
             
             // Store this error for future requests
             setModelError(baseURL || '', opts.model, handler.type, errorMessage)
             
             // Apply the fix and retry immediately
             await handler.fix(opts)
-            console.log(`🔧 Applied fix for ${handler.type}, retrying...`)
+            console.log(`Applied fix for ${handler.type}, retrying...`)
             
             return getCompletionWithProfile(
               modelProfile,
@@ -783,10 +783,10 @@ export async function getCompletionWithProfile(
         }
         
         // If no specific handler found, log the error for debugging
-        console.log(`⚠️  Unhandled API error (${response.status}): ${errorMessage}`)
+        console.log(`WARN: Unhandled API error (${response.status}): ${errorMessage}`)
       } catch (parseError) {
         // If we can't parse the error, fall back to generic retry
-        console.log(`⚠️  Could not parse error response (${response.status})`)
+        console.log(`WARN: Could not parse error response (${response.status})`)
       }
       
       const delayMs = getRetryDelay(attempt)
@@ -807,20 +807,20 @@ export async function getCompletionWithProfile(
         opts,
         attempt + 1,
         maxAttempts,
-        signal, // 🔧 Pass AbortSignal to recursive call
+        signal, // Pass AbortSignal to recursive call
       )
     }
 
     const responseData = (await response.json()) as OpenAI.ChatCompletion
     return responseData
   } catch (error) {
-    // 🔧 CRITICAL FIX: Check abort signal BEFORE showing retry message
+    // CRITICAL FIX: Check abort signal BEFORE showing retry message
     if (signal?.aborted) {
       throw new Error('Request cancelled by user')
     }
     
     if (attempt < maxAttempts) {
-      // 🔧 Double-check abort status to avoid showing misleading retry message
+      // Double-check abort status to avoid showing misleading retry message
       if (signal?.aborted) {
         throw new Error('Request cancelled by user')
       }
@@ -843,7 +843,7 @@ export async function getCompletionWithProfile(
         opts,
         attempt + 1,
         maxAttempts,
-        signal, // 🔧 Pass AbortSignal to recursive call
+        signal, // Pass AbortSignal to recursive call
       )
     }
     throw error
@@ -999,14 +999,14 @@ export async function callGPT5ResponsesAPI(
 
 /**
  * Convert Responses API response to Chat Completion format for compatibility
- * 🔥 Enhanced for GPT-5 with reasoning summary support
+ * Enhanced for GPT-5 with reasoning summary support
  */
 function convertResponsesAPIToChatCompletion(responsesData: any): any {
   // Extract content from Responses API format
   let outputText = responsesData.output_text || ''
   const usage = responsesData.usage || {}
   
-  // 🚀 GPT-5 Reasoning Summary Integration
+  // GPT-5 Reasoning Summary Integration
   // If reasoning summary is available, prepend it to the output for transparency
   if (responsesData.output && Array.isArray(responsesData.output)) {
     const reasoningItems = responsesData.output.filter(item => item.type === 'reasoning' && item.summary)
@@ -1024,7 +1024,7 @@ function convertResponsesAPIToChatCompletion(responsesData: any): any {
         .join('\n\n')
       
       if (reasoningSummary) {
-        outputText = `**🧠 Reasoning Process:**\n${reasoningSummary}\n\n**📝 Response:**\n${mainContent}`
+        outputText = `**Reasoning Process:**\n${reasoningSummary}\n\n**Response:**\n${mainContent}`
       } else {
         outputText = mainContent
       }
@@ -1042,7 +1042,7 @@ function convertResponsesAPIToChatCompletion(responsesData: any): any {
         message: {
           role: 'assistant',
           content: outputText,
-          // 🚀 Include reasoning metadata if available
+          // Include reasoning metadata if available
           ...(responsesData.reasoning && {
             reasoning: {
               effort: responsesData.reasoning.effort,
@@ -1057,7 +1057,7 @@ function convertResponsesAPIToChatCompletion(responsesData: any): any {
       prompt_tokens: usage.input_tokens || 0,
       completion_tokens: usage.output_tokens || 0,
       total_tokens: (usage.input_tokens || 0) + (usage.output_tokens || 0),
-      // 🔧 GPT-5 Enhanced Usage Details
+      // GPT-5 Enhanced Usage Details
       prompt_tokens_details: {
         cached_tokens: usage.input_tokens_details?.cached_tokens || 0,
       },
@@ -1070,7 +1070,7 @@ function convertResponsesAPIToChatCompletion(responsesData: any): any {
 
 /**
  * Enhanced getCompletionWithProfile that supports GPT-5 Responses API
- * 🔥 Optimized for both official OpenAI and third-party GPT-5 providers
+ * Optimized for both official OpenAI and third-party GPT-5 providers
  */
 async function getGPT5CompletionWithProfile(
   modelProfile: any,
@@ -1083,7 +1083,7 @@ async function getGPT5CompletionWithProfile(
   const isOfficialOpenAI = !modelProfile.baseURL || 
     modelProfile.baseURL.includes('api.openai.com')
 
-  // 🌐 Handle third-party GPT-5 providers with enhanced compatibility
+  // Handle third-party GPT-5 providers with enhanced compatibility
   if (!isOfficialOpenAI) {
     debugLogger.api('GPT5_THIRD_PARTY_PROVIDER', {
       model: opts.model,
@@ -1093,8 +1093,8 @@ async function getGPT5CompletionWithProfile(
       requestId: getCurrentRequest()?.id,
     })
     
-    // 🔧 Apply enhanced parameter optimization for third-party providers
-    console.log(`🌐 Using GPT-5 via third-party provider: ${modelProfile.provider} (${modelProfile.baseURL})`)
+    // Apply enhanced parameter optimization for third-party providers
+    console.log(`Using GPT-5 via third-party provider: ${modelProfile.provider} (${modelProfile.baseURL})`)
     
     // Some third-party providers may need additional parameter adjustments
     if (modelProfile.provider === 'azure') {
@@ -1102,11 +1102,11 @@ async function getGPT5CompletionWithProfile(
       delete opts.reasoning_effort // Azure may not support this yet
     } else if (modelProfile.provider === 'custom-openai') {
       // Generic OpenAI-compatible provider optimizations
-      console.log(`🔧 Applying OpenAI-compatible optimizations for custom provider`)
+      console.log(`Applying OpenAI-compatible optimizations for custom provider`)
     }
   }
   
-  // 📡 Handle streaming requests (Responses API doesn't support streaming yet)
+  // Handle streaming requests (Responses API doesn't support streaming yet)
   else if (opts.stream) {
     debugLogger.api('GPT5_STREAMING_MODE', {
       model: opts.model,
@@ -1115,10 +1115,10 @@ async function getGPT5CompletionWithProfile(
       requestId: getCurrentRequest()?.id,
     })
     
-    console.log(`🔄 Using Chat Completions for streaming (Responses API streaming not available)`)
+    console.log(`Using Chat Completions for streaming (Responses API streaming not available)`)
   }
 
-  // 🔧 Enhanced Chat Completions fallback with GPT-5 optimizations
+  // Enhanced Chat Completions fallback with GPT-5 optimizations
   debugLogger.api('USING_CHAT_COMPLETIONS_FOR_GPT5', {
     model: opts.model,
     baseURL: modelProfile.baseURL || 'official',

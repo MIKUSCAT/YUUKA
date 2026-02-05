@@ -200,7 +200,7 @@ export const TaskTool = {
     // Generate unique Task ID for this task execution
     const taskId = generateAgentId()
 
-    // 🔧 ULTRA SIMPLIFIED: Exact original AgentTool pattern
+    // ULTRA SIMPLIFIED: Exact original AgentTool pattern
     // Build query options, adding temperature if specified
     const queryOptions = {
       safeMode,
@@ -303,7 +303,7 @@ export const TaskTool = {
       throw new Error('Last message was not an assistant message')
     }
 
-    // 🔧 CRITICAL FIX: Match original AgentTool interrupt handling pattern exactly
+    // CRITICAL FIX: Match original AgentTool interrupt handling pattern exactly
     if (
       lastMessage.message.content.some(
         _ => _.type === 'text' && _.text === INTERRUPT_MESSAGE,
@@ -451,14 +451,14 @@ export const TaskTool = {
         (sum, block) => sum + block.text.length,
         0,
       )
-      // 🔧 CRITICAL FIX: Use exact match for interrupt detection, not .includes()
+      // CRITICAL FIX: Use exact match for interrupt detection, not .includes()
       const isInterrupted = content.some(
         block =>
           block.type === 'text' && block.text === INTERRUPT_MESSAGE,
       )
 
       if (isInterrupted) {
-        // 🔧 CRITICAL FIX: Match original system interrupt rendering exactly
+        // CRITICAL FIX: Match original system interrupt rendering exactly
         return (
           <Box flexDirection="row">
             <Text color={theme.secondaryText}>{TREE_END} </Text>

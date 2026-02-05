@@ -431,14 +431,14 @@ export const getMCPTools = memoize(async (): Promise<Tool[]> => {
           const base = tool.description ?? ''
           if (client.name !== 'windows_mcp') return base
           const guard =
-            '⚠️ 仅用于 Windows 桌面/窗口层操作；涉及浏览器页面内部交互（点网页、滚动、填表、抓取网页内容等）请用 `mcp__chrome-devtools__*`，不要和 Windows MCP 混用。'
+            '注意：仅用于 Windows 桌面/窗口层操作；涉及浏览器页面内部交互（点网页、滚动、填表、抓取网页内容等）请用 `mcp__chrome-devtools__*`，不要和 Windows MCP 混用。'
           return base ? `${guard}\n\n${base}` : guard
         },
         async prompt() {
           const base = tool.description ?? ''
           if (client.name !== 'windows_mcp') return base
           const guard =
-            '⚠️ 仅用于 Windows 桌面/窗口层操作；涉及浏览器页面内部交互（点网页、滚动、填表、抓取网页内容等）请用 `mcp__chrome-devtools__*`，不要和 Windows MCP 混用。'
+            '注意：仅用于 Windows 桌面/窗口层操作；涉及浏览器页面内部交互（点网页、滚动、填表、抓取网页内容等）请用 `mcp__chrome-devtools__*`，不要和 Windows MCP 混用。'
           return base ? `${guard}\n\n${base}` : guard
         },
         inputJSONSchema: tool.inputSchema as Tool['inputJSONSchema'],

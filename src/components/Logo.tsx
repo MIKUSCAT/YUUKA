@@ -30,7 +30,11 @@ export function Logo(): React.ReactNode {
       <Box flexDirection="column">
         <Text color={theme.secondaryText}>{'✧ ˚  ✦'.padStart(Math.floor(LOGO_WIDTH / 2) + 3)}</Text>
         {YUUKA_LOGO_LINES.map((line, i) => (
-          <Text key={i} color={theme.kode} bold>{line}</Text>
+          <React.Fragment key={i}>
+            <Text color={theme.yuuka} bold>
+              {line}
+            </Text>
+          </React.Fragment>
         ))}
       </Box>
     </Box>

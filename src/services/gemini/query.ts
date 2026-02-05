@@ -1,8 +1,6 @@
-import { getCwd, getOriginalCwd } from '@utils/state'
 import {
-  ensureGeminiSettings,
-  getProjectGeminiSettingsPath,
-  getWorkspaceGeminiSettingsPath,
+  ensureGlobalGeminiSettings,
+  getGlobalGeminiSettingsPath,
   normalizeGeminiApiRoot,
   normalizeGeminiModelName,
   readGeminiSettingsFile,
@@ -10,8 +8,8 @@ import {
 } from '@utils/geminiSettings'
 import type { AssistantMessage, UserMessage } from '@query'
 import type { Tool } from '@tool'
-import { existsSync } from 'fs'
-import { dirname, isAbsolute, relative, resolve } from 'path'
+import { getGeminiCliAuthContext, CODE_ASSIST_ENDPOINT } from './codeAssistAuth'
+import { CodeAssistTransport } from './codeAssistTransport'
 import { GeminiTransport } from './transport'
 import { kodeMessagesToGeminiContents, geminiResponseToAssistantMessage, toolsToFunctionDeclarations } from './adapter'
 import { resolveGeminiModelConfig } from './modelConfig'
@@ -129,64 +127,29 @@ async function sleepWithAbort(ms: number, signal: AbortSignal): Promise<boolean>
   })
 }
 
-function findNearestGeminiSettingsWithApiKey(options: {
-  startDir: string
-  stopDir?: string
-}): { settings: GeminiSettings; path: string } | null {
-  let currentDir = resolve(options.startDir)
-  const stopDir = options.stopDir ? resolve(options.stopDir) : undefined
-
-  while (true) {
-    const settingsPath = getProjectGeminiSettingsPath(currentDir)
-    if (existsSync(settingsPath)) {
-      const settings = readGeminiSettingsFile(settingsPath)
-      const apiKey = settings.security?.auth?.geminiApi?.apiKey ?? ''
-      if (apiKey.trim()) {
-        return { settings, path: settingsPath }
-      }
-    }
-
-    if (stopDir && currentDir === stopDir) return null
-    const parentDir = dirname(currentDir)
-    if (parentDir === currentDir) return null
-    currentDir = parentDir
-  }
-}
-
 function getProjectSettings(): { settings: GeminiSettings; path: string } {
-  const originalCwd = getOriginalCwd()
-  const ensured = ensureGeminiSettings({ projectRoot: originalCwd })
-  const fallbackPath =
-    ensured.settingsPath || getWorkspaceGeminiSettingsPath(originalCwd)
-  const fallbackSettings = readGeminiSettingsFile(fallbackPath)
-
-  const cwd = getCwd()
-  const resolvedCwd = resolve(cwd)
-  const resolvedOriginal = resolve(originalCwd)
-  const relToOriginal = relative(resolvedOriginal, resolvedCwd)
-  const isInOriginal =
-    relToOriginal === '' ||
-    (!relToOriginal.startsWith('..') && !isAbsolute(relToOriginal))
-
-  const nearestWithKey = findNearestGeminiSettingsWithApiKey({
-    startDir: cwd,
-    stopDir: isInOriginal ? originalCwd : undefined,
-  })
-
+  const ensured = ensureGlobalGeminiSettings()
+  const settingsPath = ensured.settingsPath || getGlobalGeminiSettingsPath()
+  const settings = readGeminiSettingsFile(settingsPath)
   return {
-    settings: nearestWithKey?.settings ?? fallbackSettings,
-    path: nearestWithKey?.path ?? fallbackPath,
+    settings,
+    path: settingsPath,
   }
 }
 
-function getGeminiAuth(
+function getGeminiApiKeyAuth(
   settings: GeminiSettings,
   path: string,
-): { baseUrl: string; apiKey: string } {
+): { baseUrl: string; apiKey: string; apiKeyAuthMode: 'x-goog-api-key' | 'query' | 'bearer' } {
   const baseUrl =
     settings.security?.auth?.geminiApi?.baseUrl ??
     'https://generativelanguage.googleapis.com'
   const apiKey = settings.security?.auth?.geminiApi?.apiKey ?? ''
+  const rawMode = settings.security?.auth?.geminiApi?.apiKeyAuthMode
+  const apiKeyAuthMode: 'x-goog-api-key' | 'query' | 'bearer' =
+    rawMode === 'bearer' || rawMode === 'query' || rawMode === 'x-goog-api-key'
+      ? rawMode
+      : 'x-goog-api-key'
 
   if (!apiKey.trim()) {
     throw new Error(
@@ -194,7 +157,11 @@ function getGeminiAuth(
     )
   }
 
-  return { baseUrl: normalizeGeminiApiRoot(baseUrl), apiKey: apiKey.trim() }
+  return {
+    baseUrl: normalizeGeminiApiRoot(baseUrl),
+    apiKey: apiKey.trim(),
+    apiKeyAuthMode,
+  }
 }
 
 function getModelName(settings: GeminiSettings): string {
@@ -409,7 +376,8 @@ export async function queryGeminiLLM(options: {
 
   try {
     const { settings, path } = getProjectSettings()
-    const auth = getGeminiAuth(settings, path)
+    const selectedType =
+      settings.security?.auth?.selectedType ?? 'gemini-api-key'
 
     // modelKey 用于 quick/web-search/web-fetch 等配置差异
     const modelKey = resolveModelKey(options.model)
@@ -424,10 +392,22 @@ export async function queryGeminiLLM(options: {
       { functionDeclarations },
     )
 
-    const transport = new GeminiTransport({
-      baseUrl: auth.baseUrl,
-      apiKey: auth.apiKey,
-    })
+    let transport: GeminiTransport | CodeAssistTransport
+    if (selectedType === 'gemini-cli-oauth') {
+      const { accessToken, projectId } = await getGeminiCliAuthContext()
+      transport = new CodeAssistTransport({
+        endpoint: CODE_ASSIST_ENDPOINT,
+        accessToken,
+        projectId,
+      })
+    } else {
+      const auth = getGeminiApiKeyAuth(settings, path)
+      transport = new GeminiTransport({
+        baseUrl: auth.baseUrl,
+        apiKey: auth.apiKey,
+        apiKeyAuthMode: auth.apiKeyAuthMode,
+      })
+    }
 
     const systemInstruction =
       options.systemPrompt.length > 0
@@ -634,13 +614,26 @@ export async function queryGeminiToolsOnlyDetailed(options: {
   signal?: AbortSignal
 }): Promise<GeminiToolsOnlyResult> {
   const { settings, path } = getProjectSettings()
-  const auth = getGeminiAuth(settings, path)
+  const selectedType =
+    settings.security?.auth?.selectedType ?? 'gemini-api-key'
 
   const resolved = resolveGeminiModelConfig(options.modelKey, { model: { name: settings.model?.name } })
-  const transport = new GeminiTransport({
-    baseUrl: auth.baseUrl,
-    apiKey: auth.apiKey,
-  })
+  let transport: GeminiTransport | CodeAssistTransport
+  if (selectedType === 'gemini-cli-oauth') {
+    const { accessToken, projectId } = await getGeminiCliAuthContext()
+    transport = new CodeAssistTransport({
+      endpoint: CODE_ASSIST_ENDPOINT,
+      accessToken,
+      projectId,
+    })
+  } else {
+    const auth = getGeminiApiKeyAuth(settings, path)
+    transport = new GeminiTransport({
+      baseUrl: auth.baseUrl,
+      apiKey: auth.apiKey,
+      apiKeyAuthMode: auth.apiKeyAuthMode,
+    })
+  }
 
   const resp = await transport.generateContent({
     model: resolved.model,

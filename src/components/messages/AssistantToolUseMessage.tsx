@@ -90,7 +90,7 @@ export function AssistantToolUseMessage({
       <Box flexDirection="row" flexGrow={1} minWidth={0}>
         <Box minWidth={prefixWidth}>
           {shouldShowDot ? (
-            <Text color={theme.kode}>{ASSISTANT_PREFIX}</Text>
+            <Text color={theme.yuuka}>{ASSISTANT_PREFIX}</Text>
           ) : (
             <Text>{'  '}</Text>
           )}

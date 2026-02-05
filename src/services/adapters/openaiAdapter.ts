@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { ModelAPIAdapter, StreamingEvent, normalizeTokens } from './base'
-import { UnifiedRequestParams, UnifiedResponse, ModelCapabilities, ReasoningStreamingContext } from '@kode-types/modelCapabilities'
+import { UnifiedRequestParams, UnifiedResponse, ModelCapabilities, ReasoningStreamingContext } from '@yuuka-types/modelCapabilities'
 import { ModelProfile } from '@utils/config'
 import { Tool, getToolDescription } from '@tool'
 import { zodToJsonSchema } from 'zod-to-json-schema'

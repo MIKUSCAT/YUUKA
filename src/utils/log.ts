@@ -9,7 +9,7 @@ import { dirname, join } from 'path'
 import { captureException } from '@services/sentry'
 import { randomUUID } from 'crypto'
 import envPaths from 'env-paths'
-import type { LogOption, SerializedMessage } from '@kode-types/logs'
+import type { LogOption, SerializedMessage } from '@yuuka-types/logs'
 import { MACRO } from '@constants/macros'
 import { PRODUCT_COMMAND } from '@constants/product'
 
@@ -63,6 +63,8 @@ function getProjectDir(cwd: string): string {
 export const CACHE_PATHS = {
   errors: () => join(paths.cache, getProjectDir(process.cwd()), 'errors'),
   messages: () => join(paths.cache, getProjectDir(process.cwd()), 'messages'),
+  taskOutputs: () =>
+    join(paths.cache, getProjectDir(process.cwd()), 'task-outputs'),
   mcpLogs: (serverName: string) =>
     join(paths.cache, getProjectDir(process.cwd()), `mcp-logs-${serverName}`),
 }

@@ -16,21 +16,21 @@
 <img width="90%" alt="image" src="https://github.com/user-attachments/assets/b30696ce-5ab1-40a0-b741-c7ef3945dba0" />
 
 
-## 📢 Update Log
+## Update Log
 
 **2025-08-29**: We've added Windows support! All Windows users can now run YUUKA using Git Bash, Unix subsystems, or WSL (Windows Subsystem for Linux) on their computers.
 
 
-## 🤝 AGENTS.md Standard Support
+## AGENTS.md Standard Support
 
 **YUUKA proudly supports the [AGENTS.md standard protocol](https://agents.md) initiated by OpenAI** - a simple, open format for guiding programming agents that's used by 20k+ open source projects.
 
 ### Full Compatibility with Multiple Standards
 
-- ✅ **AGENTS.md** - Native support for the OpenAI-initiated standard format
-- ✅ **CLAUDE.md** - Full backward compatibility with Claude Code `.claude` configurations  
-- ✅ **Subagent System** - Advanced agent delegation and task orchestration
-- ✅ **Gemini-only** - Uses Gemini native API (Bearer + configurable baseUrl)
+- **AGENTS.md** - Native support for the OpenAI-initiated standard format
+- **CLAUDE.md** - Full backward compatibility with Claude Code `.claude` configurations  
+- **Subagent System** - Advanced agent delegation and task orchestration
+- **Gemini-only** - Uses Gemini native API (Bearer + configurable baseUrl)
 
 Use `# Your documentation request` to generate and maintain your AGENTS.md file automatically, while preserving compatibility with existing `.claude` workflows.
 
@@ -38,11 +38,11 @@ Use `# Your documentation request` to generate and maintain your AGENTS.md file 
 
 YUUKA is a personal computer agent that lives in your terminal. It can understand your codebase, edit files, run commands, and handle entire workflows for you.
 
-> **⚠️ Security Notice**: YUUKA runs in YOLO mode by default (equivalent to Claude Code's `--dangerously-skip-permissions` flag), bypassing all permission checks for maximum productivity. YOLO mode is recommended only for trusted, secure environments when working on non-critical projects. If you're working with important files or using models of questionable capability, we strongly recommend using `yuuka --safe` to enable permission checks and manual approval for all operations.
+> **Security Notice**: YUUKA runs in YOLO mode by default (equivalent to Claude Code's `--dangerously-skip-permissions` flag), bypassing all permission checks for maximum productivity. YOLO mode is recommended only for trusted, secure environments when working on non-critical projects. If you're working with important files or using models of questionable capability, we strongly recommend using `yuuka --safe` to enable permission checks and manual approval for all operations.
 > 
-> **📊 Model Performance**: For optimal performance, we recommend using newer, more capable models designed for autonomous task completion. Avoid older Q&A-focused models like GPT-4o or Gemini 2.5 Pro, which are optimized for answering questions rather than sustained independent task execution. Choose models specifically trained for agentic workflows and extended reasoning capabilities.
+> **Model Performance**: For optimal performance, we recommend using newer, more capable models designed for autonomous task completion. Avoid older Q&A-focused models like GPT-4o or Gemini 2.5 Pro, which are optimized for answering questions rather than sustained independent task execution. Choose models specifically trained for agentic workflows and extended reasoning capabilities.
 >
-> **🧭 Gemini-only notice**: This version uses Gemini native API only (`Authorization: Bearer <apiKey>`). Configuration lives in the project file `./.gemini/settings.json` (no global merge).
+> **Gemini-only notice**: This version uses Gemini native API only (`Authorization: Bearer <apiKey>`). Configuration lives in the project file `./.gemini/settings.json` (no global merge).
 
 <img width="600" height="577" alt="image" src="https://github.com/user-attachments/assets/8b46a39d-1ab6-4669-9391-14ccc6c5234c" />
 
@@ -57,20 +57,20 @@ YUUKA is a personal computer agent that lives in your terminal. It can understan
 ## Features
 
 ### Core Capabilities
-- 🤖 **AI-Powered Assistance** - Uses advanced AI models to understand and respond to your requests
-- 🔄 **Gemini-only** - This version uses Gemini native API only
-- 🦜 **Expert Model Consultation** - Use `@ask-model-name` to consult specific AI models for specialized analysis
-- 👤 **Intelligent Agent System** - Use `@run-agent-name` to delegate tasks to specialized subagents
-- 📝 **Code Editing** - Directly edit files with intelligent suggestions and improvements
-- 🔍 **Codebase Understanding** - Analyzes your project structure and code relationships
-- 🚀 **Command Execution** - Run shell commands and see results in real-time
-- 🛠️ **Workflow Automation** - Handle complex development tasks with simple prompts
+- **AI-Powered Assistance** - Uses advanced AI models to understand and respond to your requests
+- **Gemini-only** - This version uses Gemini native API only
+- **Expert Model Consultation** - Use `@ask-model-name` to consult specific AI models for specialized analysis
+- **Intelligent Agent System** - Use `@run-agent-name` to delegate tasks to specialized subagents
+- **Code Editing** - Directly edit files with intelligent suggestions and improvements
+- **Codebase Understanding** - Analyzes your project structure and code relationships
+- **Command Execution** - Run shell commands and see results in real-time
+- **Workflow Automation** - Handle complex development tasks with simple prompts
 
 ### Authoring Comfort
 - `Ctrl+G` opens your message in your preferred editor (respects `$EDITOR`/`$VISUAL`; falls back to code/nano/vim/notepad) and returns the text to the prompt when you close it.
 - `Shift+Enter` inserts a newline inside the prompt without sending; plain Enter submits.
 
-### 🎯 Advanced Intelligent Completion System
+### Advanced Intelligent Completion System
 Our state-of-the-art completion system provides unparalleled coding assistance:
 
 #### Smart Fuzzy Matching
@@ -92,10 +92,10 @@ Our state-of-the-art completion system provides unparalleled coding assistance:
 - **Real-time Loading** - Dynamic command discovery from system PATH
 
 ### User Experience
-- 🎨 **Interactive UI** - Beautiful terminal interface with syntax highlighting
-- 🔌 **Tool System** - Extensible architecture with specialized tools for different tasks
-- 💾 **Context Management** - Smart context handling to maintain conversation continuity
-- 📋 **AGENTS.md Integration** - Use `# documentation requests` to auto-generate and maintain project documentation
+- **Interactive UI** - Beautiful terminal interface with syntax highlighting
+- **Tool System** - Extensible architecture with specialized tools for different tasks
+- **Context Management** - Smart context handling to maintain conversation continuity
+- **AGENTS.md Integration** - Use `# documentation requests` to auto-generate and maintain project documentation
 
 ## Installation
 
@@ -136,7 +136,7 @@ yuuka -p "explain this function" path/to/file.js
 
 YUUKA supports a powerful @ mention system for intelligent completions:
 
-#### 🦜 Expert Model Consultation
+#### Expert Model Consultation
 ```bash
 # Consult specific AI models for expert opinions
 @ask-claude-sonnet-4 How should I optimize this React component for performance?
@@ -144,7 +144,7 @@ YUUKA supports a powerful @ mention system for intelligent completions:
 @ask-o1-preview Analyze the complexity of this algorithm
 ```
 
-#### 👤 Specialized Agent Delegation  
+#### Specialized Agent Delegation  
 ```bash
 # Delegate tasks to specialized subagents
 @run-agent-simplicity-auditor Review this code for over-engineering
@@ -152,7 +152,7 @@ YUUKA supports a powerful @ mention system for intelligent completions:
 @run-agent-test-writer Create comprehensive tests for these modules
 ```
 
-#### 📁 Smart File References
+#### Smart File References
 ```bash
 # Reference files and directories with auto-completion
 @src/components/Button.tsx
@@ -204,11 +204,11 @@ Minimal `./.gemini/settings.json` example:
 
 ## Multi-Model Intelligent Collaboration
 
-> ⚠️ The chapter below is legacy documentation. This version is Gemini-only; content will be updated.
+> Note: The chapter below is legacy documentation. This version is Gemini-only; content will be updated.
 
 Unlike official Claude which supports only a single model, YUUKA implements **true multi-model collaboration**, allowing you to fully leverage the unique strengths of different AI models.
 
-### 🏗️ Core Technical Architecture
+### Core Technical Architecture
 
 #### 1. **ModelManager Multi-Model Manager**
 We designed a unified `ModelManager` system that supports:
@@ -231,7 +231,7 @@ We specially designed the `AskExpertModel` tool:
 - **Model Isolation Execution**: Expert model responses are processed independently without affecting the main conversation flow
 - **Knowledge Integration**: Integrates expert model insights into the current task
 
-#### 🔄 Intelligent Work Allocation Strategy
+#### Intelligent Work Allocation Strategy
 
 **Architecture Design Phase**
 - Use **o3 model** or **GPT-5 model** to explore system architecture and formulate sharp and clear technical solutions
@@ -250,7 +250,7 @@ We specially designed the `AskExpertModel` tool:
 - When encountering complex problems, consult expert models like **o3 model**, **Claude Opus 4.1 model**, or **Grok 4 model**
 - Obtain deep technical insights and innovative solutions
 
-#### 💡 Practical Application Scenarios
+#### Practical Application Scenarios
 
 ```bash
 # Example 1: Architecture Design
@@ -275,7 +275,7 @@ We specially designed the `AskExpertModel` tool:
 "Have GLM-4.5 model design a microservice decomposition plan"
 ```
 
-### 🛠️ Key Implementation Mechanisms
+### Key Implementation Mechanisms
 
 #### **Configuration System**
 ```typescript
@@ -304,22 +304,22 @@ We specially designed the `AskExpertModel` tool:
 - **Context Window Adaptation**: Automatically adjust based on different models' context window sizes
 - **Session State Preservation**: Ensure information consistency during multi-model collaboration
 
-### 🚀 Advantages of Multi-Model Collaboration
+### Advantages of Multi-Model Collaboration
 
 1. **Maximized Efficiency**: Each task is handled by the most suitable model
 2. **Cost Optimization**: Use lightweight models for simple tasks, powerful models for complex tasks
 3. **Parallel Processing**: Multiple models can work on different subtasks simultaneously
 4. **Leveraging Strengths**: Combine advantages of different models for optimal overall results
 
-### 📊 Comparison with Official Implementation
+### Comparison with Official Implementation
 
 | Feature | YUUKA | Official Claude |
 |---------|------|-----------------|
 | Number of Supported Models | Unlimited, configurable for any model | Only supports single Claude model |
-| Parallel Processing | ✅ Multiple SubAgents work in parallel | ❌ Single-threaded processing |
-| Cost Tracking | ✅ Separate statistics for multiple models | ❌ Single model cost |
-| Task Model Configuration | ✅ Different default models for different purposes | ❌ Same model for all tasks |
-| Expert Consultation | ✅ AskExpertModel tool | ❌ Not supported |
+| Parallel Processing | Multiple SubAgents work in parallel | Single-threaded processing |
+| Cost Tracking | Separate statistics for multiple models | Single model cost |
+| Task Model Configuration | Different default models for different purposes | Same model for all tasks |
+| Expert Consultation | AskExpertModel tool | Not supported |
 
 This multi-model collaboration capability makes YUUKA a true **AI Development Workbench**, not just a single AI assistant.
 
@@ -369,5 +369,5 @@ Apache 2.0 License - see [LICENSE](LICENSE) for details.
 
 ## Support
 
-- 🐛 [Report Issues](https://github.com/shareAI-lab/yuuka/issues)
-- 💬 [Discussions](https://github.com/shareAI-lab/yuuka/discussions)
+- [Report Issues](https://github.com/shareAI-lab/yuuka/issues)
+- [Discussions](https://github.com/shareAI-lab/yuuka/discussions)

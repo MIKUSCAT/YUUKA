@@ -1,17 +1,27 @@
 {
-  "name": "@kode/mcp-office-reader",
+  "name": "yuuka-mcp-office-reader",
   "version": "1.0.0",
   "description": "MCP server for reading and processing office documents (PDF, DOCX, XLSX, PPTX)",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
+    "yuuka-mcp-office-reader": "./dist/index.js",
     "mcp-office-reader": "./dist/index.js"
   },
+  "files": [
+    "dist/**/*",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "dev": "tsx src/index.ts"
+    "dev": "tsx src/index.ts",
+    "prepublishOnly": "npm run build"
   },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "Apache-2.0",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
     "@xmldom/xmldom": "^0.8.11",

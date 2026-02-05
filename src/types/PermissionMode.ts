@@ -40,7 +40,7 @@ export const MODE_CONFIGS: Record<PermissionMode, ModeConfig> = {
   default: {
     name: 'default',
     label: 'DEFAULT',
-    icon: '🔒',
+    icon: 'LOCK',
     color: 'blue',
     description: 'Standard permission checking',
     allowedTools: ['*'],
@@ -53,7 +53,7 @@ export const MODE_CONFIGS: Record<PermissionMode, ModeConfig> = {
   acceptEdits: {
     name: 'acceptEdits',
     label: 'ACCEPT EDITS',
-    icon: '✅',
+    icon: 'OK',
     color: 'green',
     description: 'Auto-approve edit operations',
     allowedTools: ['*'],
@@ -66,7 +66,7 @@ export const MODE_CONFIGS: Record<PermissionMode, ModeConfig> = {
   plan: {
     name: 'plan',
     label: 'PLAN MODE',
-    icon: '📝',
+    icon: 'PLAN',
     color: 'yellow',
     description: 'Research and planning - read-only tools only',
     allowedTools: [
@@ -88,7 +88,7 @@ export const MODE_CONFIGS: Record<PermissionMode, ModeConfig> = {
   bypassPermissions: {
     name: 'bypassPermissions',
     label: 'BYPASS PERMISSIONS',
-    icon: '🔓',
+    icon: 'UNLOCK',
     color: 'red',
     description: 'All permissions bypassed',
     allowedTools: ['*'],

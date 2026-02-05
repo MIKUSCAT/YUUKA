@@ -14,20 +14,15 @@ import { CONFIG_BASE_DIR } from '@constants/product'
  * Get the config directory
  */
 function getConfigDirectory(): string {
-  // 数据目录：~/.gemini/yuuka（仍保留 KODE_CONFIG_DIR / ANYKODE_CONFIG_DIR 作为覆盖，便于迁移）
-  return (
-    process.env.KODE_CONFIG_DIR ??
-    process.env.ANYKODE_CONFIG_DIR ??
-    join(homedir(), CONFIG_BASE_DIR)
-  )
+  // 数据目录：~/.gemini/yuuka
+  return join(homedir(), CONFIG_BASE_DIR)
 }
 
 /**
  * Get the current session ID
  */
 function getSessionId(): string {
-  // This should be set when the session starts
-  return process.env.ANYKODE_SESSION_ID ?? 'default-session'
+  return 'default-session'
 }
 
 /**

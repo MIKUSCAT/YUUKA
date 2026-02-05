@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { dirname, join, resolve } from 'path'
+import { homedir } from 'os'
 import { ConfigParseError } from './errors'
 import { getCwd } from './state'
 
@@ -8,14 +9,14 @@ const DEFAULT_GEMINI_MODEL = 'models/gemini-3-flash-preview'
 export type GeminiApiAuthSettings = {
   baseUrl?: string
   apiKey?: string
-  apiKeyAuthMode?: 'bearer'
+  apiKeyAuthMode?: 'x-goog-api-key' | 'query' | 'bearer'
 }
 
 export type GeminiSettings = {
   security?: {
     auth?: {
       geminiApi?: GeminiApiAuthSettings
-      selectedType?: 'gemini-api-key'
+      selectedType?: 'gemini-api-key' | 'gemini-cli-oauth'
     }
   }
   model?: {
@@ -26,7 +27,6 @@ export type GeminiSettings = {
     theme?: string
   }
   yuuka?: unknown
-  kode?: unknown
 }
 
 export function getProjectGeminiDir(projectRoot: string): string {
@@ -45,7 +45,7 @@ export function getWorkspaceGeminiSettingsPath(projectRoot?: string): string {
 export function normalizeGeminiApiRoot(baseUrl: string): string {
   const trimmed = baseUrl.trim().replace(/\/+$/, '')
   if (!trimmed) {
-    throw new Error('baseUrl 不能为空（来自 ./.gemini/settings.json）')
+    throw new Error('baseUrl 不能为空（来自 ~/.gemini/settings.json）')
   }
   if (trimmed.endsWith('/v1') || trimmed.endsWith('/v1beta')) {
     return trimmed
@@ -56,7 +56,7 @@ export function normalizeGeminiApiRoot(baseUrl: string): string {
 export function normalizeGeminiModelName(model: string): string {
   const trimmed = model?.trim()
   if (!trimmed) {
-    throw new Error('model.name 不能为空（来自 ./.gemini/settings.json）')
+    throw new Error('model.name 不能为空（来自 ~/.gemini/settings.json）')
   }
   if (trimmed.includes('..') || trimmed.includes('?') || trimmed.includes('&')) {
     throw new Error('model.name 参数不合法')
@@ -105,12 +105,23 @@ export type EnsureGeminiSettingsResult = {
   settingsPath: string
 }
 
+export function getGlobalGeminiSettingsPath(): string {
+  return join(homedir(), '.gemini', 'settings.json')
+}
+
 export function ensureGeminiSettings({
   projectRoot,
 }: {
   projectRoot?: string
 } = {}): EnsureGeminiSettingsResult {
-  const settingsPath = getWorkspaceGeminiSettingsPath(projectRoot)
+  return ensureGeminiSettingsAtPath(getWorkspaceGeminiSettingsPath(projectRoot))
+}
+
+export function ensureGlobalGeminiSettings(): EnsureGeminiSettingsResult {
+  return ensureGeminiSettingsAtPath(getGlobalGeminiSettingsPath())
+}
+
+function ensureGeminiSettingsAtPath(settingsPath: string): EnsureGeminiSettingsResult {
 
   const ensureSettingsDefaults = () => {
     if (!existsSync(settingsPath)) return
@@ -120,9 +131,18 @@ export function ensureGeminiSettings({
 
       next.security = next.security ?? {}
       next.security.auth = next.security.auth ?? {}
-      next.security.auth.selectedType = 'gemini-api-key'
+      // 不要强行覆盖用户选择的认证类型
+      if (
+        next.security.auth.selectedType !== 'gemini-api-key' &&
+        next.security.auth.selectedType !== 'gemini-cli-oauth'
+      ) {
+        next.security.auth.selectedType = 'gemini-api-key'
+      }
       next.security.auth.geminiApi = next.security.auth.geminiApi ?? {}
-      next.security.auth.geminiApi.apiKeyAuthMode = 'bearer'
+      const keyMode = String(next.security.auth.geminiApi.apiKeyAuthMode ?? '').trim()
+      if (keyMode !== 'x-goog-api-key' && keyMode !== 'query' && keyMode !== 'bearer') {
+        next.security.auth.geminiApi.apiKeyAuthMode = 'x-goog-api-key'
+      }
       if (!pickFirstString(next.security.auth.geminiApi.baseUrl)) {
         next.security.auth.geminiApi.baseUrl =
           'https://generativelanguage.googleapis.com'
@@ -146,13 +166,13 @@ export function ensureGeminiSettings({
           geminiApi: {
             baseUrl: 'https://generativelanguage.googleapis.com',
             apiKey: '',
-            apiKeyAuthMode: 'bearer',
+            apiKeyAuthMode: 'x-goog-api-key',
           },
           selectedType: 'gemini-api-key',
         },
       },
       model: { name: DEFAULT_GEMINI_MODEL },
-      yuuka: { project: {} },
+      yuuka: {},
     }
     writeJsonFile(settingsPath, defaultSettings)
   } else {

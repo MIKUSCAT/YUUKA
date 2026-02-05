@@ -1,34 +1,3 @@
-export const READ_DESCRIPTION = `Read and extract content from office documents (PDF, Word, PowerPoint, Excel).
-
-Supports:
-- PDF (.pdf): Extract text content and metadata
-- Word (.docx): Extract text, paragraphs, and tables
-- PowerPoint (.pptx): Extract slides content and notes
-- Excel (.xlsx): Extract sheet data as text or JSON
-
-Use this tool when you need to read content from office documents that FileReadTool cannot handle.`
-
-export const READ_PROMPT = `## DocRead Tool
-
-This tool reads content from office documents using Python libraries.
-
-### Supported Formats
-- **PDF**: Uses PyMuPDF (fitz) for text extraction
-- **Word (.docx)**: Uses python-docx for document parsing
-- **PowerPoint (.pptx)**: Uses python-pptx for slide extraction
-- **Excel (.xlsx)**: Uses openpyxl for spreadsheet reading
-
-### Parameters
-- \`file_path\`: Absolute path to the document
-- \`format\`: Output format - 'text' (default), 'json', or 'markdown'
-- \`sheet\`: For Excel files, specify sheet name or index (default: all sheets)
-- \`pages\`: For PDF files, specify page range like "1-5" or "1,3,5"
-
-### Best Practices
-- For large documents, consider reading specific pages/sheets
-- Use JSON format when you need structured data extraction
-- Use markdown format for formatted output`
-
 export const WRITE_DESCRIPTION = `Create and write office documents (PDF, Word, PowerPoint, Excel).
 
 Supports:
@@ -49,7 +18,7 @@ This tool creates office documents. For **DOCX/PPTX**, it uses **Pandoc (Markdow
 - **PowerPoint (.pptx)**: Uses Pandoc for presentation creation (recommended)
 - **Excel (.xlsx)**: Uses openpyxl for spreadsheet creation
 
-⚠️ IMPORTANT
+IMPORTANT
 - Output file extension must be one of: .pdf, .docx, .pptx, .xlsx
 - **.md is NOT supported**. If you want a plain Markdown file, use the Write tool to write a .md file.
 - Install Pandoc on Windows: \`winget install --id JohnMacFarlane.Pandoc -e\`

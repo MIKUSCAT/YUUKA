@@ -108,7 +108,7 @@ const COMMAND_REPLACEMENTS: Array<[RegExp, string]> = [
   [/\\leftarrow/g, '←'],
   [/\\Rightarrow/g, '⇒'],
   [/\\Leftarrow/g, '⇐'],
-  [/\\leftrightarrow/g, '↔'],
+  [/\\leftrightarrow/g, '<->'],
   [/\\Leftrightarrow/g, '⇔'],
   [/\\iff/g, '⇔'],
   [/\\mapsto/g, '↦'],

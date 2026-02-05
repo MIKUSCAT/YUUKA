@@ -548,7 +548,7 @@ ${output.expertAnswer}`
       const result: Out = {
         chatSessionId: errorSessionId,
         expertModelName: expertModel,
-        expertAnswer: `❌ ${errorMessage}`,
+        expertAnswer: `Error: ${errorMessage}`,
       }
 
       yield {

@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { OpenAIAdapter, StreamingEvent, normalizeTokens } from './openaiAdapter'
-import { UnifiedRequestParams, UnifiedResponse, ReasoningStreamingContext } from '@kode-types/modelCapabilities'
+import { UnifiedRequestParams, UnifiedResponse, ReasoningStreamingContext } from '@yuuka-types/modelCapabilities'
 import { Tool, getToolDescription } from '@tool'
 import { zodToJsonSchema } from 'zod-to-json-schema'
 import { processResponsesStream } from './responsesStreaming'

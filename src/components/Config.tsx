@@ -10,8 +10,8 @@ import {
 } from '@utils/config'
 import { useExitOnCtrlCD } from '@hooks/useExitOnCtrlCD'
 import {
-  ensureGeminiSettings,
-  getWorkspaceGeminiSettingsPath,
+  ensureGlobalGeminiSettings,
+  getGlobalGeminiSettingsPath,
   normalizeGeminiModelName,
   readGeminiSettingsFile,
   writeGeminiSettingsFile,
@@ -65,8 +65,8 @@ export function Config({ onClose }: Props): React.ReactNode {
   const [currentInput, setCurrentInput] = useState('')
   const [inputError, setInputError] = useState<string | null>(null)
 
-  ensureGeminiSettings()
-  const settingsPath = getWorkspaceGeminiSettingsPath()
+  ensureGlobalGeminiSettings()
+  const settingsPath = getGlobalGeminiSettingsPath()
 
   const [geminiSettings, setGeminiSettings] = useState(() =>
     readGeminiSettingsFile(settingsPath),
@@ -119,7 +119,7 @@ export function Config({ onClose }: Props): React.ReactNode {
       type: 'boolean',
     },
 
-    // Gemini settings (project ./.gemini/settings.json)
+    // Gemini settings (global ~/.gemini/settings.json)
     {
       id: 'geminiBaseUrl',
       label: 'Gemini Base URL',
@@ -131,7 +131,7 @@ export function Config({ onClose }: Props): React.ReactNode {
         next.security.auth.selectedType = 'gemini-api-key'
         next.security.auth.geminiApi = next.security.auth.geminiApi ?? {}
         next.security.auth.geminiApi.baseUrl = value.trim()
-        next.security.auth.geminiApi.apiKeyAuthMode = 'bearer'
+        next.security.auth.geminiApi.apiKeyAuthMode = 'x-goog-api-key'
         writeGeminiSettingsFile(settingsPath, next)
         setGeminiSettings(next)
       },
@@ -150,7 +150,7 @@ export function Config({ onClose }: Props): React.ReactNode {
         next.security.auth.selectedType = 'gemini-api-key'
         next.security.auth.geminiApi = next.security.auth.geminiApi ?? {}
         next.security.auth.geminiApi.apiKey = nextKey
-        next.security.auth.geminiApi.apiKeyAuthMode = 'bearer'
+        next.security.auth.geminiApi.apiKeyAuthMode = 'x-goog-api-key'
         writeGeminiSettingsFile(settingsPath, next)
         setGeminiSettings(next)
       },
@@ -298,7 +298,7 @@ export function Config({ onClose }: Props): React.ReactNode {
             </Text>
             <Box marginTop={1}>
               <Text color={theme.suggestion}>
-                /model &lt;name&gt; 会写入当前项目 settings
+                /model &lt;name&gt; 会写入全局 settings
               </Text>
               <Text color={theme.secondaryText}>
                 Settings: {settingsPath}

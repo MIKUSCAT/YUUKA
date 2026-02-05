@@ -147,7 +147,7 @@ function validateAllowedTools(allowedTools: string[] | undefined): boolean {
  *
  * This interface defines the YAML frontmatter structure that can be used
  * to configure custom commands. It mirrors the Claude Desktop custom command
- * system for compatibility while adding Kode-specific enhancements.
+ * system for compatibility while adding YUUKA-specific enhancements.
  */
 export interface CustomCommandFrontmatter {
   /** Display name for the command (overrides filename-based naming) */

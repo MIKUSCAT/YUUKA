@@ -452,15 +452,15 @@ export function useUnifiedCompletion({
     if (!prefix) return []
     
     // Loading state
-    if (isLoadingCommands) {
-      return [{
-        value: 'loading...',
-        displayValue: `⏳ Loading system commands...`,
-        type: 'file' as const,
-        score: 0,
-        metadata: { isLoading: true }
-      }]
-    }
+	    if (isLoadingCommands) {
+	      return [{
+	        value: 'loading...',
+	        displayValue: `Loading system commands...`,
+	        type: 'file' as const,
+	        score: 0,
+	        metadata: { isLoading: true }
+	      }]
+	    }
     
     // IMPORTANT: Only use commands that exist on the system (intersection)
     const commonCommands = getCommonSystemCommands(systemCommands)
@@ -517,16 +517,16 @@ export function useUnifiedCompletion({
       const modelManager = getModelManager()
       const allModels = modelManager.getAllAvailableModelNames()
       
-      const suggestions = allModels.map(modelId => {
-        // Professional and clear description for expert model consultation
-        return {
-          value: `ask-${modelId}`,
-          displayValue: `🦜 ask-${modelId} :: Consult ${modelId} for expert opinion and specialized analysis`,
-          type: 'ask' as const,
-          score: 90, // Higher than agents - put ask-models on top
-          metadata: { modelId },
-        }
-      })
+	    const suggestions = allModels.map(modelId => {
+	      // Professional and clear description for expert model consultation
+	      return {
+	        value: `ask-${modelId}`,
+	        displayValue: `ask-${modelId} :: Consult ${modelId} for expert opinion and specialized analysis`,
+	        type: 'ask' as const,
+	        score: 90, // Higher than agents - put ask-models on top
+	        metadata: { modelId },
+	      }
+	    })
       
       setModelSuggestions(suggestions)
     } catch (error) {
@@ -541,8 +541,8 @@ export function useUnifiedCompletion({
     getActiveAgents().then(agents => {
       // agents is an array of AgentConfig, not an object
       const suggestions = agents.map(config => {
-        // 🧠 智能描述算法 - 适应性长度控制
-        let shortDesc = config.whenToUse
+	        // 智能描述算法 - 适应性长度控制
+	        let shortDesc = config.whenToUse
         
         // 移除常见的冗余前缀，但保留核心内容
         const prefixPatterns = [
@@ -559,8 +559,8 @@ export function useUnifiedCompletion({
           shortDesc = shortDesc.replace(pattern, '')
         }
         
-        // 🎯 精准断句算法：中英文句号感叹号优先 → 逗号 → 省略
-        const findSmartBreak = (text: string, maxLength: number) => {
+	        // 精准断句算法：中英文句号感叹号优先 → 逗号 → 省略
+	        const findSmartBreak = (text: string, maxLength: number) => {
           if (text.length <= maxLength) return text
           
           // 第一优先级：中英文句号、感叹号
@@ -606,13 +606,13 @@ export function useUnifiedCompletion({
           shortDesc = findSmartBreak(config.whenToUse, 80)
         }
         
-        return {
-          value: `run-agent-${config.agentType}`,
-          displayValue: `👤 run-agent-${config.agentType} :: ${shortDesc}`, // 人类图标 + run-agent前缀 + 简洁描述
-          type: 'agent' as const,
-          score: 85, // Lower than ask-models
-          metadata: config,
-        }
+	        return {
+	          value: `run-agent-${config.agentType}`,
+	          displayValue: `run-agent-${config.agentType} :: ${shortDesc}`, // run-agent前缀 + 简洁描述
+	          type: 'agent' as const,
+	          score: 85, // Lower than ask-models
+	          metadata: config,
+	        }
       })
       // Agents loaded successfully
       setAgentSuggestions(suggestions)
@@ -744,12 +744,11 @@ export function useUnifiedCompletion({
         .slice(0, 25)  // Show more entries for better visibility
       
       return entries.map(entry => {
-        const entryPath = join(searchDir, entry)
-        const isDir = statSync(entryPath).isDirectory()
-        const icon = isDir ? '📁' : '📄'
-        
-        // Unix-style path building - preserve user's original path format
-        let value: string
+	        const entryPath = join(searchDir, entry)
+	        const isDir = statSync(entryPath).isDirectory()
+	        
+	        // Unix-style path building - preserve user's original path format
+	        let value: string
         
         if (userPath.includes('/')) {
           // User typed path with separators - maintain structure
@@ -775,13 +774,13 @@ export function useUnifiedCompletion({
           }
         }
         
-        return {
-          value,
-          displayValue: `${icon} ${entry}${isDir ? '/' : ''}`,
-          type: 'file' as const,
-          score: isDir ? 80 : 70,
-        }
-      })
+	        return {
+	          value,
+	          displayValue: `${entry}${isDir ? '/' : ''}`,
+	          type: 'file' as const,
+	          score: isDir ? 80 : 70,
+	        }
+	      })
     } catch {
       return []
     }
@@ -850,9 +849,9 @@ export function useUnifiedCompletion({
           isSmartMatch: true,
           originalContext: sourceContext,
           // Only modify display for clarity, keep value clean
-          displayValue: `🎯 ${suggestion.displayValue}`
-        }
-      })
+	          displayValue: `[match] ${suggestion.displayValue}`
+	        }
+	      })
       .filter(Boolean)
       .sort((a, b) => b.score - a.score)
       .slice(0, 5)
@@ -954,9 +953,9 @@ export function useUnifiedCompletion({
     if (context.type === 'command') {
       completion = `/${suggestion.value} `
     } else if (context.type === 'agent') {
-      // 🚀 万能@引用：根据建议类型决定补全格式
-      if (suggestion.type === 'agent') {
-        completion = `@${suggestion.value} ` // 代理补全
+	      // 万能@引用：根据建议类型决定补全格式
+	      if (suggestion.type === 'agent') {
+	        completion = `@${suggestion.value} ` // 代理补全
       } else if (suggestion.type === 'ask') {
         completion = `@${suggestion.value} ` // Ask模型补全
       } else {

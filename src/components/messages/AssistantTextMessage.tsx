@@ -131,7 +131,7 @@ export function AssistantTextMessage({
           <Box flexDirection="row">
             {shouldShowDot && (
               <Box minWidth={prefixWidth}>
-                <Text color={getTheme().kode}>{ASSISTANT_PREFIX}</Text>
+                <Text color={getTheme().yuuka}>{ASSISTANT_PREFIX}</Text>
               </Box>
             )}
             {!shouldShowDot && <Box minWidth={prefixWidth} />}

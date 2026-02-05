@@ -165,7 +165,7 @@ export const TodoReadTool = {
             isBold = true
           } else {
             statusIcon = '○'
-            textColor = theme.kode
+            textColor = theme.yuuka
           }
 
           return (
@@ -226,4 +226,3 @@ export const TodoReadTool = {
     }
   },
 } satisfies Tool<typeof inputSchema, TodoReadResult>
-

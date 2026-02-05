@@ -18,7 +18,7 @@ import {
   NotebookCellSourceOutput,
   NotebookCellOutput,
   NotebookCellType,
-} from '@kode-types/notebook'
+} from '@yuuka-types/notebook'
 import { formatOutput } from '@tools/BashTool/utils'
 import { getCwd } from '@utils/state'
 import { findSimilarFile } from '@utils/file'

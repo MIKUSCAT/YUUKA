@@ -19,14 +19,14 @@ function themeColor(text: string, color?: string): string {
 function renderMathInline(raw: string): string {
   const theme = getTheme()
   const formatted = formatLatexMath(raw)
-  // Inline math: use kode color for visibility
-  return chalk.hex(theme.kode)(formatted)
+  // Inline math: use yuuka color for visibility
+  return chalk.hex(theme.yuuka)(formatted)
 }
 
 function renderLink(text: string, url: string, baseColor?: string): string {
   const theme = getTheme()
   return (
-    themeColor(text, baseColor) + chalk.hex(theme.kode)(` (${url})`)
+    themeColor(text, baseColor) + chalk.hex(theme.yuuka)(` (${url})`)
   )
 }
 
@@ -40,7 +40,7 @@ function renderImage(alt: string, url: string, baseColor?: string): string {
   const label = alt?.trim() ? `Image: ${alt}` : 'Image'
   return (
     chalk.hex(theme.secondaryText)(`[${label}] `) +
-    chalk.hex(theme.kode)(url)
+    chalk.hex(theme.yuuka)(url)
   )
 }
 
@@ -155,7 +155,7 @@ export function renderInlineAnsi(text: string, options: InlineRenderOptions = {}
 
     // URL
     if (!rendered && /^https?:\/\//.test(fullMatch)) {
-      rendered = chalk.hex(getTheme().kode)(fullMatch)
+      rendered = chalk.hex(getTheme().yuuka)(fullMatch)
     }
 
     parts.push(rendered ?? themeColor(fullMatch, baseColor))

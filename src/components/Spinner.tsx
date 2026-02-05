@@ -44,10 +44,10 @@ export function Spinner(): React.ReactNode {
   return (
     <Box flexDirection="row" marginTop={1} width="100%">
       <Box flexWrap="nowrap" height={1} width={2}>
-        <Text color={getTheme().kode}>{frames[frame]}</Text>
+        <Text color={getTheme().yuuka}>{frames[frame]}</Text>
       </Box>
       <Box flexDirection="row" flexGrow={1}>
-        <Text color={getTheme().kode} wrap="truncate-end">
+        <Text color={getTheme().yuuka} wrap="truncate-end">
           {(getSessionState('currentThought')?.subject?.trim() ||
             message.current ||
             '思考中') + '… '}
@@ -80,7 +80,7 @@ export function SimpleSpinner(): React.ReactNode {
 
   return (
     <Box flexWrap="nowrap" height={1} width={2}>
-      <Text color={getTheme().kode}>{frames[frame]}</Text>
+      <Text color={getTheme().yuuka}>{frames[frame]}</Text>
     </Box>
   )
 }

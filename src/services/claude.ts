@@ -43,7 +43,7 @@ import { getModelManager } from '@utils/model'
 import { zodToJsonSchema } from 'zod-to-json-schema'
 import type { BetaMessageStream } from '@anthropic-ai/sdk/lib/BetaMessageStream.mjs'
 import { ModelAdapterFactory } from './modelAdapterFactory'
-import { UnifiedRequestParams } from '@kode-types/modelCapabilities'
+import { UnifiedRequestParams } from '@yuuka-types/modelCapabilities'
 import { responseStateManager, getConversationId } from './responseStateManager'
 import type { ToolUseContext } from '@tool'
 import type {
@@ -97,7 +97,7 @@ function getModelConfigForDebug(model: string): {
     maxTokens = modelProfile.maxTokens
     reasoningEffort = modelProfile.reasoningEffort
   } else {
-    // 🚨 No ModelProfile available - this should not happen in modern system
+    // No ModelProfile available - this should not happen in modern system
     apiKeyStatus = 'missing'
     maxTokens = undefined
     reasoningEffort = undefined
@@ -115,20 +115,20 @@ function getModelConfigForDebug(model: string): {
   }
 }
 
-// KodeContext管理器 - 用于项目文档的同步缓存和访问
-class KodeContextManager {
-  private static instance: KodeContextManager
+// YUUKA Context 管理器 - 用于项目文档的同步缓存和访问
+class YuukaContextManager {
+  private static instance: YuukaContextManager
   private projectDocsCache: string = ''
   private cacheInitialized: boolean = false
   private initPromise: Promise<void> | null = null
 
   private constructor() {}
 
-  public static getInstance(): KodeContextManager {
-    if (!KodeContextManager.instance) {
-      KodeContextManager.instance = new KodeContextManager()
+  public static getInstance(): YuukaContextManager {
+    if (!YuukaContextManager.instance) {
+      YuukaContextManager.instance = new YuukaContextManager()
     }
-    return KodeContextManager.instance
+    return YuukaContextManager.instance
   }
 
   public async initialize(): Promise<void> {
@@ -150,18 +150,18 @@ class KodeContextManager {
 
       // 在调试模式下记录加载结果
       if (process.env.NODE_ENV === 'development') {
-        debugLogger.info('KODE_CONTEXT_LOADED', {
+        debugLogger.info('YUUKA_CONTEXT_LOADED', {
           characters: this.projectDocsCache.length,
         })
       }
     } catch (error) {
-      console.warn('[KodeContext] Failed to load project docs:', error)
+      console.warn('[YuukaContext] Failed to load project docs:', error)
       this.projectDocsCache = ''
       this.cacheInitialized = true
     }
   }
 
-  public getKodeContext(): string {
+  public getYuukaContext(): string {
     if (!this.cacheInitialized) {
       // 如果未初始化，异步初始化但立即返回空字符串
       this.initialize().catch(console.warn)
@@ -178,17 +178,17 @@ class KodeContextManager {
 }
 
 // 导出函数保持向后兼容
-const kodeContextManager = KodeContextManager.getInstance()
+const yuukaContextManager = YuukaContextManager.getInstance()
 
 // 在模块加载时异步初始化
-kodeContextManager.initialize().catch(console.warn)
+yuukaContextManager.initialize().catch(console.warn)
 
-export const generateKodeContext = (): string => {
-  return kodeContextManager.getKodeContext()
+export const generateYuukaContext = (): string => {
+  return yuukaContextManager.getYuukaContext()
 }
 
-export const refreshKodeContext = async (): Promise<void> => {
-  await kodeContextManager.refreshCache()
+export const refreshYuukaContext = async (): Promise<void> => {
+  await yuukaContextManager.refreshCache()
 }
 
 interface StreamResponse extends APIMessage {
@@ -1108,7 +1108,7 @@ export async function queryLLM(
   },
 ): Promise<AssistantMessage> {
 
-  // ✅ Gemini 统一通道：不再走 Anthropic/OpenAI 等 provider 分支
+  // Gemini 统一通道：不再走 Anthropic/OpenAI 等 provider 分支
   // model 字段只作为“用途 key”（main/quick/...) 传给 GeminiModelConfigService
   const currentRequest = getCurrentRequest()
   debugLogger.api('LLM_REQUEST_START', {
@@ -1198,13 +1198,13 @@ export function formatSystemPromptWithContext(
   const hasContext = Object.entries(context).length > 0
 
   if (hasContext) {
-    // 步骤1: 直接注入 Kode 上下文到系统提示 - 对齐官方设计
+    // 步骤1: 直接注入 YUUKA 上下文到系统提示 - 对齐官方设计
     if (!skipContextReminders) {
-      const kodeContext = generateKodeContext()
-      if (kodeContext) {
+      const yuukaContext = generateYuukaContext()
+      if (yuukaContext) {
         // 添加分隔符和标识，使项目文档在系统提示中更清晰
         enhancedPrompt.push('\n---\n# 项目上下文\n')
-        enhancedPrompt.push(kodeContext)
+        enhancedPrompt.push(yuukaContext)
         enhancedPrompt.push('\n---\n')
       }
     }
@@ -1220,7 +1220,7 @@ export function formatSystemPromptWithContext(
       `\nAs you answer the user's questions, you can use the following context:\n`,
     )
 
-    // 过滤掉已经由 Kode 上下文处理的项目文档（避免重复）
+    // 过滤掉已经由 YUUKA 上下文处理的项目文档（避免重复）
     const filteredContext = Object.fromEntries(
       Object.entries(context).filter(
         ([key]) => key !== 'projectDocs' && key !== 'userDocs',
@@ -1314,7 +1314,7 @@ async function queryAnthropicNative(
   let model: string
   let provider: string
 
-  // 🔍 Debug: 记录模型配置详情
+  // Debug: 记录模型配置详情
   debugLogger.api('MODEL_CONFIG_ANTHROPIC', {
     modelProfileFound: !!modelProfile,
     modelProfileId: modelProfile?.modelName,
@@ -1359,7 +1359,7 @@ async function queryAnthropicNative(
       anthropic = getAnthropicClient(model)
     }
   } else {
-    // 🚨 降级：没有有效的ModelProfile时，应该抛出错误
+    // 降级：没有有效的ModelProfile时，应该抛出错误
     const errorDetails = {
       modelProfileExists: !!modelProfile,
       modelProfileModelName: modelProfile?.modelName,
@@ -1409,7 +1409,7 @@ async function queryAnthropicNative(
   // 记录系统提示构建过程
   logSystemPromptConstruction({
     basePrompt: systemPrompt.join('\n'),
-    kodeContext: generateKodeContext() || '',
+    yuukaContext: generateYuukaContext() || '',
     reminders: [], // 这里可以从 generateSystemReminders 获取
     finalPrompt: systemPrompt.join('\n'),
   })
@@ -1439,7 +1439,7 @@ async function queryAnthropicNative(
         ;(params as any).thinking = { max_tokens: maxThinkingTokens }
       }
 
-      // 🔥 REAL-TIME API CALL DEBUG - 使用全局日志系统 (Anthropic Streaming)
+      // REAL-TIME API CALL DEBUG - 使用全局日志系统 (Anthropic Streaming)
       debugLogger.api('ANTHROPIC_API_CALL_START_STREAMING', {
         endpoint: modelProfile?.baseURL || 'DEFAULT_ANTHROPIC',
         model,
@@ -1583,7 +1583,7 @@ async function queryAnthropicNative(
 
         return finalResponse
       } else {
-        // 🔥 REAL-TIME API CALL DEBUG - 使用全局日志系统 (Anthropic Non-Streaming)
+        // REAL-TIME API CALL DEBUG - 使用全局日志系统 (Anthropic Non-Streaming)
         debugLogger.api('ANTHROPIC_API_CALL_START_NON_STREAMING', {
           endpoint: modelProfile?.baseURL || 'DEFAULT_ANTHROPIC',
           model,
@@ -1763,7 +1763,7 @@ async function queryOpenAI(
   const modelProfile = options?.modelProfile || modelManager.getModel('main')
   let model: string
 
-  // 🔍 Debug: 记录模型配置详情
+  // Debug: 记录模型配置详情
   const currentRequest = getCurrentRequest()
   debugLogger.api('MODEL_CONFIG_OPENAI', {
     modelProfileFound: !!modelProfile,
@@ -1833,7 +1833,7 @@ async function queryOpenAI(
   // 记录系统提示构建过程 (OpenAI path)
   logSystemPromptConstruction({
     basePrompt: systemPrompt.join('\n'),
-    kodeContext: generateKodeContext() || '',
+    yuukaContext: generateYuukaContext() || '',
     reminders: [], // 这里可以从 generateSystemReminders 获取
     finalPrompt: systemPrompt.join('\n'),
   })

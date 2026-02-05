@@ -293,14 +293,14 @@ export class ModelManager {
           success: false,
           modelName: null,
           blocked: false,
-          message: '❌ No models configured. Use /model to add models.',
+          message: 'No models configured. Use /model to add models.',
         }
       } else if (allModels.length === 1) {
         return {
           success: false,
           modelName: null,
           blocked: false,
-          message: `⚠️ Only one model configured (${allModels[0].modelName}). Use /model to add more models for switching.`,
+          message: `Only one model configured (${allModels[0].modelName}). Use /model to add more models for switching.`,
         }
       }
     }
@@ -317,9 +317,9 @@ export class ModelManager {
       blocked: result.contextOverflow,
       message: result.success
         ? result.contextOverflow
-          ? `⚠️ Context usage: ${result.usagePercentage.toFixed(1)}% - ${result.modelName}`
-          : `✅ Switched to ${result.modelName} (${currentIndex + 1}/${totalModels})${currentModel?.provider ? ` [${currentModel.provider}]` : ''}`
-        : `❌ Failed to switch models`,
+          ? `Context usage: ${result.usagePercentage.toFixed(1)}% - ${result.modelName}`
+          : `Switched to ${result.modelName} (${currentIndex + 1}/${totalModels})${currentModel?.provider ? ` [${currentModel.provider}]` : ''}`
+        : `Failed to switch models`,
     }
   }
 

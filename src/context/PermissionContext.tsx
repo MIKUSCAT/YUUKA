@@ -10,7 +10,7 @@ import {
   PermissionContext as IPermissionContext,
   getNextPermissionMode,
   MODE_CONFIGS,
-} from '@kode-types/PermissionMode'
+} from '@yuuka-types/PermissionMode'
 
 interface PermissionContextValue {
   permissionContext: IPermissionContext
@@ -57,7 +57,7 @@ export function PermissionProvider({
       )
       const modeConfig = MODE_CONFIGS[nextMode]
 
-      console.log(`🔄 Mode cycle: ${prev.mode} → ${nextMode}`)
+      console.log(`Mode cycle: ${prev.mode} -> ${nextMode}`)
 
       return {
         ...prev,

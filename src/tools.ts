@@ -2,6 +2,7 @@ import { Tool } from './Tool'
 import { TaskTool } from './tools/TaskTool/TaskTool'
 import { ArchitectTool } from './tools/ArchitectTool/ArchitectTool'
 import { BashTool } from './tools/BashTool/BashTool'
+import { TaskOutputTool } from './tools/TaskOutputTool/TaskOutputTool'
 import { AskExpertModelTool } from './tools/AskExpertModelTool/AskExpertModelTool'
 import { FileEditTool } from './tools/FileEditTool/FileEditTool'
 import { FileReadTool } from './tools/FileReadTool/FileReadTool'
@@ -20,7 +21,6 @@ import { TodoWriteTool } from './tools/TodoWriteTool/TodoWriteTool'
 import { WebSearchTool } from './tools/WebSearchTool/WebSearchTool'
 import { URLFetcherTool } from './tools/URLFetcherTool/URLFetcherTool'
 import { SkillTool } from './tools/SkillTool/SkillTool'
-import { DocReadTool } from './tools/DocTool/DocReadTool'
 import { DocWriteTool } from './tools/DocTool/DocWriteTool'
 import { getMCPTools } from './services/mcpClient'
 import { memoize } from 'lodash-es'
@@ -33,6 +33,7 @@ export const getAllTools = (): Tool[] => {
     TaskTool as unknown as Tool,
     AskExpertModelTool as unknown as Tool,
     BashTool as unknown as Tool,
+    TaskOutputTool as unknown as Tool,
     GlobTool as unknown as Tool,
     GrepTool as unknown as Tool,
     LSTool as unknown as Tool,
@@ -42,7 +43,6 @@ export const getAllTools = (): Tool[] => {
     FileWriteTool as unknown as Tool,
     NotebookReadTool as unknown as Tool,
     NotebookEditTool as unknown as Tool,
-    DocReadTool as unknown as Tool,
     DocWriteTool as unknown as Tool,
     ThinkTool as unknown as Tool,
     TodoReadTool as unknown as Tool,

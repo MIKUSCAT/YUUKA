@@ -7,7 +7,7 @@
 function postinstallNotice() {
   // Only print informational hints; never fail install.
   try {
-    console.log('✅ yuuka installed. Command available: yuuka');
+    console.log('yuuka installed. Command available: yuuka');
     console.log('   If shell cannot find them, try reloading your terminal or reinstall globally:');
     console.log('   npm i -g yuuka  (or use: npx yuuka)');
   } catch {}

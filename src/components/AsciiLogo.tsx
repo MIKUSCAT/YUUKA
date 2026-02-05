@@ -7,7 +7,7 @@ export function AsciiLogo(): React.ReactNode {
   const theme = getTheme()
   return (
     <Box flexDirection="column" alignItems="center" width="100%">
-      <Text color={theme.kode}>{ASCII_LOGO.trim()}</Text>
+      <Text color={theme.yuuka}>{ASCII_LOGO.trim()}</Text>
     </Box>
   )
 }

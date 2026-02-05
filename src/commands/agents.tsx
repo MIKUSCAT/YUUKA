@@ -30,9 +30,9 @@ const AGENT_LOCATIONS = {
 
 const UI_ICONS = {
   pointer: "❯",
-  checkboxOn: "☑",
-  checkboxOff: "☐", 
-  warning: "⚠",
+  checkboxOn: "[x]",
+  checkboxOff: "[ ]", 
+  warning: "!",
   separator: "─",
   loading: "◐◑◒◓"
 } as const
@@ -744,7 +744,7 @@ function MultilineTextInput({
           </Box>
           <Box>
             {error ? (
-              <Text color={theme.error}>⚠ {error}</Text>
+              <Text color={theme.error}>Error: {error}</Text>
             ) : (
               <Text dimColor>
                 {hasContent ? 'Ready' : 'Waiting'}
@@ -1357,7 +1357,7 @@ function AgentListView({
         {onCreateOption ? `${UI_ICONS.pointer} ` : "  "}
       </Text>
       <Text bold color={onCreateOption ? theme.primary : undefined}>
-        ✨ Create new agent
+        Create new agent
       </Text>
     </Box>
   )
@@ -1566,7 +1566,7 @@ function AgentListView({
     return (
       <Box flexDirection="column">
         <EmptyStateInput />
-        <Header title="🤖 Agents" subtitle="">
+        <Header title="Agents" subtitle="">
           {onCreateNew && (
             <Box marginY={1}>
               {renderCreateOption()}
@@ -1574,20 +1574,20 @@ function AgentListView({
           )}
           <Box marginTop={1} flexDirection="column">
             <Box marginBottom={1}>
-              <Text bold color={theme.primary}>💭 What are agents?</Text>
+              <Text bold color={theme.primary}>What are agents?</Text>
             </Box>
-            <Text>Specialized AI assistants that Kode can delegate to for specific tasks, compatible with Claude Code `.claude` agent packs.</Text>
+            <Text>Specialized AI assistants that YUUKA can delegate to for specific tasks, compatible with Claude Code `.claude` agent packs.</Text>
             <Text>Each agent has its own context, prompt, and tools.</Text>
             
             <Box marginTop={1} marginBottom={1}>
-              <Text bold color={theme.primary}>💡 Popular agent ideas:</Text>
+              <Text bold color={theme.primary}>Popular agent ideas:</Text>
             </Box>
             <Box paddingLeft={2} flexDirection="column">
-              <Text>• 🔍 Code Reviewer - Reviews PRs for best practices</Text>
-              <Text>• 🔒 Security Auditor - Finds vulnerabilities</Text>
-              <Text>• ⚡ Performance Optimizer - Improves code speed</Text>
-              <Text>• 🧑‍💼 Tech Lead - Makes architecture decisions</Text>
-              <Text>• 🎨 UX Expert - Improves user experience</Text>
+              <Text>• Code Reviewer - Reviews PRs for best practices</Text>
+              <Text>• Security Auditor - Finds vulnerabilities</Text>
+              <Text>• Performance Optimizer - Improves code speed</Text>
+              <Text>• Tech Lead - Makes architecture decisions</Text>
+              <Text>• UX Expert - Improves user experience</Text>
             </Box>
           </Box>
 
@@ -1608,7 +1608,7 @@ function AgentListView({
 
   return (
     <Box flexDirection="column">
-      <Header title="🤖 Agents" subtitle="">
+      <Header title="Agents" subtitle="">
         {changes.length > 0 && (
           <Box marginTop={1}>
             <Text dimColor>{changes[changes.length - 1]}</Text>
@@ -1628,7 +1628,7 @@ function AgentListView({
                     bold={isActive}
                     dimColor={!isActive && !isSelected}
                   >
-                    {isSelected ? '▶ ' : isActive ? '◉ ' : '○ '}
+                    {isSelected ? '> ' : isActive ? '* ' : '  '}
                     {tab.label}
                   </Text>
                   {idx < locationTabs.length - 1 && <Text dimColor> | </Text>}
@@ -1767,7 +1767,7 @@ function GenerateStep({ createState, setCreateState, setModeState, existingAgent
   
   return (
     <Box flexDirection="column">
-      <Header title="✨ New Agent" subtitle="What should it do?" step={2} totalSteps={8}>
+      <Header title="New Agent" subtitle="What should it do?" step={2} totalSteps={8}>
         <Box marginTop={1}>
           {createState.isGenerating ? (
             <Box flexDirection="column">
@@ -1820,7 +1820,7 @@ function TypeStep({ createState, setCreateState, setModeState, existingAgents }:
           />
           {createState.error && (
             <Box marginTop={1}>
-              <Text color="red">⚠ {createState.error}</Text>
+              <Text color="red">Error: {createState.error}</Text>
             </Box>
           )}
         </Box>
@@ -2026,7 +2026,7 @@ function ToolsStep({ createState, setCreateState, setModeState, tools }: ToolsSt
   
   return (
     <Box flexDirection="column">
-      <Header title="🔧 Tool Permissions" subtitle="" step={3} totalSteps={5}>
+      <Header title="Tool Permissions" subtitle="" step={3} totalSteps={5}>
         <Box flexDirection="column" marginTop={1}>
           {options.map((option, idx) => {
             const isSelected = idx === selectedIndex
@@ -2121,7 +2121,7 @@ function ModelStep({ createState, setCreateState, setModeState }: StepProps) {
 
   return (
     <Box flexDirection="column">
-      <Header title="🤖 Select Model" subtitle="" step={4} totalSteps={5}>
+      <Header title="Select Model" subtitle="" step={4} totalSteps={5}>
         <Box marginTop={1} flexDirection="column">
           {modelOptions.map((model, index) => {
             const isSelected = index === selectedIndex
@@ -2192,7 +2192,7 @@ function ColorStep({ createState, setCreateState, setModeState }: StepProps) {
   
   return (
     <Box flexDirection="column">
-      <Header title="🎨 Color Theme" subtitle="" step={5} totalSteps={5}>
+      <Header title="Color Theme" subtitle="" step={5} totalSteps={5}>
         <Box marginTop={1} flexDirection="column">
           <Box marginBottom={1}>
             <Text dimColor>Choose how your agent appears in the list:</Text>
@@ -2329,10 +2329,10 @@ function ConfirmStep({ createState, setCreateState, setModeState, tools, onAgent
   
   return (
     <Box flexDirection="column">
-      <Header title="✅ Review & Create" subtitle="">
+      <Header title="Review & Create" subtitle="">
         <Box flexDirection="column" marginTop={1}>
           <Box marginBottom={1}>
-            <Text bold color={theme.primary}>📋 Configuration</Text>
+            <Text bold color={theme.primary}>Configuration</Text>
           </Box>
           
           <Box flexDirection="column" gap={0}>
@@ -2346,7 +2346,7 @@ function ConfirmStep({ createState, setCreateState, setModeState, tools, onAgent
           </Box>
           
           <Box marginTop={1} marginBottom={1}>
-            <Text bold color={theme.primary}>📝 Purpose</Text>
+            <Text bold color={theme.primary}>Purpose</Text>
           </Box>
           <Box paddingLeft={1}>
             <Text>{createState.whenToUse}</Text>
@@ -2393,8 +2393,8 @@ function LocationSelect({ createState, setCreateState, setModeState }: LocationS
   const [selectedIndex, setSelectedIndex] = useState(0)
   
   const options = [
-    { label: "📁 Project", value: "project", desc: ".gemini/agents/" },
-    { label: "🏠 Personal", value: "user", desc: "~/.gemini/agents/" }
+    { label: "Project", value: "project", desc: ".gemini/agents/" },
+    { label: "Personal", value: "user", desc: "~/.gemini/agents/" }
   ]
 
   const handleChange = (value: string) => {
@@ -2421,7 +2421,7 @@ function LocationSelect({ createState, setCreateState, setModeState }: LocationS
 
   return (
     <Box flexDirection="column">
-      <Header title="📦 Save Location" subtitle="" step={1} totalSteps={5}>
+      <Header title="Save Location" subtitle="" step={1} totalSteps={5}>
         <Box marginTop={1} flexDirection="column">
           {options.map((opt, idx) => (
             <Box key={opt.value} flexDirection="column" marginBottom={1}>
@@ -3070,7 +3070,7 @@ function EditColorStep({ agent, setModeState, onAgentUpdated }: EditColorStepPro
                 <Text>
                   {' '}{color.label}
                   {isCurrent && (
-                    <Text color="green"> ✔</Text>
+                    <Text color="green"> [current]</Text>
                   )}
                 </Text>
               </Box>
@@ -3277,7 +3277,7 @@ function EditAgent({ agent, tools, setModeState, onAgentUpdated }: EditAgentProp
                 <Box marginTop={1}>
                   {validation.warnings.map((warning, idx) => (
                     <Fragment key={idx}>
-                      <Text color={theme.warning}>⚠ {warning}</Text>
+                      <Text color={theme.warning}>Warning: {warning}</Text>
                     </Fragment>
                   ))}
                 </Box>

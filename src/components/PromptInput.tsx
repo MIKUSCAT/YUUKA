@@ -17,7 +17,7 @@ import { getTheme } from '@utils/theme'
 import { setTerminalTitle } from '@utils/terminal'
 import { launchExternalEditor } from '@utils/externalEditor'
 import { usePermissionContext } from '@context/PermissionContext'
-import { getWorkspaceGeminiSettingsPath, readGeminiSettingsFile } from '@utils/geminiSettings'
+import { getGlobalGeminiSettingsPath, readGeminiSettingsFile } from '@utils/geminiSettings'
 import figures from 'figures'
 import { getTodos } from '@utils/todoStorage'
 import { TodoPanel } from './TodoPanel'
@@ -545,7 +545,7 @@ function PromptInput({
         <Text dimColor>
           {(() => {
             try {
-              const settingsPath = getWorkspaceGeminiSettingsPath()
+              const settingsPath = getGlobalGeminiSettingsPath()
               const settings = readGeminiSettingsFile(settingsPath)
               const modelName = settings.model?.name
               if (modelName) {

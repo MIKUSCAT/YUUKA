@@ -1,7 +1,7 @@
 #!/usr/bin/env -S node --no-warnings=ExperimentalWarning --enable-source-maps
 import '@utils/sanitizeAnthropicEnv'
 
-// 🔧 Global handler for AbortError - this prevents unhandled rejection crashes
+// Global handler for AbortError - this prevents unhandled rejection crashes
 // when user presses ESC to cancel streaming requests
 process.on('unhandledRejection', (reason: any, promise) => {
   // Silently ignore AbortError - this is expected behavior when cancelling requests
@@ -16,7 +16,7 @@ process.on('unhandledRejection', (reason: any, promise) => {
 })
 
 import { fileURLToPath } from 'node:url'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { existsSync } from 'node:fs'
 import { initSentry } from '@services/sentry'
 import { PRODUCT_COMMAND, PRODUCT_NAME } from '@constants/product'
@@ -110,6 +110,12 @@ import { ConfigParseError } from '@utils/errors'
 import { grantReadPermissionForOriginalDir } from '@utils/permissions/filesystem'
 import { MACRO } from '@constants/macros'
 import { runProjectMigrations } from '@utils/migrations'
+import {
+  ensureGlobalGeminiSettings,
+  getGlobalGeminiSettingsPath,
+  readGeminiSettingsFile,
+  writeGeminiSettingsFile,
+} from '@utils/geminiSettings'
 export function completeOnboarding(): void {
   const config = getGlobalConfig()
   saveGlobalConfig({
@@ -185,6 +191,157 @@ function logStartup(): void {
   })
 }
 
+function migrateLegacyProjectGeminiSettingsToGlobal(projectRoot: string): void {
+  // 只做“搬家”：把项目 settings 里的 Gemini key/baseUrl/model 迁移到全局 settings。
+  try {
+    ensureGlobalGeminiSettings()
+    const globalPath = getGlobalGeminiSettingsPath()
+    const globalSettings = readGeminiSettingsFile(globalPath)
+
+    const globalAuth = globalSettings.security?.auth?.geminiApi
+    const hasGlobalKey = !!globalAuth?.apiKey?.trim()
+
+    const projectPath = join(projectRoot, '.gemini', 'settings.json')
+    if (!existsSync(projectPath)) return
+
+    const projectSettings = readGeminiSettingsFile(projectPath)
+    const projectAuth = projectSettings.security?.auth?.geminiApi
+
+    const projectKey = projectAuth?.apiKey?.trim() ?? ''
+    const projectBaseUrl = projectAuth?.baseUrl?.trim() ?? ''
+    const projectModel = projectSettings.model?.name?.trim() ?? ''
+
+    if (!projectKey && !projectBaseUrl && !projectModel) return
+
+    const next = structuredClone(globalSettings) as any
+    let changed = false
+
+    // 只在全局还没配置 key 时才迁移（避免覆盖用户已有全局配置）
+    if (!hasGlobalKey && projectKey) {
+      next.security = next.security ?? {}
+      next.security.auth = next.security.auth ?? {}
+      next.security.auth.selectedType = 'gemini-api-key'
+      next.security.auth.geminiApi = next.security.auth.geminiApi ?? {}
+      next.security.auth.geminiApi.apiKeyAuthMode = 'x-goog-api-key'
+      next.security.auth.geminiApi.apiKey = projectKey
+      changed = true
+    }
+
+    // baseUrl：全局没填/用默认值时，允许迁移项目里的自定义 baseUrl
+    const globalBaseUrl =
+      String(globalAuth?.baseUrl ?? 'https://generativelanguage.googleapis.com').trim()
+    if (
+      projectBaseUrl &&
+      (globalBaseUrl === 'https://generativelanguage.googleapis.com' ||
+        globalBaseUrl === 'https://generativelanguage.googleapis.com/v1beta')
+    ) {
+      next.security = next.security ?? {}
+      next.security.auth = next.security.auth ?? {}
+      next.security.auth.selectedType = 'gemini-api-key'
+      next.security.auth.geminiApi = next.security.auth.geminiApi ?? {}
+      next.security.auth.geminiApi.apiKeyAuthMode = 'x-goog-api-key'
+      next.security.auth.geminiApi.baseUrl = projectBaseUrl
+      changed = true
+    }
+
+    // model：全局没配置时迁移
+    const globalModel = String(globalSettings.model?.name ?? '').trim()
+    if (!globalModel && projectModel) {
+      next.model = next.model ?? {}
+      next.model.name = projectModel
+      changed = true
+    }
+
+    if (!changed) return
+    writeGeminiSettingsFile(globalPath, next)
+    console.log(`已迁移 Gemini 配置到全局 settings：${globalPath}`)
+  } catch {
+    // ignore
+  }
+}
+
+function migrateMcpServersToGlobalAndNpx(): void {
+  try {
+    const projectConfig = getCurrentProjectConfig()
+    const projectServers = projectConfig.mcpServers ?? {}
+
+    const globalConfig = getGlobalConfig()
+    const globalServers = globalConfig.mcpServers ?? {}
+
+    let changed = false
+    const nextGlobalServers: typeof globalServers = { ...globalServers }
+
+    // 1) 把项目 MCP servers 搬到全局（不覆盖全局同名项）
+    for (const [name, server] of Object.entries(projectServers)) {
+      if (nextGlobalServers[name]) continue
+      nextGlobalServers[name] = server
+      changed = true
+    }
+
+    // 2) 把老的本地 cwd + npm run start 形态迁移为 npx（减重、免本地 checkout）
+    for (const [name, server] of Object.entries(nextGlobalServers)) {
+      if (server.type === 'sse') continue
+      const cwd = String(server.cwd ?? '')
+      const cmd = String(server.command ?? '')
+      const args = Array.isArray(server.args) ? server.args.map(String) : []
+
+      const looksLikeLocalNpmRunStart =
+        cmd === 'npm' && args.length >= 2 && args[0] === 'run' && args[1] === 'start'
+
+      if (name === 'office-reader' && looksLikeLocalNpmRunStart && cwd.includes('mcp-servers/office-reader')) {
+        nextGlobalServers[name] = {
+          command: 'npx',
+          args: ['-y', 'yuuka-mcp-office-reader'],
+          env: server.env,
+        }
+        changed = true
+        continue
+      }
+
+      if (name === 'chrome-devtools' && looksLikeLocalNpmRunStart && cwd.includes('mcp-servers/chrome-devtools-mcp')) {
+        nextGlobalServers[name] = {
+          command: 'npx',
+          args: ['-y', 'chrome-devtools-mcp'],
+          env: server.env,
+        }
+        changed = true
+        continue
+      }
+
+      // windows_mcp：从本地目录脚本迁移为“直接跑本地 exe（需在 PATH 或写绝对路径）”
+      if (
+        name === 'windows_mcp' &&
+        cmd.toLowerCase().includes('powershell') &&
+        cwd.includes('mcp-servers/windows-mcp')
+      ) {
+        nextGlobalServers[name] = {
+          command: 'Sbroenne.WindowsMcp.exe',
+          args: [],
+          env: server.env,
+        }
+        changed = true
+      }
+    }
+
+    if (!changed) return
+
+    saveGlobalConfig({
+      ...globalConfig,
+      mcpServers: nextGlobalServers,
+    })
+
+    // 清掉项目里的 mcpServers（以后只用全局）
+    if (Object.keys(projectServers).length > 0) {
+      saveCurrentProjectConfig({
+        ...projectConfig,
+        mcpServers: {},
+      })
+    }
+  } catch {
+    // ignore
+  }
+}
+
 async function setup(cwd: string, safeMode?: boolean): Promise<void> {
   // Set both current and original working directory if --cwd was provided
   if (cwd !== process.cwd()) {
@@ -195,23 +352,42 @@ async function setup(cwd: string, safeMode?: boolean): Promise<void> {
   // Always grant read permissions for original working dir
   grantReadPermissionForOriginalDir()
 
+  // 迁移：如果之前把 key/baseUrl 写在项目 settings 里，这里帮你搬到全局 ~/.gemini/settings.json
+  migrateLegacyProjectGeminiSettingsToGlobal(resolve(cwd))
+
   // Ensure project config exists (legacy config migrations may create settings.json)
   getCurrentProjectConfig()
 
   // One-time migrations (history/tool names) for the current project
   runProjectMigrations()
 
-  // 🚀 Non-blocking: Start agent watcher in background (don't await)
+  // 迁移：把 MCP servers 从项目配置搬到全局，并把本地 npm run start 形态改成 npx
+  migrateMcpServersToGlobalAndNpx()
+
+  // Non-blocking: Start agent watcher in background (don't await)
   ;(async () => {
     try {
       const agentLoader = await import('@utils/agentLoader')
       const { startAgentWatcher } = agentLoader
       await startAgentWatcher(() => {
         // Cache is already cleared in the watcher, just log
-        console.log('✅ Agent configurations hot-reloaded')
+        console.log('Agent configurations hot-reloaded')
       })
     } catch (e) {
       // Silently ignore agent watcher errors - not critical for startup
+    }
+  })()
+
+  // Non-blocking: Start skill watcher in background (don't await)
+  ;(async () => {
+    try {
+      const skillLoader = await import('@utils/skillLoader')
+      const { startSkillWatcher } = skillLoader
+      await startSkillWatcher(() => {
+        console.log('Skill configurations hot-reloaded')
+      })
+    } catch {
+      // Silently ignore skill watcher errors - not critical for startup
     }
   })()
 
@@ -234,11 +410,11 @@ async function setup(cwd: string, safeMode?: boolean): Promise<void> {
     return
   }
 
-  // 🚀 Non-blocking: Run cleanup and context prefetch in background
+  // Non-blocking: Run cleanup and context prefetch in background
   cleanupOldMessageFilesInBackground()
   // Note: getContext() is now called lazily in REPL when needed, not here
 
-  // 🚀 Non-blocking: Migrate config in background
+  // Non-blocking: Migrate config in background
   setImmediate(() => {
     const globalConfig = getGlobalConfig()
     if (
@@ -386,7 +562,7 @@ ${commandList}`,
           console.log(response)
           process.exit(0)
         } else {
-          // 🚀 Render REPL immediately, check for updates in background
+          // Render REPL immediately, check for updates in background
           const { render } = await import('ink')
           const { REPL } = await import('@screens/REPL')
           render(
@@ -403,7 +579,7 @@ ${commandList}`,
             renderContext,
           )
 
-          // 🚀 Non-blocking: Check for updates in background (after render)
+          // Non-blocking: Check for updates in background (after render)
           setImmediate(async () => {
             try {
               const latest = await getLatestVersion()
@@ -548,7 +724,7 @@ ${commandList}`,
     .option(
       '-s, --scope <scope>',
       'Configuration scope (project or global)',
-      'project',
+      'global',
     )
     .action(async (name, url, options) => {
       try {
@@ -571,7 +747,7 @@ ${commandList}`,
     .option(
       '-s, --scope <scope>',
       'Configuration scope (project or global)',
-      'project',
+      'global',
     )
     .option(
       '-e, --env <env...>',
@@ -640,9 +816,9 @@ ${commandList}`,
 
           // Get scope
           const scopeStr = await question(
-            'Configuration scope (project or global) [project]: ',
+            'Configuration scope (project or global) [global]: ',
           )
-          const serverScope = ensureConfigScope(scopeStr || 'project')
+          const serverScope = ensureConfigScope(scopeStr || 'global')
 
           rl.close()
 
@@ -717,7 +893,7 @@ ${commandList}`,
     .option(
       '-s, --scope <scope>',
       'Configuration scope (project, global, or mcprc)',
-      'project',
+      'global',
     )
     .action(async (name: string, options: { scope?: string }) => {
       try {
@@ -760,7 +936,7 @@ ${commandList}`,
     .option(
       '-s, --scope <scope>',
       'Configuration scope (project or global)',
-      'project',
+      'global',
     )
     .action(async (name, jsonStr, options) => {
       try {
@@ -855,7 +1031,7 @@ ${commandList}`,
     .option(
       '-s, --scope <scope>',
       'Configuration scope (project or global)',
-      'project',
+      'global',
     )
     .action(async options => {
       try {
@@ -1063,11 +1239,11 @@ ${commandList}`,
                 <Box
                   flexDirection="column"
                   borderStyle="round"
-                borderColor={theme.kode}
+                borderColor={theme.yuuka}
                   padding={1}
                   width={'100%'}
                 >
-                  <Text bold color={theme.kode}>
+                  <Text bold color={theme.yuuka}>
                     Import MCP Servers from Claude Desktop
                   </Text>
 
@@ -1142,7 +1318,6 @@ ${commandList}`,
     process.exit(0)
   }
 
-  // New command name to match Kode
   mcp
     .command('reset-project-choices')
     .description(

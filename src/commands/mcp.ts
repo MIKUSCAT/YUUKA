@@ -16,7 +16,15 @@ const mcp = {
     const theme = getTheme()
 
     if (Object.keys(servers).length === 0) {
-      return `No MCP servers configured. Run \`${PRODUCT_COMMAND} mcp\` to learn about how to configure MCP servers.`
+      return [
+        'No MCP servers configured.',
+        '',
+        'Quick setup (global):',
+        `- ${PRODUCT_COMMAND} mcp add office-reader npx -y yuuka-mcp-office-reader`,
+        `- ${PRODUCT_COMMAND} mcp add chrome-devtools npx -y chrome-devtools-mcp`,
+        '',
+        `Use \`${PRODUCT_COMMAND} mcp list\` to verify status after adding.`,
+      ].join('\n')
     }
 
     // Sort servers by name and format status with colors

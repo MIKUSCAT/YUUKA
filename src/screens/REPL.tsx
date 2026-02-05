@@ -120,7 +120,7 @@ export function REPL({
     setForkConvoWithMessagesOnTheNextRender,
   ] = useState<MessageType[] | null>(null)
 
-  // 🔧 Simplified AbortController management - inspired by reference system
+  // Simplified AbortController management - inspired by reference system
   const [abortController, setAbortController] = useState<AbortController | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   // No auto-updater state
@@ -176,7 +176,7 @@ export function REPL({
     if (toolUseConfirm) {
       toolUseConfirm.onAbort()
     } else if (abortController && !abortController.signal.aborted) {
-      // 🔧 Fix: Wrap abort in try-catch to handle DOMException [AbortError]
+      // Fix: Wrap abort in try-catch to handle DOMException [AbortError]
       // The abort() call triggers rejection of pending promises, which may not
       // be caught if the streaming loop has already exited
       try {
@@ -321,7 +321,7 @@ export function REPL({
         createAssistantMessage(`API Error: ${e instanceof Error ? e.message : String(e)}`),
       ])
     } finally {
-      // 🔧 Fix: Clean up state after onInit completion
+      // Fix: Clean up state after onInit completion
       setIsLoading(false)
       setAbortController(null)
     }

@@ -2,7 +2,7 @@ import { z } from 'zod'
 import * as React from 'react'
 
 /**
- * Core Tool interface for Kode's extensible tool system
+ * Core Tool interface for YUUKA's extensible tool system
  * Provides standardized contract for all tool implementations
  */
 

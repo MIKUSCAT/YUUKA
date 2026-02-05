@@ -2,7 +2,7 @@ import { getGlobalConfig } from './config'
 
 export interface Theme {
   bashBorder: string
-  kode: string
+  yuuka: string
   noting: string
   permission: string
   secondaryBorder: string
@@ -24,7 +24,7 @@ export interface Theme {
 
 const lightTheme: Theme = {
   bashBorder: '#FF6E57',
-  kode: '#3BA7FF',
+  yuuka: '#3BA7FF',
   noting: '#222222',
   permission: '#e9c61aff',
   secondaryBorder: '#999',
@@ -46,7 +46,7 @@ const lightTheme: Theme = {
 
 const lightDaltonizedTheme: Theme = {
   bashBorder: '#FF6E57',
-  kode: '#3BA7FF',
+  yuuka: '#3BA7FF',
   noting: '#222222',
   permission: '#3366ff',
   secondaryBorder: '#999',
@@ -68,7 +68,7 @@ const lightDaltonizedTheme: Theme = {
 
 const darkTheme: Theme = {
   bashBorder: '#FF6E57',
-  kode: '#6EC6FF',
+  yuuka: '#6EC6FF',
   noting: '#222222',
   permission: '#b1b9f9',
   secondaryBorder: '#888',
@@ -90,7 +90,7 @@ const darkTheme: Theme = {
 
 const darkDaltonizedTheme: Theme = {
   bashBorder: '#FF6E57',
-  kode: '#6EC6FF',
+  yuuka: '#6EC6FF',
   noting: '#222222',
   permission: '#99ccff',
   secondaryBorder: '#888',

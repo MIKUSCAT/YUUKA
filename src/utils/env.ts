@@ -3,10 +3,8 @@ import { memoize } from 'lodash-es'
 import { join } from 'path'
 import { homedir } from 'os'
 import { CONFIG_BASE_DIR } from '@constants/product'
-// Base directory for all Any kode data files (except config.json for backwards compatibility)
-// Support both KODE_CONFIG_DIR and CLAUDE_CONFIG_DIR for compatibility
-export const CLAUDE_BASE_DIR =
-  process.env.KODE_CONFIG_DIR ?? process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), CONFIG_BASE_DIR)
+// Base directory for all YUUKA data files
+export const CLAUDE_BASE_DIR = join(homedir(), CONFIG_BASE_DIR)
 
 // Config and data paths
 export const MEMORY_DIR = join(CLAUDE_BASE_DIR, 'memory')

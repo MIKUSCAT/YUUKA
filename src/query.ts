@@ -577,7 +577,7 @@ export async function* runToolUse(
 ): AsyncGenerator<Message, void> {
   const currentRequest = getCurrentRequest()
 
-  // 🔍 Debug: 工具调用开始
+  // Debug: 工具调用开始
   debugLogger.flow('TOOL_USE_START', {
     toolName: toolUse.name,
     toolUseID: toolUse.id,
@@ -635,7 +635,7 @@ export async function* runToolUse(
   })
 
   try {
-    // 🔧 Check for cancellation before starting tool execution
+    // Check for cancellation before starting tool execution
     if (toolUseContext.abortController.signal.aborted) {
       debugLogger.flow('TOOL_USE_CANCELLED_BEFORE_START', {
         toolName: tool.name,
@@ -666,7 +666,7 @@ export async function* runToolUse(
       assistantMessage,
       shouldSkipPermissionCheck,
     )) {
-      // 🔧 Check for cancellation during tool execution
+      // Check for cancellation during tool execution
       if (toolUseContext.abortController.signal.aborted) {
         debugLogger.flow('TOOL_USE_CANCELLED_DURING_EXECUTION', {
           toolName: tool.name,
@@ -698,7 +698,7 @@ export async function* runToolUse(
   } catch (e) {
     logError(e)
     
-    // 🔧 Even on error, ensure we yield a tool result to clear UI state
+    // Even on error, ensure we yield a tool result to clear UI state
     const errorMessage = createUserMessage([
       {
         type: 'tool_result',
@@ -718,10 +718,12 @@ export function normalizeToolInput(
 ): { [key: string]: boolean | string | number } {
   switch (tool) {
     case BashTool: {
-      const { command, timeout } = BashTool.inputSchema.parse(input) // already validated upstream, won't throw
+      const { command, timeout, run_in_background } =
+        BashTool.inputSchema.parse(input) // already validated upstream, won't throw
       return {
         command: command.replace(`cd ${getCwd()} && `, ''),
         ...(timeout ? { timeout } : {}),
+        ...(run_in_background ? { run_in_background } : {}),
       }
     }
     default:

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { resolve, join } from 'path'
 import { cloneDeep, memoize, pick } from 'lodash-es'
 import { homedir } from 'os'
@@ -10,9 +10,8 @@ import type { ThemeNames } from './theme'
 import { debug as debugLogger } from './debugLogger'
 import { getSessionState, setSessionState } from './sessionState'
 import {
-  ensureGeminiSettings,
+  ensureGlobalGeminiSettings,
   getProjectGeminiSettingsPath,
-  mergeGeminiSettings,
   readGeminiSettingsFile,
   writeGeminiSettingsFile,
   type GeminiSettings,
@@ -233,12 +232,12 @@ export const PROJECT_CONFIG_KEYS = [
 export type ProjectConfigKey = (typeof PROJECT_CONFIG_KEYS)[number]
 
 function getGlobalSettings(throwOnInvalid?: boolean): GeminiSettings {
-  const { settingsPath } = ensureGeminiSettings({ projectRoot: getCwd() })
+  const { settingsPath } = ensureGlobalGeminiSettings()
   return readGeminiSettingsFile(settingsPath, throwOnInvalid)
 }
 
 function saveGlobalSettings(settings: GeminiSettings): void {
-  const { settingsPath } = ensureGeminiSettings({ projectRoot: getCwd() })
+  const { settingsPath } = ensureGlobalGeminiSettings()
   writeGeminiSettingsFile(settingsPath, settings)
 }
 
@@ -247,8 +246,6 @@ function getProjectSettingsPath(projectRoot: string): string {
 }
 
 function getProjectSettings(projectRoot: string): GeminiSettings {
-  // 确保项目 settings 存在，方便用户直接在项目里编辑
-  ensureGeminiSettings({ projectRoot })
   const settingsPath = getProjectSettingsPath(projectRoot)
   return readGeminiSettingsFile(settingsPath)
 }
@@ -265,9 +262,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 function extractGlobalConfigFromSettings(settings: GeminiSettings): GlobalConfig {
   const yuuka = isPlainObject((settings as any).yuuka)
     ? ((settings as any).yuuka as GlobalConfig)
-    : isPlainObject((settings as any).kode)
-      ? ((settings as any).kode as GlobalConfig)
-      : {}
+    : {}
 
   const mergedConfig: GlobalConfig = {
     ...cloneDeep(DEFAULT_GLOBAL_CONFIG),
@@ -292,9 +287,6 @@ function applyGlobalConfigToSettings(
   const next: GeminiSettings = structuredClone(settings)
 
   ;(next as any).yuuka = config
-  if ('kode' in (next as any)) {
-    delete (next as any).kode
-  }
 
   next.ui = next.ui ?? {}
   next.ui.theme = config.theme
@@ -316,9 +308,7 @@ export function checkHasTrustDialogAccepted(): boolean {
     const projectSettingsPath = getProjectGeminiSettingsPath(currentPath)
     if (existsSync(projectSettingsPath)) {
       const projectSettings = readGeminiSettingsFile(projectSettingsPath)
-      const projectConfigFromFile =
-        ((projectSettings as any).yuuka as any)?.project ??
-        ((projectSettings as any).kode as any)?.project
+      const projectConfigFromFile = ((projectSettings as any).yuuka as any)?.project
       if (projectConfigFromFile?.hasTrustDialogAccepted) {
         return true
       }
@@ -367,7 +357,7 @@ export function saveGlobalConfig(config: GlobalConfig): void {
   // 保留 projects（迁移期兼容），避免 saveGlobalConfig 意外清空
   const mergedConfig: GlobalConfig = {
     ...config,
-    projects: existingConfig.projects,
+    projects: config.projects ?? existingConfig.projects,
   }
 
   saveGlobalSettings(applyGlobalConfigToSettings(existingSettings, mergedConfig))
@@ -531,54 +521,49 @@ export function getCurrentProjectConfig(): ProjectConfig {
 
   const projectRoot = resolve(getCwd())
 
-  // 迁移：项目根目录下的旧版 .kode.json -> .gemini/settings.json
-  const legacyProjectFile = join(projectRoot, '.kode.json')
-  const projectSettingsPath = getProjectSettingsPath(projectRoot)
-  if (!existsSync(projectSettingsPath) && existsSync(legacyProjectFile)) {
-    try {
-      const legacyText = readFileSync(legacyProjectFile, 'utf-8')
-      const legacyProjectConfig = JSON.parse(legacyText) as ProjectConfig
-      saveProjectSettings(projectRoot, { yuuka: { project: legacyProjectConfig } })
+  const normalizeProjectConfig = (projectConfig: ProjectConfig): ProjectConfig => {
+    // Not sure how this became a string
+    // TODO: Fix upstream
+    if (typeof (projectConfig as any).allowedTools === 'string') {
+      projectConfig.allowedTools =
+        (safeParseJSON((projectConfig as any).allowedTools) as string[]) ?? []
+    }
+    return projectConfig
+  }
 
-      const bakPath = `${legacyProjectFile}.bak`
-      if (!existsSync(bakPath)) {
-        try {
-          renameSync(legacyProjectFile, bakPath)
-        } catch {
-          // ignore
+  // 1) 全局 settings 里按项目路径存储（推荐）
+  const globalConfig = getGlobalConfig()
+  const fromGlobal = globalConfig.projects?.[projectRoot]
+  if (fromGlobal) {
+    return normalizeProjectConfig(fromGlobal)
+  }
+
+  // 2) 兼容旧版：项目 .gemini/settings.json 里存了 yuuka.project
+  const projectSettingsPath = getProjectSettingsPath(projectRoot)
+  if (existsSync(projectSettingsPath)) {
+    try {
+      const projectSettings = getProjectSettings(projectRoot)
+      const fromProjectSettings =
+        ((projectSettings as any).yuuka as any)?.project as ProjectConfig | undefined
+      if (fromProjectSettings) {
+        const nextGlobalConfig: GlobalConfig = {
+          ...globalConfig,
+          projects: {
+            ...(globalConfig.projects ?? {}),
+            [projectRoot]: fromProjectSettings,
+          },
         }
+        saveGlobalConfig(nextGlobalConfig)
+        return normalizeProjectConfig(fromProjectSettings)
       }
     } catch {
       // ignore migration errors
     }
   }
 
-  // 迁移期兼容：如果没项目 settings，但全局 projects 里有，就自动落盘到项目 .gemini/settings.json
-  const globalConfig = getGlobalConfig()
-  const legacyFromGlobal = globalConfig.projects?.[projectRoot]
+  const projectConfig = defaultConfigForProject(projectRoot)
 
-  if (!existsSync(projectSettingsPath) && legacyFromGlobal) {
-    try {
-      saveProjectSettings(projectRoot, { yuuka: { project: legacyFromGlobal } })
-    } catch {
-      // 落盘失败就继续走兜底逻辑
-    }
-  }
-
-  const projectSettings = getProjectSettings(projectRoot)
-  const projectConfig =
-    (((projectSettings as any).yuuka as any)?.project as ProjectConfig | undefined) ??
-    (((projectSettings as any).kode as any)?.project as ProjectConfig | undefined) ??
-    legacyFromGlobal ??
-    defaultConfigForProject(projectRoot)
-
-  // Not sure how this became a string
-  // TODO: Fix upstream
-  if (typeof projectConfig.allowedTools === 'string') {
-    projectConfig.allowedTools =
-      (safeParseJSON(projectConfig.allowedTools) as string[]) ?? []
-  }
-  return projectConfig
+  return normalizeProjectConfig(projectConfig)
 }
 
 export function saveCurrentProjectConfig(projectConfig: ProjectConfig): void {
@@ -590,21 +575,15 @@ export function saveCurrentProjectConfig(projectConfig: ProjectConfig): void {
   }
 
   const projectRoot = resolve(getCwd())
-  const existingSettings = getProjectSettings(projectRoot)
-  const merged = mergeGeminiSettings(existingSettings, {
-    yuuka: { project: projectConfig },
-  })
-  // 历史记录已迁移到 .gemini/yuuka/history.json，不再写回 settings.json
-  if ((merged as any)?.yuuka?.project && 'history' in (merged as any).yuuka.project) {
-    delete (merged as any).yuuka.project.history
+  const globalConfig = getGlobalConfig()
+  const next: GlobalConfig = {
+    ...globalConfig,
+    projects: {
+      ...(globalConfig.projects ?? {}),
+      [projectRoot]: projectConfig,
+    },
   }
-  if ((merged as any)?.kode?.project && 'history' in (merged as any).kode.project) {
-    delete (merged as any).kode.project.history
-  }
-  if ('kode' in (merged as any)) {
-    delete (merged as any).kode
-  }
-  saveProjectSettings(projectRoot, merged)
+  saveGlobalConfig(next)
 }
 
 export async function isAutoUpdaterDisabled(): Promise<boolean> {
@@ -892,7 +871,7 @@ export function setModelPointer(
   }
   saveGlobalConfig(updatedConfig)
 
-  // 🔧 Fix: Force ModelManager reload after config change
+  // Fix: Force ModelManager reload after config change
   // Import here to avoid circular dependency
   import('./model').then(({ reloadModelManager }) => {
     reloadModelManager()

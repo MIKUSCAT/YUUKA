@@ -26,10 +26,7 @@ export interface ExpertChatSession {
  * 获取专家聊天存储目录
  */
 function getExpertChatDirectory(): string {
-  const configDir =
-    process.env.KODE_CONFIG_DIR ??
-    process.env.ANYKODE_CONFIG_DIR ??
-    join(homedir(), CONFIG_BASE_DIR)
+  const configDir = join(homedir(), CONFIG_BASE_DIR)
   const expertChatDir = join(configDir, 'expert-chats')
 
   if (!existsSync(expertChatDir)) {

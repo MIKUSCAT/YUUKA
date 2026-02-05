@@ -133,11 +133,6 @@ function detectShell(): DetectedShell {
     return { bin: process.env.SHELL, args: [], type: 'msys' }
   }
 
-  // 1.1) Explicit override
-  if (process.env.KODE_BASH && existsSync(process.env.KODE_BASH)) {
-    return { bin: process.env.KODE_BASH, args: [], type: 'msys' }
-  }
-
   // 2) Common Git Bash/MSYS2 locations
   const programFiles = [
     process.env['ProgramFiles'],
@@ -182,7 +177,7 @@ function detectShell(): DetectedShell {
   // 3) WSL
   try {
     // Quick probe to ensure WSL+bash exists
-    execSync('wsl.exe -e bash -lc "echo KODE_OK"', { stdio: 'ignore', timeout: 1500 })
+    execSync('wsl.exe -e bash -lc "echo YUUKA_OK"', { stdio: 'ignore', timeout: 1500 })
     return { bin: 'wsl.exe', args: ['-e', 'bash', '-l'], type: 'wsl' }
   } catch {}
 
@@ -527,8 +522,30 @@ export class PersistentShell {
           // Ignore file system errors during polling - they are expected
           // as we check for completion before files exist
         }
-      }, 10) // increasing this will introduce latency
+      }, 50) // 太高频会吃 CPU；50ms 对交互来说足够快
     })
+  }
+
+  getActiveOutputFiles(): { stdoutFile: string; stderrFile: string } {
+    return { stdoutFile: this.stdoutFile, stderrFile: this.stderrFile }
+  }
+
+  async execInBackground(
+    command: string,
+    files: { outputFile: string; statusFile: string },
+  ): Promise<void> {
+    const quotedCommand = quoteForBash(command)
+    const outputFileBashPath = toBashPath(files.outputFile, this.shellType)
+    const statusFileBashPath = toBashPath(files.statusFile, this.shellType)
+
+    const launch = [
+      '(',
+      `  eval ${quotedCommand} < /dev/null > ${quoteForBash(outputFileBashPath)} 2>&1`,
+      `  echo $? > ${quoteForBash(statusFileBashPath)}`,
+      ') &',
+    ].join('\n')
+
+    await this.exec(launch)
   }
 
   private sendToShell(command: string) {

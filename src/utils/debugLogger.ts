@@ -6,7 +6,7 @@ import chalk from 'chalk'
 import envPaths from 'env-paths'
 import { CONFIG_BASE_DIR, PRODUCT_COMMAND } from '@constants/product'
 import { SESSION_ID } from './log'
-import type { Message } from '@kode-types/conversation'
+import type { Message } from '@yuuka-types/conversation'
 
 // 调试日志级别
 export enum LogLevel {
@@ -259,35 +259,35 @@ function logToTerminal(entry: LogEntry) {
 
   switch (level) {
     case LogLevel.FLOW:
-      prefix = '🔄'
+      prefix = '[FLOW]'
       color = chalk.cyan
       break
     case LogLevel.API:
-      prefix = '🌐'
+      prefix = '[API]'
       color = chalk.yellow
       break
     case LogLevel.STATE:
-      prefix = '📊'
+      prefix = '[STATE]'
       color = chalk.blue
       break
     case LogLevel.ERROR:
-      prefix = '❌'
+      prefix = '[ERROR]'
       color = chalk.red
       break
     case LogLevel.WARN:
-      prefix = '⚠️'
+      prefix = '[WARN]'
       color = chalk.yellow
       break
     case LogLevel.INFO:
-      prefix = 'ℹ️'
+      prefix = '[INFO]'
       color = chalk.green
       break
     case LogLevel.TRACE:
-      prefix = '📈'
+      prefix = '[TRACE]'
       color = chalk.magenta
       break
     default:
-      prefix = '🔍'
+      prefix = '[DEBUG]'
       color = chalk.gray
   }
 
@@ -525,7 +525,7 @@ export function logAPIError(context: {
   if (isVerboseMode() || isDebugVerboseMode()) {
     console.log()
     console.log(chalk.red('━'.repeat(60)))
-    console.log(chalk.red.bold('⚠️  API Error'))
+    console.log(chalk.red.bold('API Error'))
     console.log(chalk.red('━'.repeat(60)))
     
     // 显示关键信息
@@ -560,7 +560,7 @@ export function logAPIError(context: {
     }
     
     console.log()
-    console.log(chalk.dim(`  📁 Full log: ${filepath}`))
+    console.log(chalk.dim(`  Full log: ${filepath}`))
     console.log(chalk.red('━'.repeat(60)))
     console.log()
   }
@@ -579,11 +579,11 @@ export function logLLMInteraction(context: {
 
   const duration = context.timing.end - context.timing.start
 
-  console.log('\n' + chalk.blue('🧠 LLM CALL DEBUG'))
+  console.log('\n' + chalk.blue('LLM CALL DEBUG'))
   console.log(chalk.gray('━'.repeat(60)))
 
   // 显示上下文基本信息
-  console.log(chalk.yellow('📊 Context Overview:'))
+  console.log(chalk.yellow('Context Overview:'))
   console.log(`   Messages Count: ${context.messages.length}`)
   console.log(`   System Prompt Length: ${context.systemPrompt.length} chars`)
   console.log(`   Duration: ${duration.toFixed(0)}ms`)
@@ -598,7 +598,7 @@ export function logLLMInteraction(context: {
   const apiLabel = context.apiFormat
     ? ` (${context.apiFormat.toUpperCase()})`
     : ''
-  console.log(chalk.cyan(`\n💬 Real API Messages${apiLabel} (last 10):`))
+  console.log(chalk.cyan(`\nReal API Messages${apiLabel} (last 10):`))
 
   // 这里展示的是真正发送给LLM API的messages，不是内部处理的版本
   const recentMessages = context.messages.slice(-10)
@@ -624,7 +624,7 @@ export function logLLMInteraction(context: {
         const reminderContent = msg.content
           .replace(/<\/?system-reminder>/g, '')
           .trim()
-        content = `🔔 ${reminderContent.length > 800 ? reminderContent.substring(0, 800) + '...' : reminderContent}`
+        content = `[REMINDER] ${reminderContent.length > 800 ? reminderContent.substring(0, 800) + '...' : reminderContent}`
       } else {
         // 增加普通消息的显示字符数 - 用户消息和系统消息显示更多
         const maxLength =
@@ -662,20 +662,11 @@ export function logLLMInteraction(context: {
     // 根据消息类型使用不同的显示样式 - 更友好的视觉格式
     if (isReminder) {
       console.log(
-        `   [${globalIndex}] ${chalk.magenta('🔔 REMINDER')}: ${chalk.dim(content)}`,
+        `   [${globalIndex}] ${chalk.magenta('REMINDER')}: ${chalk.dim(content)}`,
       )
     } else {
-      // 为不同角色添加图标
-      const roleIcon =
-        msg.role === 'user'
-          ? '👤'
-          : msg.role === 'assistant'
-            ? '🤖'
-            : msg.role === 'system'
-              ? '⚙️'
-              : '📄'
       console.log(
-        `   [${globalIndex}] ${(chalk as any)[roleColor](roleIcon + ' ' + msg.role.toUpperCase())}: ${content}`,
+        `   [${globalIndex}] ${(chalk as any)[roleColor](msg.role.toUpperCase())}: ${content}`,
       )
     }
 
@@ -687,7 +678,7 @@ export function logLLMInteraction(context: {
       if (toolCalls.length > 0) {
         console.log(
           chalk.cyan(
-            `       🔧 → Tool calls (${toolCalls.length}): ${toolCalls.map((t: any) => t.name).join(', ')}`,
+            `       Tool calls (${toolCalls.length}): ${toolCalls.map((t: any) => t.name).join(', ')}`,
           ),
         )
         // 显示每个工具的详细参数
@@ -708,7 +699,7 @@ export function logLLMInteraction(context: {
     if (msg.tool_calls && msg.tool_calls.length > 0) {
       console.log(
         chalk.cyan(
-          `       🔧 → Tool calls (${msg.tool_calls.length}): ${msg.tool_calls.map((t: any) => t.function.name).join(', ')}`,
+          `       Tool calls (${msg.tool_calls.length}): ${msg.tool_calls.map((t: any) => t.function.name).join(', ')}`,
         ),
       )
       msg.tool_calls.forEach((tool: any, idx: number) => {
@@ -726,7 +717,7 @@ export function logLLMInteraction(context: {
   })
 
   // 显示 LLM 响应核心信息 - 更详细友好的格式
-  console.log(chalk.magenta('\n🤖 LLM Response:'))
+  console.log(chalk.magenta('\nLLM Response:'))
 
   // Handle different response formats (Anthropic vs OpenAI vs UnifiedResponse)
   let responseContent = ''
@@ -778,7 +769,7 @@ export function logLLMInteraction(context: {
     )
     console.log(
       chalk.cyan(
-        `   🔧 Tool Calls (${toolCalls.length}): ${toolNames.join(', ')}`,
+        `   Tool Calls (${toolCalls.length}): ${toolNames.join(', ')}`,
       ),
     )
     toolCalls.forEach((tool: any, index: number) => {
@@ -805,17 +796,17 @@ export function logLLMInteraction(context: {
 // 新增：系统提示构建过程调试
 export function logSystemPromptConstruction(construction: {
   basePrompt: string
-  kodeContext?: string
+  yuukaContext?: string
   reminders: string[]
   finalPrompt: string
 }) {
   if (!isDebugMode()) return
 
-  console.log('\n' + chalk.yellow('📝 SYSTEM PROMPT CONSTRUCTION'))
+  console.log('\n' + chalk.yellow('SYSTEM PROMPT CONSTRUCTION'))
   console.log(`   Base Prompt: ${construction.basePrompt.length} chars`)
 
-  if (construction.kodeContext) {
-    console.log(`   + Kode Context: ${construction.kodeContext.length} chars`)
+  if (construction.yuukaContext) {
+    console.log(`   + YUUKA Context: ${construction.yuukaContext.length} chars`)
   }
 
   if (construction.reminders.length > 0) {
@@ -840,7 +831,7 @@ export function logContextCompression(compression: {
 }) {
   if (!isDebugMode()) return
 
-  console.log('\n' + chalk.red('🗜️  CONTEXT COMPRESSION'))
+  console.log('\n' + chalk.red('CONTEXT COMPRESSION'))
   console.log(`   Trigger: ${compression.trigger}`)
   console.log(
     `   Messages: ${compression.beforeMessages} → ${compression.afterMessages}`,
@@ -865,37 +856,37 @@ export function logUserFriendly(type: string, data: any, requestId?: string) {
 
   switch (type) {
     case 'SESSION_START':
-      icon = '🚀'
+      icon = '[START]'
       color = chalk.green
       message = `Session started with ${data.model || 'default model'}`
       break
     case 'QUERY_START':
-      icon = '💭'
+      icon = '[QUERY]'
       color = chalk.blue
       message = `Processing query: "${data.query?.substring(0, 50)}${data.query?.length > 50 ? '...' : ''}"`
       break
     case 'QUERY_PROGRESS':
-      icon = '⏳'
+      icon = '[PROGRESS]'
       color = chalk.yellow
       message = `${data.phase} (${data.elapsed}ms)`
       break
     case 'QUERY_COMPLETE':
-      icon = '✅'
+      icon = '[DONE]'
       color = chalk.green
       message = `Query completed in ${data.duration}ms - Cost: $${data.cost} - ${data.tokens} tokens`
       break
     case 'TOOL_EXECUTION':
-      icon = '🔧'
+      icon = '[TOOL]'
       color = chalk.cyan
       message = `${data.toolName}: ${data.action} ${data.target ? '→ ' + data.target : ''}`
       break
     case 'ERROR_OCCURRED':
-      icon = '❌'
+      icon = '[ERROR]'
       color = chalk.red
       message = `${data.error} ${data.context ? '(' + data.context + ')' : ''}`
       break
     case 'PERFORMANCE_SUMMARY':
-      icon = '📊'
+      icon = '[SUMMARY]'
       color = chalk.magenta
       message = `Session: ${data.queries} queries, $${data.totalCost}, ${data.avgResponseTime}ms avg`
       break
@@ -1002,15 +993,15 @@ export function diagnoseError(error: any, context?: any): ErrorDiagnosis {
       description: 'API authentication failed - invalid or missing API key',
       suggestions: [
         '在 /config 面板里设置 Gemini API Key',
-        '检查 ./.gemini/settings.json 中的 security.auth.geminiApi.apiKey',
+        '检查 ~/.gemini/settings.json 中的 security.auth.geminiApi.apiKey',
         '验证 API 密钥是否已过期或被撤销',
         '确认 baseUrl 配置正确（如使用了自建网关）',
       ],
       debugSteps: [
         '检查 CONFIG_LOAD 日志中的 Gemini API Key/baseUrl 状态',
-        '运行 kode doctor 检查系统健康状态',
+        '运行 yuuka doctor 检查系统健康状态',
         '查看 API_ERROR 日志了解详细错误信息',
-        '使用 kode config 命令查看当前配置',
+        '使用 yuuka config 命令查看当前配置',
       ],
     }
   }
@@ -1128,7 +1119,7 @@ export function diagnoseError(error: any, context?: any): ErrorDiagnosis {
       severity: 'MEDIUM',
       description: 'Configuration error - missing or invalid settings',
       suggestions: [
-        '运行 kode config 检查配置设置',
+        '运行 yuuka config 检查配置设置',
         '删除损坏的配置文件重新初始化',
         '检查 JSON 配置文件语法是否正确',
         '验证环境变量设置',
@@ -1136,7 +1127,7 @@ export function diagnoseError(error: any, context?: any): ErrorDiagnosis {
       debugSteps: [
         '查看 CONFIG_LOAD 和 CONFIG_SAVE 日志',
         '检查配置文件路径和权限',
-        '验证 JSON 格式: cat ./.gemini/settings.json | jq',
+        '验证 JSON 格式: cat ~/.gemini/settings.json | jq',
         '查看配置缓存相关的调试信息',
       ],
     }
@@ -1188,10 +1179,10 @@ export function logErrorWithDiagnosis(
   )
 
   // 在终端显示诊断信息
-  console.log('\n' + chalk.red('🚨 ERROR DIAGNOSIS'))
+  console.log('\n' + chalk.red('ERROR DIAGNOSIS'))
   console.log(chalk.gray('━'.repeat(60)))
 
-  console.log(chalk.red(`❌ ${diagnosis.errorType}`))
+  console.log(chalk.red(`ERROR: ${diagnosis.errorType}`))
   console.log(
     chalk.dim(
       `Category: ${diagnosis.category} | Severity: ${diagnosis.severity}`,
@@ -1199,18 +1190,18 @@ export function logErrorWithDiagnosis(
   )
   console.log(`\n${diagnosis.description}`)
 
-  console.log(chalk.yellow('\n💡 Recovery Suggestions:'))
+  console.log(chalk.yellow('\nRecovery Suggestions:'))
   diagnosis.suggestions.forEach((suggestion, index) => {
     console.log(`   ${index + 1}. ${suggestion}`)
   })
 
-  console.log(chalk.cyan('\n🔍 Debug Steps:'))
+  console.log(chalk.cyan('\nDebug Steps:'))
   diagnosis.debugSteps.forEach((step, index) => {
     console.log(`   ${index + 1}. ${step}`)
   })
 
   if (diagnosis.relatedLogs && diagnosis.relatedLogs.length > 0) {
-    console.log(chalk.magenta('\n📋 Related Information:'))
+    console.log(chalk.magenta('\nRelated Information:'))
     diagnosis.relatedLogs.forEach((log, index) => {
       const truncatedLog =
         log.length > 200 ? log.substring(0, 200) + '...' : log
@@ -1219,7 +1210,7 @@ export function logErrorWithDiagnosis(
   }
 
   const debugPath = DEBUG_PATHS.base()
-  console.log(chalk.gray(`\n📁 Complete logs: ${debugPath}`))
+  console.log(chalk.gray(`\nComplete logs: ${debugPath}`))
   console.log(chalk.gray('━'.repeat(60)))
 }
 export function getDebugInfo() {

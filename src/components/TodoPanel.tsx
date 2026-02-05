@@ -93,7 +93,7 @@ export function TodoPanel({ todos }: { todos: TodoItem[] }) {
               isBold = true
             } else {
               statusIcon = '○'
-              textColor = theme.kode
+              textColor = theme.yuuka
             }
 
             return (
@@ -126,4 +126,3 @@ export function TodoPanel({ todos }: { todos: TodoItem[] }) {
     </Box>
   )
 }
-

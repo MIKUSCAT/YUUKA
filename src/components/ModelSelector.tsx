@@ -629,7 +629,7 @@ export function ModelSelector({
           const isFocused = absoluteIndex === focusedIndex
           return (
             <Box key={opt.value} flexDirection="row">
-              <Text color={isFocused ? theme.kode : theme.secondaryText}>
+              <Text color={isFocused ? theme.yuuka : theme.secondaryText}>
                 {isFocused ? figures.pointer : ' '}
               </Text>
               <Text
@@ -781,11 +781,11 @@ export function ModelSelector({
 
     // 添加有用的建议
     if (errorMessage.includes('API key')) {
-      errorMessage += `\n\n💡 Tip: Get your API key from ${apiKeyUrl}`
+      errorMessage += `\n\nTip: Get your API key from ${apiKeyUrl}`
     } else if (errorMessage.includes('permission')) {
-      errorMessage += `\n\n💡 Tip: Make sure your API key has access to the ${provider} API`
+      errorMessage += `\n\nTip: Make sure your API key has access to the ${provider} API`
     } else if (errorMessage.includes('connection')) {
-      errorMessage += '\n\n💡 Tip: Check your internet connection and try again'
+      errorMessage += '\n\nTip: Check your internet connection and try again'
     }
 
     setModelLoadError(errorMessage)
@@ -833,13 +833,13 @@ export function ModelSelector({
       // Add helpful suggestions based on error type
       if (errorMessage.includes('API key')) {
         errorMessage +=
-          '\n\n💡 Tip: Get your API key from https://platform.moonshot.cn/console/api-keys'
+          '\n\nTip: Get your API key from https://platform.moonshot.cn/console/api-keys'
       } else if (errorMessage.includes('permission')) {
         errorMessage +=
-          '\n\n💡 Tip: Make sure your API key has access to the Kimi API'
+          '\n\nTip: Make sure your API key has access to the Kimi API'
       } else if (errorMessage.includes('connection')) {
         errorMessage +=
-          '\n\n💡 Tip: Check your internet connection and try again'
+          '\n\nTip: Check your internet connection and try again'
       }
 
       setModelLoadError(errorMessage)
@@ -872,13 +872,13 @@ export function ModelSelector({
       // Add helpful suggestions based on error type
       if (errorMessage.includes('API key')) {
         errorMessage +=
-          '\n\n💡 Tip: Get your API key from https://platform.deepseek.com/api_keys'
+          '\n\nTip: Get your API key from https://platform.deepseek.com/api_keys'
       } else if (errorMessage.includes('permission')) {
         errorMessage +=
-          '\n\n💡 Tip: Make sure your API key has access to the DeepSeek API'
+          '\n\nTip: Make sure your API key has access to the DeepSeek API'
       } else if (errorMessage.includes('connection')) {
         errorMessage +=
-          '\n\n💡 Tip: Check your internet connection and try again'
+          '\n\nTip: Check your internet connection and try again'
       }
 
       setModelLoadError(errorMessage)
@@ -911,13 +911,13 @@ export function ModelSelector({
       // Add helpful suggestions based on error type
       if (errorMessage.includes('API key')) {
         errorMessage +=
-          '\n\n💡 Tip: Get your API key from https://cloud.siliconflow.cn/i/oJWsm6io'
+          '\n\nTip: Get your API key from https://cloud.siliconflow.cn/i/oJWsm6io'
       } else if (errorMessage.includes('permission')) {
         errorMessage +=
-          '\n\n💡 Tip: Make sure your API key has access to the SiliconFlow API'
+          '\n\nTip: Make sure your API key has access to the SiliconFlow API'
       } else if (errorMessage.includes('connection')) {
         errorMessage +=
-          '\n\n💡 Tip: Check your internet connection and try again'
+          '\n\nTip: Check your internet connection and try again'
       }
 
       setModelLoadError(errorMessage)
@@ -950,13 +950,13 @@ export function ModelSelector({
 
       if (errorMessage.includes('API key')) {
         errorMessage +=
-          '\n\n💡 Tip: Get your API key from https://bailian.console.aliyun.com/?tab=model#/api-key'
+          '\n\nTip: Get your API key from https://bailian.console.aliyun.com/?tab=model#/api-key'
       } else if (errorMessage.includes('permission')) {
         errorMessage +=
-          '\n\n💡 Tip: Make sure your API key has access to the Qwen API'
+          '\n\nTip: Make sure your API key has access to the Qwen API'
       } else if (errorMessage.includes('connection')) {
         errorMessage +=
-          '\n\n💡 Tip: Check your internet connection and try again'
+          '\n\nTip: Check your internet connection and try again'
       }
 
       setModelLoadError(errorMessage)
@@ -988,13 +988,13 @@ export function ModelSelector({
 
       if (errorMessage.includes('API key')) {
         errorMessage +=
-          '\n\n💡 Tip: Get your API key from https://open.bigmodel.cn (API Keys section)'
+          '\n\nTip: Get your API key from https://open.bigmodel.cn (API Keys section)'
       } else if (errorMessage.includes('permission')) {
         errorMessage +=
-          '\n\n💡 Tip: Make sure your API key has access to the GLM API'
+          '\n\nTip: Make sure your API key has access to the GLM API'
       } else if (errorMessage.includes('connection')) {
         errorMessage +=
-          '\n\n💡 Tip: Check your internet connection and try again'
+          '\n\nTip: Check your internet connection and try again'
       }
 
       setModelLoadError(errorMessage)
@@ -1026,13 +1026,13 @@ export function ModelSelector({
 
       if (errorMessage.includes('API key')) {
         errorMessage +=
-          '\n\n💡 Tip: Get your API key from https://www.minimax.io/platform/user-center/basic-information'
+          '\n\nTip: Get your API key from https://www.minimax.io/platform/user-center/basic-information'
       } else if (errorMessage.includes('permission')) {
         errorMessage +=
-          '\n\n💡 Tip: Make sure your API key has access to the MiniMax API'
+          '\n\nTip: Make sure your API key has access to the MiniMax API'
       } else if (errorMessage.includes('connection')) {
         errorMessage +=
-          '\n\n💡 Tip: Check your internet connection and try again'
+          '\n\nTip: Check your internet connection and try again'
       }
 
       setModelLoadError(errorMessage)
@@ -1064,13 +1064,13 @@ export function ModelSelector({
 
       if (errorMessage.includes('API key')) {
         errorMessage +=
-          '\n\n💡 Tip: Get your API key from https://console.bce.baidu.com/iam/#/iam/accesslist'
+          '\n\nTip: Get your API key from https://console.bce.baidu.com/iam/#/iam/accesslist'
       } else if (errorMessage.includes('permission')) {
         errorMessage +=
-          '\n\n💡 Tip: Make sure your API key has access to the Baidu Qianfan API'
+          '\n\nTip: Make sure your API key has access to the Baidu Qianfan API'
       } else if (errorMessage.includes('connection')) {
         errorMessage +=
-          '\n\n💡 Tip: Check your internet connection and try again'
+          '\n\nTip: Check your internet connection and try again'
       }
 
       setModelLoadError(errorMessage)
@@ -1102,16 +1102,16 @@ export function ModelSelector({
       // Add helpful suggestions based on error type
       if (errorMessage.includes('API key')) {
         errorMessage +=
-          '\n\n💡 Tip: Check that your API key is valid for this endpoint'
+          '\n\nTip: Check that your API key is valid for this endpoint'
       } else if (errorMessage.includes('endpoint not found')) {
         errorMessage +=
-          '\n\n💡 Tip: Make sure the base URL ends with /v1 and supports OpenAI-compatible API'
+          '\n\nTip: Make sure the base URL ends with /v1 and supports OpenAI-compatible API'
       } else if (errorMessage.includes('connect')) {
         errorMessage +=
-          '\n\n💡 Tip: Verify the base URL is correct and accessible'
+          '\n\nTip: Verify the base URL is correct and accessible'
       } else if (errorMessage.includes('response format')) {
         errorMessage +=
-          '\n\n💡 Tip: This API may not be fully OpenAI-compatible'
+          '\n\nTip: This API may not be fully OpenAI-compatible'
       }
 
       setModelLoadError(errorMessage)
@@ -1716,11 +1716,13 @@ export function ModelSelector({
       ].includes(selectedProvider)
 
       if (isOpenAICompatible) {
-        // 🔥 Use specialized GPT-5 connection test for GPT-5 models
+        // Use specialized GPT-5 connection test for GPT-5 models
         const isGPT5 = selectedModel?.toLowerCase().includes('gpt-5')
         
         if (isGPT5) {
-          console.log(`🚀 Using specialized GPT-5 connection test for model: ${selectedModel}`)
+          console.log(
+            `[DEBUG] Using specialized GPT-5 connection test for model: ${selectedModel}`,
+          )
           
           // Validate configuration first
           const configValidation = validateGPT5Config({
@@ -1734,7 +1736,7 @@ export function ModelSelector({
           if (!configValidation.valid) {
             return {
               success: false,
-              message: '❌ GPT-5 configuration validation failed',
+              message: 'GPT-5 configuration validation failed',
               details: configValidation.errors.join('\n'),
             }
           }
@@ -1905,14 +1907,14 @@ export function ModelSelector({
         if (containsYes) {
           return {
             success: true,
-            message: `✅ Connection test passed with ${endpointName}`,
+            message: `Connection test passed with ${endpointName}`,
             endpoint: endpointPath,
             details: `Model responded correctly: "${responseContent.trim()}"`,
           }
         } else {
           return {
             success: false,
-            message: `⚠️ ${endpointName} connected but model response unexpected`,
+            message: `${endpointName} connected but model response unexpected`,
             endpoint: endpointPath,
             details: `Expected "YES" but got: "${responseContent.trim() || '(empty response)'}"`,
           }
@@ -1924,7 +1926,7 @@ export function ModelSelector({
 
         return {
           success: false,
-          message: `❌ ${endpointName} failed (${response.status})`,
+          message: `${endpointName} failed (${response.status})`,
           endpoint: endpointPath,
           details: `Error: ${errorMessage}`,
         }
@@ -1932,7 +1934,7 @@ export function ModelSelector({
     } catch (error) {
       return {
         success: false,
-        message: `❌ ${endpointName} connection failed`,
+        message: `${endpointName} connection failed`,
         endpoint: endpointPath,
         details: error instanceof Error ? error.message : String(error),
       }
@@ -1951,7 +1953,7 @@ export function ModelSelector({
   }> {
     const testURL = `${baseURL.replace(/\/+$/, '')}${endpointPath}`
 
-    // 🔧 Enhanced GPT-5 Responses API test payload
+    // Enhanced GPT-5 Responses API test payload
     const testPayload: any = {
       model: selectedModel,
       input: [
@@ -1963,15 +1965,15 @@ export function ModelSelector({
       ],
       max_completion_tokens: Math.max(parseInt(maxTokens) || 8192, 8192),
       temperature: 1, // GPT-5 only supports temperature=1
-      // 🚀 Add reasoning configuration for better GPT-5 performance
+      // Add reasoning configuration for better GPT-5 performance
       reasoning: {
         effort: 'low', // Fast response for connection test
       },
     }
 
-    console.log(`🔧 Testing GPT-5 Responses API for model: ${selectedModel}`)
-    console.log(`🔧 Test URL: ${testURL}`)
-    console.log(`🔧 Test payload:`, JSON.stringify(testPayload, null, 2))
+    console.log(`[DEBUG] Testing GPT-5 Responses API for model: ${selectedModel}`)
+    console.log(`[DEBUG] Test URL: ${testURL}`)
+    console.log(`[DEBUG] Test payload:`, JSON.stringify(testPayload, null, 2))
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -2009,39 +2011,42 @@ export function ModelSelector({
         if (containsYes) {
           return {
             success: true,
-            message: `✅ Connection test passed with ${endpointName}`,
+            message: `Connection test passed with ${endpointName}`,
             endpoint: endpointPath,
             details: `GPT-5 responded correctly via Responses API: "${responseContent.trim()}"`,
           }
         } else {
           return {
             success: false,
-            message: `⚠️ ${endpointName} connected but model response unexpected`,
+            message: `${endpointName} connected but model response unexpected`,
             endpoint: endpointPath,
             details: `Expected "YES" but got: "${responseContent.trim() || '(empty response)'}"`,
           }
         }
       } else {
-        // 🔧 Enhanced error handling with detailed debugging
+        // Enhanced error handling with detailed debugging
         const errorData = await response.json().catch(() => null)
         const errorMessage =
           errorData?.error?.message || errorData?.message || response.statusText
         
-        console.log(`🚨 GPT-5 Responses API Error (${response.status}):`, errorData)
+        console.log(
+          `[DEBUG] GPT-5 Responses API Error (${response.status}):`,
+          errorData,
+        )
         
-        // 🔧 Provide specific guidance for common GPT-5 errors
+        // Provide specific guidance for common GPT-5 errors
         let details = `Responses API Error: ${errorMessage}`
         if (response.status === 400 && errorMessage.includes('max_tokens')) {
-          details += '\n🔧 Note: This appears to be a parameter compatibility issue. The fallback to Chat Completions should handle this.'
+          details += '\nNote: This appears to be a parameter compatibility issue. The fallback to Chat Completions should handle this.'
         } else if (response.status === 404) {
-          details += '\n🔧 Note: Responses API endpoint may not be available for this model or provider.'
+          details += '\nNote: Responses API endpoint may not be available for this model or provider.'
         } else if (response.status === 401) {
-          details += '\n🔧 Note: API key authentication failed.'
+          details += '\nNote: API key authentication failed.'
         }
         
         return {
           success: false,
-          message: `❌ ${endpointName} failed (${response.status})`,
+          message: `${endpointName} failed (${response.status})`,
           endpoint: endpointPath,
           details: details,
         }
@@ -2049,7 +2054,7 @@ export function ModelSelector({
     } catch (error) {
       return {
         success: false,
-        message: `❌ ${endpointName} connection failed`,
+        message: `${endpointName} connection failed`,
         endpoint: endpointPath,
         details: error instanceof Error ? error.message : String(error),
       }
@@ -2087,14 +2092,14 @@ export function ModelSelector({
         if (isValid) {
           return {
             success: true,
-            message: `✅ ${selectedProvider} connection test passed`,
+            message: `${selectedProvider} connection test passed`,
             endpoint: '/messages',
             details: 'API key verified using official Anthropic SDK',
           }
         } else {
           return {
             success: false,
-            message: `❌ ${selectedProvider} API key verification failed`,
+            message: `${selectedProvider} API key verification failed`,
             endpoint: '/messages',
             details:
               'Invalid API key. Please check your API key and try again.',
@@ -2104,7 +2109,7 @@ export function ModelSelector({
         console.log(`[DEBUG] ${selectedProvider} connection test error:`, error)
         return {
           success: false,
-          message: `❌ ${selectedProvider} connection failed`,
+          message: `${selectedProvider} connection failed`,
           endpoint: '/messages',
           details: error instanceof Error ? error.message : String(error),
         }
@@ -2114,7 +2119,7 @@ export function ModelSelector({
     // For other providers, return a placeholder success (we can extend this later)
     return {
       success: true,
-      message: `✅ Configuration saved for ${selectedProvider}`,
+      message: `Configuration saved for ${selectedProvider}`,
       details: 'Provider-specific testing not implemented yet',
     }
   }
@@ -2631,7 +2636,7 @@ export function ModelSelector({
                 <Newline />
                 {selectedProvider === 'kimi' && (
                   <>
-                    💡 Get your API key from:{' '}
+                    Tip: Get your API key from:{' '}
                     <Text color={theme.suggestion}>
                       https://platform.moonshot.cn/console/api-keys
                     </Text>
@@ -2639,7 +2644,7 @@ export function ModelSelector({
                 )}
                 {selectedProvider === 'deepseek' && (
                   <>
-                    💡 Get your API key from:{' '}
+                    Tip: Get your API key from:{' '}
                     <Text color={theme.suggestion}>
                       https://platform.deepseek.com/api_keys
                     </Text>
@@ -2647,7 +2652,7 @@ export function ModelSelector({
                 )}
                 {selectedProvider === 'siliconflow' && (
                   <>
-                    💡 Get your API key from:{' '}
+                    Tip: Get your API key from:{' '}
                     <Text color={theme.suggestion}>
                       https://cloud.siliconflow.cn/i/oJWsm6io
                     </Text>
@@ -2655,7 +2660,7 @@ export function ModelSelector({
                 )}
                 {selectedProvider === 'qwen' && (
                   <>
-                    💡 Get your API key from:{' '}
+                    Tip: Get your API key from:{' '}
                     <Text color={theme.suggestion}>
                       https://bailian.console.aliyun.com/?tab=model#/api-key
                     </Text>
@@ -2663,7 +2668,7 @@ export function ModelSelector({
                 )}
                 {selectedProvider === 'glm' && (
                   <>
-                    💡 Get your API key from:{' '}
+                    Tip: Get your API key from:{' '}
                     <Text color={theme.suggestion}>
                       https://open.bigmodel.cn (API Keys section)
                     </Text>
@@ -2671,7 +2676,7 @@ export function ModelSelector({
                 )}
                 {selectedProvider === 'glm-coding' && (
                   <>
-                    💡 This is for GLM Coding Plan API.{' '}
+                    Tip: This is for GLM Coding Plan API.{' '}
                     <Text color={theme.suggestion}>
                       Use the same API key as regular GLM
                     </Text>
@@ -2683,7 +2688,7 @@ export function ModelSelector({
                 )}
                 {selectedProvider === 'minimax' && (
                   <>
-                    💡 Get your API key from:{' '}
+                    Tip: Get your API key from:{' '}
                     <Text color={theme.suggestion}>
                       https://www.minimax.io/platform/user-center/basic-information
                     </Text>
@@ -2691,7 +2696,7 @@ export function ModelSelector({
                 )}
                 {selectedProvider === 'minimax-coding' && (
                   <>
-                    💡 Get your Coding Plan API key from:{' '}
+                    Tip: Get your Coding Plan API key from:{' '}
                     <Text color={theme.suggestion}>
                       https://platform.minimaxi.com/user-center/payment/coding-plan
                     </Text>
@@ -2703,7 +2708,7 @@ export function ModelSelector({
                 )}
                 {selectedProvider === 'baidu-qianfan' && (
                   <>
-                    💡 Get your API key from:{' '}
+                    Tip: Get your API key from:{' '}
                     <Text color={theme.suggestion}>
                       https://console.bce.baidu.com/iam/#/iam/accesslist
                     </Text>
@@ -2711,7 +2716,7 @@ export function ModelSelector({
                 )}
                 {selectedProvider === 'anthropic' && (
                   <>
-                    💡 Get your API key from:{' '}
+                    Tip: Get your API key from:{' '}
                     <Text color={theme.suggestion}>
                       https://console.anthropic.com/settings/keys
                     </Text>
@@ -2719,7 +2724,7 @@ export function ModelSelector({
                 )}
                 {selectedProvider === 'openai' && (
                   <>
-                    💡 Get your API key from:{' '}
+                    Tip: Get your API key from:{' '}
                     <Text color={theme.suggestion}>
                       https://platform.openai.com/api-keys
                     </Text>
@@ -2787,7 +2792,7 @@ export function ModelSelector({
 
             {modelLoadError && (
               <Box marginTop={1} flexDirection="column">
-                <Text color="red">❌ API Key Validation Failed</Text>
+                <Text color="red">API Key Validation Failed</Text>
                 <Text color="red">{modelLoadError}</Text>
                 {providerBaseUrl && (
                   <Box marginTop={1}>
@@ -3557,7 +3562,7 @@ export function ModelSelector({
 
             {isTestingConnection && (
               <Box marginY={1}>
-                <Text color={theme.suggestion}>🔄 Testing connection...</Text>
+                <Text color={theme.suggestion}>Testing connection...</Text>
               </Box>
             )}
 
@@ -3584,7 +3589,7 @@ export function ModelSelector({
                 {connectionTestResult.success ? (
                   <Box marginTop={1}>
                     <Text color={theme.success}>
-                      ✅ Automatically proceeding to confirmation...
+                      Automatically proceeding to confirmation...
                     </Text>
                   </Box>
                 ) : (
@@ -3650,7 +3655,7 @@ export function ModelSelector({
             {validationError && (
               <Box flexDirection="column" marginY={1} paddingX={1}>
                 <Text color={theme.error} bold>
-                  ⚠ Configuration Error:
+                  Configuration Error:
                 </Text>
                 <Text color={theme.error}>{validationError}</Text>
               </Box>

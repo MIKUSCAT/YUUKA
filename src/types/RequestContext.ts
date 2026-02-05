@@ -1,5 +1,5 @@
 // Request Context for perfect state isolation
-// Based on official Kode patterns
+// Based on internal YUUKA patterns
 
 export interface RequestContext {
   id: string

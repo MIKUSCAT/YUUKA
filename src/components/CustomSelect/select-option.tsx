@@ -45,13 +45,13 @@ export function SelectOption({
       paddingRight: 1,
     }),
     focusIndicator: () => ({
-      color: appTheme.kode,
+      color: appTheme.yuuka,
     }),
     label: ({ isFocused, isSelected }: { isFocused: boolean; isSelected: boolean }) => ({
       color: isSelected 
         ? appTheme.success 
         : isFocused 
-          ? appTheme.kode 
+          ? appTheme.yuuka 
           : appTheme.text,
       bold: isSelected,
     }),

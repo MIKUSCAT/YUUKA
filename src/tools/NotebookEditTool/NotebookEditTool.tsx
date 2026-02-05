@@ -6,7 +6,7 @@ import { z } from 'zod'
 import { FallbackToolUseRejectedMessage } from '@components/FallbackToolUseRejectedMessage'
 import { HighlightedCode } from '@components/HighlightedCode'
 import type { Tool } from '@tool'
-import { NotebookCellType, NotebookContent } from '@kode-types/notebook'
+import { NotebookCellType, NotebookContent } from '@yuuka-types/notebook'
 import {
   detectFileEncoding,
   detectLineEndings,

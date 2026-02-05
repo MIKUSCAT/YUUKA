@@ -1,7 +1,7 @@
 import React from 'react'
 import { Box, Text } from 'ink'
 import { Select } from './CustomSelect/select'
-import type { LogOption } from '@kode-types/logs'
+import type { LogOption } from '@yuuka-types/logs'
 import { getTheme } from '@utils/theme'
 import { useTerminalSize } from '@hooks/useTerminalSize'
 import { formatDate } from '@utils/log'

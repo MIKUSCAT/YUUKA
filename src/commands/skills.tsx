@@ -21,9 +21,9 @@ import { randomUUID } from 'crypto'
 // UI Constants
 const UI_ICONS = {
   pointer: '❯',
-  checkboxOn: '☑',
-  checkboxOff: '☐',
-  warning: '⚠',
+  checkboxOn: '[x]',
+  checkboxOff: '[ ]',
+  warning: '!',
   separator: '─',
   loading: '◐◑◒◓',
 } as const
@@ -498,7 +498,7 @@ function SkillsUI({ onExit, initialArgs, context }: SkillsUIProps) {
   if (loading) {
     return (
       <Box flexDirection="column">
-        <Header title="📚 Skills">
+        <Header title="Skills">
           <Box marginTop={1}>
             <LoadingSpinner text="Loading skills..." />
           </Box>
@@ -618,7 +618,7 @@ function SkillsUI({ onExit, initialArgs, context }: SkillsUIProps) {
     default:
       return (
         <Box flexDirection="column">
-          <Header title="📚 Skills">
+          <Header title="Skills">
             <Text>Mode: {modeState.mode} (Not implemented)</Text>
           </Header>
           <InstructionBar />
@@ -646,8 +646,8 @@ function SkillListView({ skills, onBack, onSelect, onCreateNew, onLearn, changes
 
   // Options: Learn, Create, then skills
   const options = [
-    { type: 'learn' as const, label: '🧠 Learn from conversation', skill: null },
-    { type: 'create' as const, label: '✨ Create new skill', skill: null },
+    { type: 'learn' as const, label: 'Learn from conversation', skill: null },
+    { type: 'create' as const, label: 'Create new skill', skill: null },
     ...skills.map(s => ({ type: 'skill' as const, label: s.name, skill: s })),
   ]
 
@@ -672,7 +672,7 @@ function SkillListView({ skills, onBack, onSelect, onCreateNew, onLearn, changes
 
   return (
     <Box flexDirection="column">
-      <Header title="📚 Skills" subtitle="Reusable work patterns learned from conversations">
+      <Header title="Skills" subtitle="Reusable work patterns learned from conversations">
         {changes.length > 0 && (
           <Box marginTop={1}>
             <Text dimColor>{changes[changes.length - 1]}</Text>
@@ -725,8 +725,8 @@ function LocationSelect({ createState, setCreateState, setModeState }: LocationS
   const [selectedIndex, setSelectedIndex] = useState(0)
 
   const options = [
-    { label: '📁 Project', value: 'project' as SkillLocation, desc: '.gemini/skills/' },
-    { label: '🏠 Personal', value: 'user' as SkillLocation, desc: '~/.gemini/skills/' },
+    { label: 'Project', value: 'project' as SkillLocation, desc: '.gemini/skills/' },
+    { label: 'Personal', value: 'user' as SkillLocation, desc: '~/.gemini/skills/' },
   ]
 
   useInput((input, key) => {
@@ -742,7 +742,7 @@ function LocationSelect({ createState, setCreateState, setModeState }: LocationS
 
   return (
     <Box flexDirection="column">
-      <Header title="📦 Save Location" step={1} totalSteps={4}>
+      <Header title="Save Location" step={1} totalSteps={4}>
         <Box marginTop={1} flexDirection="column">
           {options.map((opt, idx) => (
             <Box key={opt.value} flexDirection="column" marginBottom={1}>
@@ -795,7 +795,7 @@ function NameStep({ createState, setCreateState, setModeState, existingSkills }:
 
   return (
     <Box flexDirection="column">
-      <Header title="📝 Skill Name" step={2} totalSteps={4}>
+      <Header title="Skill Name" step={2} totalSteps={4}>
         <Box marginTop={1} flexDirection="column">
           <InkTextInput
             value={createState.skillName}
@@ -805,7 +805,7 @@ function NameStep({ createState, setCreateState, setModeState, existingSkills }:
           />
           {createState.error && (
             <Box marginTop={1}>
-              <Text color="red">⚠ {createState.error}</Text>
+              <Text color="red">Error: {createState.error}</Text>
             </Box>
           )}
         </Box>
@@ -836,7 +836,7 @@ function DescriptionStep({ createState, setCreateState, setModeState }: Descript
 
   return (
     <Box flexDirection="column">
-      <Header title="📋 When to Use" subtitle="Describe when this skill should be used" step={3} totalSteps={4}>
+      <Header title="When to Use" subtitle="Describe when this skill should be used" step={3} totalSteps={4}>
         <Box marginTop={1} flexDirection="column">
           <InkTextInput
             value={createState.description}
@@ -846,7 +846,7 @@ function DescriptionStep({ createState, setCreateState, setModeState }: Descript
           />
           {createState.error && (
             <Box marginTop={1}>
-              <Text color="red">⚠ {createState.error}</Text>
+              <Text color="red">Error: {createState.error}</Text>
             </Box>
           )}
         </Box>
@@ -875,7 +875,7 @@ function InstructionsStep({ createState, setCreateState, setModeState }: Instruc
 
   return (
     <Box flexDirection="column">
-      <Header title="📖 Instructions" subtitle="Detailed instructions for the AI" step={4} totalSteps={4}>
+      <Header title="Instructions" subtitle="Detailed instructions for the AI" step={4} totalSteps={4}>
         <Box marginTop={1} flexDirection="column">
           <InkTextInput
             value={createState.instructions}
@@ -888,7 +888,7 @@ function InstructionsStep({ createState, setCreateState, setModeState }: Instruc
           </Box>
           {createState.error && (
             <Box marginTop={1}>
-              <Text color="red">⚠ {createState.error}</Text>
+              <Text color="red">Error: {createState.error}</Text>
             </Box>
           )}
         </Box>
@@ -934,7 +934,7 @@ function ConfirmStep({ createState, setCreateState, setModeState, onSkillCreated
 
   return (
     <Box flexDirection="column">
-      <Header title="✅ Review & Create">
+      <Header title="Review & Create">
         <Box flexDirection="column" marginTop={1}>
           <Text>
             • <Text bold>Name:</Text> {createState.skillName}
@@ -1175,7 +1175,7 @@ function LearnNameStep({
   if (isLearning) {
     return (
       <Box flexDirection="column">
-        <Header title="🧠 Learning from Conversation">
+        <Header title="Learning from Conversation">
           <Box marginTop={1}>
             <LoadingSpinner text="Analyzing conversation and extracting skill..." />
           </Box>
@@ -1187,7 +1187,7 @@ function LearnNameStep({
 
   return (
     <Box flexDirection="column">
-      <Header title="🧠 Learn from Conversation" subtitle="Extract a reusable skill from the current session">
+      <Header title="Learn from Conversation" subtitle="Extract a reusable skill from the current session">
         <Box marginTop={1} flexDirection="column">
           <Text dimColor>Optional: Enter a skill name (or leave empty for auto-naming)</Text>
           <Box marginTop={1}>
@@ -1200,7 +1200,7 @@ function LearnNameStep({
           </Box>
           {error && (
             <Box marginTop={1}>
-              <Text color="red">⚠ {error}</Text>
+              <Text color="red">Error: {error}</Text>
             </Box>
           )}
           <Box marginTop={1}>
@@ -1227,8 +1227,8 @@ function LearnConfirmStep({ learnedContent, setModeState, onSkillCreated }: Lear
   const [error, setError] = useState<string | null>(null)
 
   const options = [
-    { label: '📁 Save to Project', location: 'project' as SkillLocation },
-    { label: '🏠 Save to Personal', location: 'user' as SkillLocation },
+    { label: 'Save to Project', location: 'project' as SkillLocation },
+    { label: 'Save to Personal', location: 'user' as SkillLocation },
   ]
 
   const handleSave = async () => {
@@ -1262,7 +1262,7 @@ function LearnConfirmStep({ learnedContent, setModeState, onSkillCreated }: Lear
   if (isCreating) {
     return (
       <Box flexDirection="column">
-        <Header title="💾 Saving Skill">
+        <Header title="Saving Skill">
           <Box marginTop={1}>
             <LoadingSpinner text="Creating skill..." />
           </Box>
@@ -1274,7 +1274,7 @@ function LearnConfirmStep({ learnedContent, setModeState, onSkillCreated }: Lear
 
   return (
     <Box flexDirection="column">
-      <Header title="🧠 Learned Skill Preview">
+      <Header title="Learned Skill Preview">
         <Box flexDirection="column" marginTop={1}>
           <Text>
             <Text bold>Name:</Text> {learnedContent.name}

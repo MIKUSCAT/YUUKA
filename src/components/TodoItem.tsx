@@ -8,11 +8,11 @@ export interface TodoItemProps {
 }
 
 export const TodoItem: React.FC<TodoItemProps> = ({ todo, children }) => {
-  const statusIconMap = {
-    completed: '✅',
-    in_progress: '🔄',
-    pending: '⏸️',
-  }
+  const statusLabelMap = {
+    completed: '[DONE]',
+    in_progress: '[DOING]',
+    pending: '[TODO]',
+  } as const
 
   const statusColorMap = {
     completed: '#008000',
@@ -20,20 +20,20 @@ export const TodoItem: React.FC<TodoItemProps> = ({ todo, children }) => {
     pending: '#FFD700',
   }
 
-  const priorityIconMap = {
-    high: '🔴',
-    medium: '🟡',
-    low: '🟢',
-  }
+  const priorityLabelMap = {
+    high: '[H]',
+    medium: '[M]',
+    low: '[L]',
+  } as const
 
-  const icon = statusIconMap[todo.status]
+  const statusLabel = statusLabelMap[todo.status]
   const color = statusColorMap[todo.status]
-  const priorityIcon = todo.priority ? priorityIconMap[todo.priority] : ''
+  const priorityLabel = todo.priority ? priorityLabelMap[todo.priority] : ''
 
   return (
     <Box flexDirection="row" gap={1}>
-      <Text color={color}>{icon}</Text>
-      {priorityIcon && <Text>{priorityIcon}</Text>}
+      <Text color={color}>{statusLabel}</Text>
+      {priorityLabel && <Text>{priorityLabel}</Text>}
       <Text 
         color={color}
         strikethrough={todo.status === 'completed'}

@@ -10,7 +10,7 @@ import { DESCRIPTION, PROMPT } from './prompt'
 import { getTheme } from '@utils/theme'
 import { TREE_END } from '@constants/figures'
 
-// 🔧 Fix: Module-level cache to store last updated todos for rendering
+// Fix: Module-level cache to store last updated todos for rendering
 // This solves the issue where renderToolResultMessage can't access agentId
 let lastUpdatedTodos: TodoItem[] = []
 
@@ -148,7 +148,7 @@ export const TodoWriteTool = {
     // For non-error output, use the cached todos instead of reading from storage
     // This fixes the issue where getTodos() without agentId returns empty list
     if (!isError && typeof output === 'string') {
-      // 🔧 Fix: Use lastUpdatedTodos cache instead of getTodos()
+      // Fix: Use lastUpdatedTodos cache instead of getTodos()
       const currentTodos = lastUpdatedTodos
 
       if (currentTodos.length === 0) {
@@ -196,7 +196,7 @@ export const TodoWriteTool = {
           isBold = true
         } else {
           statusIcon = '○'
-          textColor = theme.kode
+          textColor = theme.yuuka
         }
 
         return (
@@ -257,7 +257,7 @@ export const TodoWriteTool = {
       // Update the todos in storage (agent-scoped)
       setTodos(todoItems, agentId)
 
-      // 🔧 Fix: Update module-level cache for renderToolResultMessage
+      // Fix: Update module-level cache for renderToolResultMessage
       lastUpdatedTodos = [...todoItems]
 
       // Emit todo change event for system reminders (optimized - only if todos actually changed)

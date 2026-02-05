@@ -4,19 +4,22 @@ import * as React from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { getTheme } from '@utils/theme'
 import {
-  ensureGeminiSettings,
-  getWorkspaceGeminiSettingsPath,
+  ensureGlobalGeminiSettings,
+  getGlobalGeminiSettingsPath,
+  normalizeGeminiApiRoot,
   normalizeGeminiModelName,
   readGeminiSettingsFile,
   writeGeminiSettingsFile,
 } from '@utils/geminiSettings'
 import { Select } from '@components/CustomSelect/select'
 import modelsCatalog from '@constants/models'
+import { SimpleSpinner } from '@components/Spinner'
+import { getValidGeminiCliAccessToken } from '@services/gemini/codeAssistAuth'
 
 export const help =
-  '选择/设置 Gemini 模型（写入当前项目 ./.gemini/settings.json）；Enter 确认，Esc 退出'
+  '选择/设置 Gemini 模型（写入全局 ~/.gemini/settings.json）；Enter 确认，Esc 退出'
 export const description =
-  '选择/设置 Gemini 模型（写入当前项目 ./.gemini/settings.json）'
+  '选择/设置 Gemini 模型（写入全局 ~/.gemini/settings.json）'
 export const isEnabled = true
 export const isHidden = false
 export const name = 'model'
@@ -40,6 +43,65 @@ function setModelName(settingsPath: string, raw: string): string {
   return normalized
 }
 
+async function fetchGeminiModelsFromGoogle(options: {
+  settingsPath: string
+}): Promise<string[]> {
+  const settings = readGeminiSettingsFile(options.settingsPath)
+  const selectedType = settings.security?.auth?.selectedType ?? 'gemini-api-key'
+
+  const baseUrl =
+    settings.security?.auth?.geminiApi?.baseUrl ??
+    'https://generativelanguage.googleapis.com'
+  const apiRoot = normalizeGeminiApiRoot(baseUrl)
+  const url = new URL(`${apiRoot.replace(/\/+$/, '')}/models`)
+
+  const headers = new Headers()
+
+  if (selectedType === 'gemini-cli-oauth') {
+    const { accessToken } = await getValidGeminiCliAccessToken()
+    headers.set('Authorization', `Bearer ${accessToken}`)
+  } else {
+    const apiKey = settings.security?.auth?.geminiApi?.apiKey ?? ''
+    if (!apiKey.trim()) {
+      throw new Error('未填写 Gemini API Key（请先用 /auth 选择“自提供 API Key”并填写）')
+    }
+
+    const rawMode = settings.security?.auth?.geminiApi?.apiKeyAuthMode
+    const mode: 'x-goog-api-key' | 'query' | 'bearer' =
+      rawMode === 'bearer' || rawMode === 'query' || rawMode === 'x-goog-api-key'
+        ? rawMode
+        : 'x-goog-api-key'
+
+    if (mode === 'query') {
+      url.searchParams.set('key', apiKey.trim())
+    } else if (mode === 'bearer') {
+      headers.set('Authorization', `Bearer ${apiKey.trim()}`)
+    } else {
+      headers.set('x-goog-api-key', apiKey.trim())
+    }
+  }
+
+  const resp = await fetch(url, { headers })
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => '')
+    throw new Error(`拉取模型列表失败 (HTTP ${resp.status})：${text.slice(0, 200)}`)
+  }
+
+  const json = (await resp.json()) as any
+  const models = Array.isArray(json?.models) ? json.models : []
+  const names = models
+    .filter((m: any) => {
+      const methods = Array.isArray(m?.supportedGenerationMethods)
+        ? m.supportedGenerationMethods
+        : []
+      return methods.includes('generateContent')
+    })
+    .map((m: any) => String(m?.name ?? '').trim())
+    .filter(Boolean)
+
+  return names
+}
+
 function ModelCommandUI({
   args,
   onDone,
@@ -47,26 +109,62 @@ function ModelCommandUI({
   args?: string
   onDone: (result?: string) => void
 }): React.ReactNode {
-  ensureGeminiSettings()
+  ensureGlobalGeminiSettings()
   const theme = getTheme()
   const trimmed = (args ?? '').trim()
   const didAutoRun = useRef(false)
   const [error, setError] = useState<string | null>(null)
+  const [modelListLoading, setModelListLoading] = useState(false)
+  const [modelListError, setModelListError] = useState<string | null>(null)
+  const [remoteModels, setRemoteModels] = useState<string[] | null>(null)
 
-  const settingsPath = getWorkspaceGeminiSettingsPath()
+  const settingsPath = getGlobalGeminiSettingsPath()
 
   const currentModelName = useMemo(() => {
     const settings = readGeminiSettingsFile(settingsPath)
     return settings.model?.name ?? ''
   }, [settingsPath])
 
-  const options = useMemo(() => {
-    const geminiList = (modelsCatalog as any)?.gemini ?? []
-    const builtins: string[] = Array.isArray(geminiList)
-      ? geminiList.map((m: any) => String(m?.model ?? '')).filter(Boolean)
-      : []
+  useEffect(() => {
+    if (trimmed) return
+    let mounted = true
+    setModelListLoading(true)
+    setModelListError(null)
 
-    const normalizedBuiltins = builtins
+    void (async () => {
+      try {
+        const list = await fetchGeminiModelsFromGoogle({ settingsPath })
+        if (!mounted) return
+        setRemoteModels(list)
+      } catch (e) {
+        if (!mounted) return
+        const msg = e instanceof Error ? e.message : String(e)
+        setModelListError(msg)
+        setRemoteModels(null)
+      } finally {
+        if (!mounted) return
+        setModelListLoading(false)
+      }
+    })()
+
+    return () => {
+      mounted = false
+    }
+  }, [settingsPath, trimmed])
+
+  const options = useMemo(() => {
+    const sourceList = (() => {
+      if (Array.isArray(remoteModels) && remoteModels.length > 0) {
+        return remoteModels
+      }
+      const geminiList = (modelsCatalog as any)?.gemini ?? []
+      const builtins: string[] = Array.isArray(geminiList)
+        ? geminiList.map((m: any) => String(m?.model ?? '')).filter(Boolean)
+        : []
+      return builtins
+    })()
+
+    const normalizedBuiltins = sourceList
       .map(m => {
         try {
           return normalizeGeminiModelName(m)
@@ -81,8 +179,8 @@ function ModelCommandUI({
       try {
         return currentModelName ? normalizeGeminiModelName(currentModelName) : ''
       } catch {
-        return currentModelName
-      }
+      return currentModelName
+    }
     })()
     if (currentNormalized && !unique.includes(currentNormalized)) {
       unique.unshift(currentNormalized)
@@ -93,7 +191,7 @@ function ModelCommandUI({
       const label = v === currentNormalized ? `${labelBase} (当前)` : labelBase
       return { label, value: v }
     })
-  }, [currentModelName])
+  }, [currentModelName, remoteModels])
 
   useEffect(() => {
     if (!trimmed || didAutoRun.current) return
@@ -152,6 +250,17 @@ function ModelCommandUI({
           当前：{currentModelName ? stripModelPrefix(currentModelName) : '(未设置)'}
         </Text>
         <Text color={theme.secondaryText}>写入：{settingsPath}</Text>
+        {modelListLoading ? (
+          <Box flexDirection="row" gap={1}>
+            <SimpleSpinner />
+            <Text color={theme.secondaryText}>正在拉取模型列表…</Text>
+          </Box>
+        ) : null}
+        {modelListError ? (
+          <Text color={theme.warning}>
+            模型列表拉取失败，已回退到内置列表：{modelListError}
+          </Text>
+        ) : null}
 
         <Select
           options={options}

@@ -1,10 +1,10 @@
 
 export const TOOL_NAME_FOR_PROMPT = 'WebSearch'
-export const DESCRIPTION = `- Allows Kode to search the web via Gemini hosted tool: googleSearch
+export const DESCRIPTION = `- Allows YUUKA to search the web via Gemini hosted tool: googleSearch
 - Provides up-to-date information for current events and recent data
 - Returns a deduplicated SOURCES list (real URLs extracted from Gemini groundingMetadata)
 - The NOTES section may include citation markers like [1][2] that map to SOURCES indices
-- Use this tool for accessing information beyond the Kode's knowledge cutoff
+- Use this tool for accessing information beyond the model's knowledge cutoff
 
 Usage notes:
 - Use when you need current information not in training data

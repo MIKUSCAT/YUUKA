@@ -1,4 +1,4 @@
-import { ModelCapabilities, UnifiedRequestParams, UnifiedResponse } from '@kode-types/modelCapabilities'
+import { ModelCapabilities, UnifiedRequestParams, UnifiedResponse } from '@yuuka-types/modelCapabilities'
 import { ModelProfile } from '@utils/config'
 import { Tool } from '@tool'
 

@@ -174,16 +174,25 @@ export function Onboarding({ onDone }: Props): React.ReactNode {
           <Text color={theme.secondaryText}>
             现在只支持 Gemini 原生 API（Bearer + 可配 baseUrl）。
             <Newline />
-            配置只放在当前项目的 ./.gemini/settings.json。
+            配置只放在全局 ~/.gemini/settings.json。
           </Text>
         </Text>
         <Box marginTop={1}>
           <Text>
             你需要做两步：
             <Newline />
-            1) 在 ./.gemini/settings.json 填写 security.auth.geminiApi.apiKey
+            1) 在 ~/.gemini/settings.json 填写 security.auth.geminiApi.apiKey
             <Newline />
-            2) 运行 /model &lt;name&gt; 设置 model.name（写入项目 settings）
+            2) 运行 /model &lt;name&gt; 设置 model.name（写入全局 settings）
+          </Text>
+        </Box>
+        <Box marginTop={1}>
+          <Text>
+            另外：如果你要读 PDF/DOCX/XLSX/PPTX 等文档，建议先配置 MCP：
+            <Newline />
+            <Text color={theme.secondaryText}>
+              yuuka mcp add office-reader npx -y yuuka-mcp-office-reader
+            </Text>
           </Text>
         </Box>
       </Box>
@@ -217,13 +226,13 @@ export function WelcomeBox(): React.ReactNode {
   const theme = getTheme()
   return (
     <Box
-      borderColor={theme.kode}
+      borderColor={theme.yuuka}
       borderStyle="round"
       paddingX={1}
       width={MIN_LOGO_WIDTH}
     >
       <Text>
-        <Text color={theme.kode}>✻</Text> Welcome to{' '}
+        <Text color={theme.yuuka}>✻</Text> Welcome to{' '}
         <Text bold>{PRODUCT_NAME}</Text> research preview!
       </Text>
     </Box>

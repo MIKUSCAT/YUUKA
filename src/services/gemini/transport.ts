@@ -40,7 +40,7 @@ export class GeminiHttpError extends Error {
 function normalizeApiRoot(baseUrl: string): string {
   const trimmed = baseUrl.trim().replace(/\/+$/, '')
   if (!trimmed) {
-    throw new Error('baseUrl 不能为空（来自 ./.gemini/settings.json）')
+    throw new Error('baseUrl 不能为空（来自 ~/.gemini/settings.json）')
   }
   if (trimmed.endsWith('/v1') || trimmed.endsWith('/v1beta')) {
     return trimmed
@@ -82,9 +82,7 @@ function withConvenienceFields(
   return response
 }
 
-function applyAuth(headers: Headers, apiKey: string) {
-  headers.set('Authorization', `Bearer ${apiKey}`)
-}
+type GeminiApiKeyAuthMode = 'x-goog-api-key' | 'query' | 'bearer'
 
 async function readErrorBody(resp: Response): Promise<string> {
   try {
@@ -124,14 +122,19 @@ function buildUrl(
   apiRoot: string,
   model: string,
   method: 'generateContent' | 'streamGenerateContent',
+  options?: { apiKey?: string; apiKeyAuthMode?: GeminiApiKeyAuthMode },
 ): URL {
   const normalizedModel = normalizeModelName(model)
   const root = apiRoot.replace(/\/+$/, '')
   let path = `${root}/${normalizedModel}:${method}`
+  const url = new URL(path)
   if (method === 'streamGenerateContent') {
-    path += '?alt=sse'
+    url.searchParams.set('alt', 'sse')
   }
-  return new URL(path)
+  if (options?.apiKey && options.apiKeyAuthMode === 'query') {
+    url.searchParams.set('key', options.apiKey)
+  }
+  return url
 }
 
 type TimeoutReason = 'request_timeout' | 'stream_idle_timeout' | null
@@ -206,28 +209,45 @@ function createManagedAbortController(options: {
 
 export class GeminiTransport {
   private readonly apiRoot: string
+  private readonly apiKeyAuthMode: GeminiApiKeyAuthMode
 
   constructor(
     private readonly options: {
       baseUrl: string
       apiKey: string
+      apiKeyAuthMode?: GeminiApiKeyAuthMode
       headers?: Record<string, string>
     },
   ) {
     this.apiRoot = normalizeApiRoot(options.baseUrl)
+    this.apiKeyAuthMode =
+      options.apiKeyAuthMode === 'bearer' ||
+      options.apiKeyAuthMode === 'query' ||
+      options.apiKeyAuthMode === 'x-goog-api-key'
+        ? options.apiKeyAuthMode
+        : 'x-goog-api-key'
   }
 
   private buildHeaders(): Headers {
     const headers = new Headers(this.options.headers ?? {})
     headers.set('Content-Type', 'application/json')
-    applyAuth(headers, this.options.apiKey)
+
+    if (this.apiKeyAuthMode === 'bearer') {
+      headers.set('Authorization', `Bearer ${this.options.apiKey}`)
+    } else if (this.apiKeyAuthMode === 'x-goog-api-key') {
+      headers.set('x-goog-api-key', this.options.apiKey)
+    }
+    // query 模式不需要 header
     return headers
   }
 
   async generateContent(
     request: GeminiGenerateContentParameters,
   ): Promise<GeminiGenerateContentResponse> {
-    const url = buildUrl(this.apiRoot, request.model, 'generateContent')
+    const url = buildUrl(this.apiRoot, request.model, 'generateContent', {
+      apiKey: this.options.apiKey,
+      apiKeyAuthMode: this.apiKeyAuthMode,
+    })
     const headers = this.buildHeaders()
     let resp: Response
     const managed = createManagedAbortController({
@@ -275,7 +295,10 @@ export class GeminiTransport {
   async generateContentStream(
     request: GeminiGenerateContentParameters,
   ): Promise<AsyncGenerator<GeminiGenerateContentResponse>> {
-    const url = buildUrl(this.apiRoot, request.model, 'streamGenerateContent')
+    const url = buildUrl(this.apiRoot, request.model, 'streamGenerateContent', {
+      apiKey: this.options.apiKey,
+      apiKeyAuthMode: this.apiKeyAuthMode,
+    })
     const headers = this.buildHeaders()
 
     async function* emptyIterator(): AsyncGenerator<GeminiGenerateContentResponse> {

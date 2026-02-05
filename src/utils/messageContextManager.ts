@@ -1,5 +1,5 @@
 import { Message } from '@query'
-import type { UUID } from '@kode-types/common'
+import type { UUID } from '@yuuka-types/common'
 import { countTokens } from './tokens'
 import crypto from 'crypto'
 

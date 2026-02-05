@@ -3,7 +3,7 @@ import { ResponsesAPIAdapter } from './adapters/responsesAPI'
 import { ChatCompletionsAdapter } from './adapters/chatCompletions'
 import { getModelCapabilities } from '@constants/modelCapabilities'
 import { ModelProfile, getGlobalConfig } from '@utils/config'
-import { ModelCapabilities } from '@kode-types/modelCapabilities'
+import { ModelCapabilities } from '@yuuka-types/modelCapabilities'
 
 export class ModelAdapterFactory {
   /**

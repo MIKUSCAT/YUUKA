@@ -4,6 +4,7 @@ import { FileReadTool } from '@tools/FileReadTool/FileReadTool'
 import { TOOL_NAME_FOR_PROMPT as GLOB_TOOL_NAME } from '@tools/GlobTool/prompt'
 import { TOOL_NAME_FOR_PROMPT as GREP_TOOL_NAME } from '@tools/GrepTool/prompt'
 import { LSTool } from '@tools/lsTool/lsTool'
+import { TOOL_NAME_FOR_PROMPT as TASK_OUTPUT_TOOL_NAME } from '@tools/TaskOutputTool/prompt'
 
 export const MAX_OUTPUT_LENGTH = 30000
 export const MAX_RENDERED_LINES = 5
@@ -53,7 +54,8 @@ Before executing the command, please follow these steps:
 
 Usage notes:
   - The command argument is required.
-  - You can specify an optional timeout in milliseconds (up to 600000ms / 10 minutes). If not specified, commands will timeout after 30 minutes.
+  - You can specify an optional timeout in milliseconds (up to 600000ms / 10 minutes). If not specified, commands will timeout after 120000ms (2 minutes).
+  - If a command may take a long time, set run_in_background=true and use ${TASK_OUTPUT_TOOL_NAME} to read output by task_id.
   - VERY IMPORTANT: You MUST avoid using search commands like \`find\` and \`grep\`. Instead use ${GREP_TOOL_NAME}, ${GLOB_TOOL_NAME}, or ${TASK_TOOL_NAME} to search. You MUST avoid read tools like \`cat\`, \`head\`, \`tail\`, and \`ls\`, and use ${FileReadTool.name} and ${LSTool.name} to read files.
   - When issuing multiple commands, use the ';' or '&&' operator to separate them. DO NOT use newlines (newlines are ok in quoted strings).
   - IMPORTANT: All commands share the same shell session. Shell state (environment variables, virtual environments, current directory, etc.) persist between commands. For example, if you set an environment variable as part of a command, the environment variable will persist for subsequent commands.
@@ -93,7 +95,7 @@ When the user asks you to create a new git commit, follow these steps carefully:
 </commit_analysis>
 
 4. Create the commit with a message ending with:
-🤖 Generated with ${PRODUCT_NAME} & {MODEL_NAME}
+Generated with ${PRODUCT_NAME} & {MODEL_NAME}
 Co-Authored-By: ${PRODUCT_NAME} <noreply@${PRODUCT_NAME}.com>
 
 - In order to ensure good formatting, ALWAYS pass the commit message via a HEREDOC, a la this example:
@@ -101,7 +103,7 @@ Co-Authored-By: ${PRODUCT_NAME} <noreply@${PRODUCT_NAME}.com>
 git commit -m "$(cat <<'EOF'
    Commit message here.
 
-   🤖 Generated with ${PRODUCT_NAME} & {MODEL_NAME}
+   Generated with ${PRODUCT_NAME} & {MODEL_NAME}
    Co-Authored-By: ${PRODUCT_NAME} <noreply@${PRODUCT_NAME}.com>
    EOF
    )"
@@ -164,7 +166,7 @@ gh pr create --title "the pr title" --body "$(cat <<'EOF'
 ## Test plan
 [Checklist of TODOs for testing the pull request...]
 
-🤖 Generated with [${PRODUCT_NAME}](${PRODUCT_URL}) & {MODEL_NAME}
+Generated with [${PRODUCT_NAME}](${PRODUCT_URL}) & {MODEL_NAME}
 EOF
 )"
 </example>

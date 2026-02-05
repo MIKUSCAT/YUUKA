@@ -25,7 +25,7 @@ export function ToolUseLoader({
   }, 120)
 
   const color = isUnresolved
-    ? getTheme().kode
+    ? getTheme().yuuka
     : isError
       ? getTheme().error
       : getTheme().success

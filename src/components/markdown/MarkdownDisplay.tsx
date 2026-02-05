@@ -110,7 +110,9 @@ export function MarkdownDisplay({ text, terminalWidth }: Props): React.ReactNode
       contentBlocks.push(
         <Box key={key} width="100%" minWidth={0} flexDirection="column">
           {wrapped.split('\n').map((wrappedLine, i) => (
-            <Text key={i} dimColor={dim}>{wrappedLine}</Text>
+            <React.Fragment key={i}>
+              <Text dimColor={dim}>{wrappedLine}</Text>
+            </React.Fragment>
           ))}
         </Box>,
       )
@@ -161,7 +163,7 @@ export function MarkdownDisplay({ text, terminalWidth }: Props): React.ReactNode
     const innerWidth = Math.max(10, terminalWidth - 4)
     const wrapped = wrapAnsi(formatted, innerWidth, { hard: false, trim: false })
       .split('\n')
-      .map(l => chalk.hex(theme.kode)(l))
+      .map(l => chalk.hex(theme.yuuka)(l))
       .join('\n')
     contentBlocks.push(
       <Box
@@ -303,7 +305,7 @@ export function MarkdownDisplay({ text, terminalWidth }: Props): React.ReactNode
       const headerText = headerMatch[2] ?? ''
       const renderedBase = renderInlineAnsi(headerText, { defaultColor: theme.text })
       let rendered = renderedBase
-      if (level <= 2) rendered = chalk.bold(chalk.hex(theme.kode)(stripAnsi(renderedBase)))
+      if (level <= 2) rendered = chalk.bold(chalk.hex(theme.yuuka)(stripAnsi(renderedBase)))
       else if (level === 3) rendered = chalk.bold(renderedBase)
       else rendered = chalk.italic(renderedBase)
 

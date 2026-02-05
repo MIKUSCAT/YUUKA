@@ -1,4 +1,4 @@
-import { ModelCapabilities } from '@kode-types/modelCapabilities'
+import { ModelCapabilities } from '@yuuka-types/modelCapabilities'
 
 // GPT-5 standard capability definition
 const GPT5_CAPABILITIES: ModelCapabilities = {
