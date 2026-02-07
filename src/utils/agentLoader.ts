@@ -10,6 +10,7 @@ import { homedir } from 'os'
 import matter from 'gray-matter'
 import { getCwd } from './state'
 import { memoize } from 'lodash-es'
+import { emitReloadStatus } from './reloadStatus'
 
 export interface AgentConfig {
   agentType: string          // Agent identifier (matches subagent_type)
@@ -223,23 +224,24 @@ export async function startAgentWatcher(onChange?: () => void): Promise<void> {
   const userGeminiDir = join(homedir(), '.gemini', 'agents')
   const projectGeminiDir = join(getCwd(), '.gemini', 'agents')
   
-  const watchDirectory = (dirPath: string, label: string) => {
+  const watchDirectory = (dirPath: string) => {
     if (existsSync(dirPath)) {
       const watcher = watch(dirPath, { recursive: false }, async (eventType, filename) => {
         if (filename && filename.endsWith('.md')) {
-          console.log(`Agent configuration changed in ${label}: ${filename}`)
+          emitReloadStatus({ domain: 'agents', state: 'loading' })
           clearAgentCache()
           // Also clear any other related caches
           getAllAgents.cache?.clear?.()
           onChange?.()
+          emitReloadStatus({ domain: 'agents', state: 'ok' })
         }
       })
       watchers.push(watcher)
     }
   }
   
-  watchDirectory(userGeminiDir, 'user/.gemini')
-  watchDirectory(projectGeminiDir, 'project/.gemini')
+  watchDirectory(userGeminiDir)
+  watchDirectory(projectGeminiDir)
 }
 
 /**

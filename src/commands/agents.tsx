@@ -34,7 +34,7 @@ const UI_ICONS = {
   checkboxOff: "[ ]", 
   warning: "!",
   separator: "─",
-  loading: "◐◑◒◓"
+  loading: "⣾⣽⣻⢿⡿⣟⣯⣷"
 } as const
 
 const FOLDER_CONFIG = {

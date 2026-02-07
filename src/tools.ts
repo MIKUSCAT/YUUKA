@@ -51,44 +51,10 @@ export const getAllTools = (): Tool[] => {
   ]
 }
 
-export const getTools = memoize(
-  async (): Promise<Tool[]> => {
-    const tools = [...getAllTools(), ...(await getMCPTools())]
-
-    const isEnabled = await Promise.all(tools.map(tool => tool.isEnabled()))
-    const enabledTools = tools.filter((_, i) => isEnabled[i])
-
-    // 预先缓存工具描述：适配器/权限弹窗等地方需要同步描述字符串
-    await Promise.all(
-      enabledTools.map(async tool => {
-        if (tool.cachedDescription) return
-        try {
-          if (typeof tool.description === 'function') {
-            tool.cachedDescription = await tool.description()
-            return
-          }
-          if (typeof tool.description === 'string') {
-            tool.cachedDescription = tool.description
-            return
-          }
-        } catch {
-          // ignore and fall back
-        }
-        tool.cachedDescription = `Tool: ${tool.name}`
-      }),
-    )
-
-    return enabledTools
-  },
-)
-
-export const getReadOnlyTools = memoize(async (): Promise<Tool[]> => {
-  const tools = getAllTools().filter(tool => tool.isReadOnly())
-  const isEnabled = await Promise.all(tools.map(tool => tool.isEnabled()))
-  const enabledTools = tools.filter((_, index) => isEnabled[index])
-
+async function primeToolDescriptions(tools: Tool[]): Promise<void> {
+  // 预先缓存工具描述：适配器/权限弹窗等地方需要同步描述字符串
   await Promise.all(
-    enabledTools.map(async tool => {
+    tools.map(async tool => {
       if (tool.cachedDescription) return
       try {
         if (typeof tool.description === 'function') {
@@ -105,6 +71,34 @@ export const getReadOnlyTools = memoize(async (): Promise<Tool[]> => {
       tool.cachedDescription = `Tool: ${tool.name}`
     }),
   )
+}
+
+export const getCoreTools = memoize(
+  async (): Promise<Tool[]> => {
+    const tools = getAllTools()
+
+    const isEnabled = await Promise.all(tools.map(tool => tool.isEnabled()))
+    const enabledTools = tools.filter((_, i) => isEnabled[i])
+
+    await primeToolDescriptions(enabledTools)
+
+    return enabledTools
+  },
+)
+
+export const getTools = memoize(
+  async (): Promise<Tool[]> => {
+    const tools = [...(await getCoreTools()), ...(await getMCPTools())]
+    await primeToolDescriptions(tools)
+    return tools
+  },
+)
+
+export const getReadOnlyTools = memoize(async (): Promise<Tool[]> => {
+  const tools = getAllTools().filter(tool => tool.isReadOnly())
+  const isEnabled = await Promise.all(tools.map(tool => tool.isEnabled()))
+  const enabledTools = tools.filter((_, index) => isEnabled[index])
+  await primeToolDescriptions(enabledTools)
 
   return enabledTools
 })

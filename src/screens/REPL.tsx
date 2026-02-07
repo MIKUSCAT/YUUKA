@@ -18,6 +18,7 @@ import {
 import PromptInput from '@components/PromptInput'
 import { Spinner } from '@components/Spinner'
 import { getSystemPrompt } from '@constants/prompts'
+import { SPINNER_FRAMES } from '@constants/figures'
 import { getContext } from '@context'
 import { getTotalCost, useCostSummary } from '@costTracker'
 import { useLogStartupTime } from '@hooks/useLogStartupTime'
@@ -66,10 +67,12 @@ import { getMaxThinkingTokens } from '@utils/thinking'
 import { getOriginalCwd } from '@utils/state'
 import { debug as debugLogger } from '@utils/debugLogger'
 import { logError } from '@utils/log'
+import { subscribeReloadStatus, type ReloadStatusEvent } from '@utils/reloadStatus'
 
 type Props = {
   commands: Command[]
   safeMode?: boolean
+  loadMcpToolsInBackground?: boolean
   debug?: boolean
   initialForkNumber?: number | undefined
   initialPrompt: string | undefined
@@ -88,15 +91,20 @@ export type BinaryFeedbackContext = {
   resolve: (result: BinaryFeedbackResult) => void
 }
 
+type ReloadBannerState = ReloadStatusEvent & {
+  id: number
+}
+
 export function REPL({
   commands,
   safeMode,
+  loadMcpToolsInBackground = false,
   debug = false,
   initialForkNumber = 0,
   initialPrompt,
   messageLogName,
   shouldShowPromptInput,
-  tools,
+  tools: initialTools,
   verbose: verboseFromCLI,
   initialMessages,
 }: Props): React.ReactNode {
@@ -131,6 +139,7 @@ export function REPL({
   const [toolUseConfirm, setToolUseConfirm] = useState<ToolUseConfirm | null>(
     null,
   )
+  const [tools, setTools] = useState<Tool[]>(initialTools)
   const [messages, setMessages] = useState<MessageType[]>(initialMessages ?? [])
   const [inputValue, setInputValue] = useState('')
   const [cursorOffset, setCursorOffset] = useState(0)
@@ -141,6 +150,8 @@ export function REPL({
   const [haveShownCostDialog, setHaveShownCostDialog] = useState(
     getGlobalConfig().hasAcknowledgedCostThreshold,
   )
+  const [reloadBanner, setReloadBanner] = useState<ReloadBannerState | null>(null)
+  const [reloadFrame, setReloadFrame] = useState(0)
 
   const [binaryFeedbackContext, setBinaryFeedbackContext] =
     useState<BinaryFeedbackContext | null>(null)
@@ -166,8 +177,77 @@ export function REPL({
   }>({})
 
   const lastSubmittedPromptRef = useRef<string>('')
+  const reloadHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const { status: apiKeyStatus, reverify } = useApiKeyVerification()
+
+  useEffect(() => {
+    setTools(initialTools)
+  }, [initialTools])
+
+  useEffect(() => {
+    if (!loadMcpToolsInBackground) {
+      return
+    }
+
+    let isCancelled = false
+    ;(async () => {
+      try {
+        const { getTools } = await import('@tools')
+        const fullTools = await getTools()
+        if (!isCancelled) {
+          setTools(fullTools)
+        }
+      } catch (error) {
+        logError(error)
+      }
+    })()
+
+    return () => {
+      isCancelled = true
+    }
+  }, [loadMcpToolsInBackground])
+
+  useEffect(() => {
+    const unsubscribe = subscribeReloadStatus(event => {
+      const next: ReloadBannerState = {
+        ...event,
+        id: Date.now(),
+      }
+      setReloadBanner(next)
+
+      if (reloadHideTimerRef.current) {
+        clearTimeout(reloadHideTimerRef.current)
+        reloadHideTimerRef.current = null
+      }
+
+      if (event.state === 'ok') {
+        reloadHideTimerRef.current = setTimeout(() => {
+          setReloadBanner(current => (current?.id === next.id ? null : current))
+        }, 1200)
+      }
+    })
+
+    return () => {
+      unsubscribe()
+      if (reloadHideTimerRef.current) {
+        clearTimeout(reloadHideTimerRef.current)
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    if (reloadBanner?.state !== 'loading') {
+      return
+    }
+
+    const timer = setInterval(() => {
+      setReloadFrame(prev => (prev + 1) % SPINNER_FRAMES.length)
+    }, 90)
+
+    return () => clearInterval(timer)
+  }, [reloadBanner?.state])
+
   function onCancel() {
     if (!isLoading) {
       return
@@ -593,6 +673,8 @@ export function REPL({
 
   // only show the dialog once not loading
   const showingCostDialog = !isLoading && showCostDialog
+  const reloadLabel =
+    reloadBanner?.domain === 'agents' ? 'Agent 配置' : 'Skill 配置'
 
   return (
     <PermissionProvider 
@@ -601,6 +683,17 @@ export function REPL({
         <React.Fragment>
         {/* Update banner now renders inside Logo for stable placement */}
         <ModeIndicator />
+        {reloadBanner && (
+          <Box marginBottom={1}>
+            {reloadBanner.state === 'loading' ? (
+              <Text color="cyan">
+                {SPINNER_FRAMES[reloadFrame]} 正在刷新 {reloadLabel}...
+              </Text>
+            ) : (
+              <Text color="green">✓ {reloadLabel} 刷新 OK</Text>
+            )}
+          </Box>
+        )}
       <React.Fragment key={`static-messages-${forkNumber}`}>
         <Static
           items={messagesJSX.filter(_ => _.type === 'static')}

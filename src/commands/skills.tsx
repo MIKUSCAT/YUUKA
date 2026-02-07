@@ -25,7 +25,7 @@ const UI_ICONS = {
   checkboxOff: '[ ]',
   warning: '!',
   separator: '─',
-  loading: '◐◑◒◓',
+  loading: '⣾⣽⣻⢿⡿⣟⣯⣷',
 } as const
 
 type SkillLocation = 'user' | 'project'

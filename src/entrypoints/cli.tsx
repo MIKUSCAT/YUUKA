@@ -53,7 +53,7 @@ import { getContext, setContext, removeContext } from '@context'
 import { Command } from '@commander-js/extra-typings'
 import { ask } from '@utils/ask'
 import { hasPermissionsToUseTool } from '@permissions'
-import { getTools } from '@tools'
+import { getTools, getCoreTools } from '@tools'
 import {
   getGlobalConfig,
   getCurrentProjectConfig,
@@ -432,10 +432,7 @@ async function setup(cwd: string, safeMode?: boolean): Promise<void> {
     try {
       const agentLoader = await import('@utils/agentLoader')
       const { startAgentWatcher } = agentLoader
-      await startAgentWatcher(() => {
-        // Cache is already cleared in the watcher, just log
-        console.log('Agent configurations hot-reloaded')
-      })
+      await startAgentWatcher()
     } catch (e) {
       // Silently ignore agent watcher errors - not critical for startup
     }
@@ -446,9 +443,7 @@ async function setup(cwd: string, safeMode?: boolean): Promise<void> {
     try {
       const skillLoader = await import('@utils/skillLoader')
       const { startSkillWatcher } = skillLoader
-      await startSkillWatcher(() => {
-        console.log('Skill configurations hot-reloaded')
-      })
+      await startSkillWatcher()
     } catch {
       // Silently ignore skill watcher errors - not critical for startup
     }
@@ -598,10 +593,9 @@ ${commandList}`,
         await setup(cwd, safe)
 
         assertMinVersion()
-
-        const tools = await getTools()
         const inputPrompt = [prompt, stdinContent].filter(Boolean).join('\n')
         if (print) {
+          const tools = await getTools()
           if (!inputPrompt) {
             console.error(
               'Error: Input must be provided either through stdin or as a prompt argument when using --print',
@@ -625,6 +619,7 @@ ${commandList}`,
           // Render REPL immediately, check for updates in background
           const { render } = await import('ink')
           const { REPL } = await import('@screens/REPL')
+          const tools = await getCoreTools()
           render(
             <REPL
               commands={commands}
@@ -635,6 +630,7 @@ ${commandList}`,
               verbose={verbose}
               tools={tools}
               safeMode={safe}
+              loadMcpToolsInBackground={true}
             />,
             renderContext,
           )

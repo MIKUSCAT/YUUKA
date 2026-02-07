@@ -13,6 +13,7 @@ import { homedir } from 'os'
 import matter from 'gray-matter'
 import { getCwd } from './state'
 import { memoize } from 'lodash-es'
+import { emitReloadStatus } from './reloadStatus'
 
 export interface SkillConfig {
   name: string              // Skill identifier (from frontmatter or directory name)
@@ -291,22 +292,23 @@ export async function startSkillWatcher(onChange?: () => void): Promise<void> {
   const userGeminiDir = join(homedir(), '.gemini', 'skills')
   const projectGeminiDir = join(getCwd(), '.gemini', 'skills')
 
-  const watchDirectory = (dirPath: string, label: string) => {
+  const watchDirectory = (dirPath: string) => {
     if (existsSync(dirPath)) {
       // Watch with recursive to catch SKILL.md changes in subdirectories
       const watcher = watch(dirPath, { recursive: true }, async (eventType, filename) => {
         if (filename && (filename.endsWith('SKILL.md') || filename === 'SKILL.md')) {
-          console.log(`Skill configuration changed in ${label}: ${filename}`)
+          emitReloadStatus({ domain: 'skills', state: 'loading' })
           clearSkillCache()
           onChange?.()
+          emitReloadStatus({ domain: 'skills', state: 'ok' })
         }
       })
       watchers.push(watcher)
     }
   }
 
-  watchDirectory(userGeminiDir, 'user/.gemini/skills')
-  watchDirectory(projectGeminiDir, 'project/.gemini/skills')
+  watchDirectory(userGeminiDir)
+  watchDirectory(projectGeminiDir)
 }
 
 /**

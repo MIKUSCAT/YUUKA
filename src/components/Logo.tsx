@@ -17,22 +17,36 @@ const YUUKA_LOGO_LINES = [
 
 // 计算 Logo 最大显示宽度
 const LOGO_WIDTH = Math.max(...YUUKA_LOGO_LINES.map(line => stringWidth(line)))
+const LOGO_RIGHT_SHIFT = 11
+
+function getLogoLeftPadding(columns: number, shift = 0): number {
+  return Math.max(0, Math.floor((columns - LOGO_WIDTH) / 2) + shift)
+}
+
+function alignToLogoLeft(
+  line: string,
+  columns: number,
+  shift = 0,
+): string {
+  const leftPadding = Math.max(0, getLogoLeftPadding(columns, shift))
+  return `${' '.repeat(leftPadding)}${line}`
+}
 
 export function Logo(): React.ReactNode {
   const theme = getTheme()
   const { columns } = useTerminalSize()
 
-  // 计算左侧 padding 使 Logo 居中
-  const paddingLeft = Math.max(0, Math.floor((columns - LOGO_WIDTH) / 2))
+  // Onboarding 会复用 MIN_LOGO_WIDTH，保持不变；启动界面实际居中按终端宽度计算
+  const centeredLogoWidth = Math.max(MIN_LOGO_WIDTH, LOGO_WIDTH)
+  const renderColumns = Math.max(columns, centeredLogoWidth)
 
   return (
-    <Box flexDirection="column" marginY={1} alignItems="center" width="100%">
+    <Box flexDirection="column" marginY={1} width="100%">
       <Box flexDirection="column">
-        <Text color={theme.secondaryText}>{'✧ ˚  ✦'.padStart(Math.floor(LOGO_WIDTH / 2) + 3)}</Text>
         {YUUKA_LOGO_LINES.map((line, i) => (
           <React.Fragment key={i}>
             <Text color={theme.yuuka} bold>
-              {line}
+              {alignToLogoLeft(line, renderColumns, LOGO_RIGHT_SHIFT)}
             </Text>
           </React.Fragment>
         ))}
