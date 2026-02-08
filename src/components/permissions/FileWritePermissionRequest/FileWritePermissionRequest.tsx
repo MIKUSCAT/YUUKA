@@ -22,6 +22,7 @@ import {
 } from '@hooks/usePermissionRequestLogging'
 import { FileWriteToolDiff } from './FileWriteToolDiff'
 import { useTerminalSize } from '@hooks/useTerminalSize'
+import { logError } from '@utils/log'
 
 type Props = {
   toolUseConfirm: ToolUseConfirm
@@ -69,6 +70,7 @@ export function FileWritePermissionRequest({
           content={content}
           verbose={verbose}
           width={columns - 12}
+          useBorder={false}
         />
       </Box>
       <Box flexDirection="column">
@@ -105,8 +107,8 @@ export function FileWritePermissionRequest({
                     },
                   })
                 })
-                toolUseConfirm.onAllow('temporary')
                 onDone()
+                toolUseConfirm.onAllow('temporary')
                 break
               case 'yes-dont-ask-again':
                 extractLanguageName(file_path).then(language => {
@@ -120,14 +122,19 @@ export function FileWritePermissionRequest({
                     },
                   })
                 })
+                onDone()
                 savePermission(
                   toolUseConfirm.tool,
                   toolUseConfirm.input,
                   toolUseConfirmGetPrefix(toolUseConfirm),
-                ).then(() => {
-                  toolUseConfirm.onAllow('session')
-                  onDone()
-                })
+                )
+                  .then(() => {
+                    toolUseConfirm.onAllow('session')
+                  })
+                  .catch(error => {
+                    logError(error)
+                    toolUseConfirm.onAllow('temporary')
+                  })
                 break
               case 'no':
                 extractLanguageName(file_path).then(language => {
@@ -141,8 +148,8 @@ export function FileWritePermissionRequest({
                     },
                   })
                 })
-                toolUseConfirm.onReject()
                 onDone()
+                toolUseConfirm.onReject()
                 break
             }
           }}

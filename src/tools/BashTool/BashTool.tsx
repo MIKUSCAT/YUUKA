@@ -178,8 +178,9 @@ export const BashTool = {
     return <FallbackToolUseRejectedMessage />
   },
 
-  renderToolResultMessage(content) {
-    return <BashToolResultMessage content={content} verbose={false} />
+  renderToolResultMessage(content, options?: { verbose?: boolean }) {
+    const verbose = options?.verbose ?? getGlobalConfig().verbose ?? false
+    return <BashToolResultMessage content={content} verbose={verbose} />
   },
   renderResultForAssistant({ interrupted, stdout, stderr }) {
     let errorMessage = stderr.trim()

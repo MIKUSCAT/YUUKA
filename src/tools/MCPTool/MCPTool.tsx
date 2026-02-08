@@ -54,8 +54,8 @@ export const MCPTool = {
   renderToolUseRejectedMessage() {
     return <FallbackToolUseRejectedMessage />
   },
-  renderToolResultMessage(output) {
-    const verbose = getGlobalConfig().verbose ?? false
+  renderToolResultMessage(output, options?: { verbose?: boolean }) {
+    const verbose = options?.verbose ?? getGlobalConfig().verbose ?? false
     const theme = getTheme()
     if (Array.isArray(output)) {
       return (

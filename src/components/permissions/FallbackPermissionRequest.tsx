@@ -18,6 +18,7 @@ import {
   UnaryEvent,
   usePermissionRequestLogging,
 } from '@hooks/usePermissionRequestLogging'
+import { logError } from '@utils/log'
 
 type Props = {
   toolUseConfirm: ToolUseConfirm
@@ -108,8 +109,8 @@ export function FallbackPermissionRequest({
                     platform: env.platform,
                   },
                 })
-                toolUseConfirm.onAllow('temporary')
                 onDone()
+                toolUseConfirm.onAllow('temporary')
                 break
               case 'yes-allow-session':
                 logUnaryEvent({
@@ -121,14 +122,19 @@ export function FallbackPermissionRequest({
                     platform: env.platform,
                   },
                 })
+                onDone()
                 saveSessionPermission(
                   toolUseConfirm.tool,
                   toolUseConfirm.input,
                   toolUseConfirmGetPrefix(toolUseConfirm),
-                ).then(() => {
-                  toolUseConfirm.onAllow('session')
-                  onDone()
-                })
+                )
+                  .then(() => {
+                    toolUseConfirm.onAllow('session')
+                  })
+                  .catch(error => {
+                    logError(error)
+                    toolUseConfirm.onAllow('temporary')
+                  })
                 break
               case 'no':
                 logUnaryEvent({
@@ -140,8 +146,8 @@ export function FallbackPermissionRequest({
                     platform: env.platform,
                   },
                 })
-                toolUseConfirm.onReject()
                 onDone()
+                toolUseConfirm.onReject()
                 break
             }
           }}

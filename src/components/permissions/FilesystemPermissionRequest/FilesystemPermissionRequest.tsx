@@ -201,8 +201,8 @@ function FilesystemPermissionRequestImpl({
                     platform: env.platform,
                   },
                 })
-                toolUseConfirm.onAllow('temporary')
                 onDone()
+                toolUseConfirm.onAllow('temporary')
                 break
               case 'yes-dont-ask-again':
                 logUnaryEvent({
@@ -215,8 +215,8 @@ function FilesystemPermissionRequestImpl({
                   },
                 })
                 grantWritePermissionForOriginalDir()
-                toolUseConfirm.onAllow('session')
                 onDone()
+                toolUseConfirm.onAllow('session')
                 break
               case 'no':
                 logUnaryEvent({
@@ -228,8 +228,8 @@ function FilesystemPermissionRequestImpl({
                     platform: env.platform,
                   },
                 })
-                toolUseConfirm.onReject()
                 onDone()
+                toolUseConfirm.onReject()
                 break
             }
           }}

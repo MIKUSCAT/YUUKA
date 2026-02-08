@@ -94,6 +94,7 @@ export function FileEditPermissionRequest({
         new_string={new_string}
         old_string={old_string}
         verbose={verbose}
+        useBorder={false}
         width={columns - 12}
       />
       <Box flexDirection="column">

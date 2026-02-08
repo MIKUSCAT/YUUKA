@@ -18,6 +18,8 @@ import { DESCRIPTION, PROMPT } from './prompt'
 import { hasWritePermission } from '@utils/permissions/filesystem'
 import { emitReminderEvent } from '@services/systemReminder'
 import { recordFileEdit } from '@services/fileFreshness'
+import { sanitizeLongLine } from '@utils/outputPreview'
+import { getTheme } from '@utils/theme'
 
 const inputSchema = z.strictObject({
   notebook_path: z
@@ -85,6 +87,7 @@ export const NotebookEditTool = {
     return <FallbackToolUseRejectedMessage />
   },
   renderToolResultMessage({ cell_number, new_source, language, error }) {
+    const MAX_LINES_TO_RENDER = 8
     if (error) {
       return (
         <Box flexDirection="column">
@@ -93,11 +96,22 @@ export const NotebookEditTool = {
       )
     }
 
+    const lines = new_source.split('\n')
+    const previewSource = lines
+      .slice(0, MAX_LINES_TO_RENDER)
+      .map(line => sanitizeLongLine(line))
+      .join('\n')
+
     return (
       <Box flexDirection="column">
         <Text>Updated cell {cell_number}:</Text>
         <Box marginLeft={2}>
-          <HighlightedCode code={new_source} language={language} />
+          <HighlightedCode code={previewSource} language={language} />
+          {lines.length > MAX_LINES_TO_RENDER && (
+            <Text color={getTheme().secondaryText}>
+              ... (+{lines.length - MAX_LINES_TO_RENDER} lines)
+            </Text>
+          )}
         </Box>
       </Box>
     )

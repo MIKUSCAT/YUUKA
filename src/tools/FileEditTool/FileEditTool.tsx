@@ -19,6 +19,7 @@ import {
 import { logError } from '@utils/log'
 import { getCwd } from '@utils/state'
 import { getTheme } from '@utils/theme'
+import { getGlobalConfig } from '@utils/config'
 import { emitReminderEvent } from '@services/systemReminder'
 import { recordFileEdit } from '@services/fileFreshness'
 import { NotebookEditTool } from '@tools/NotebookEditTool/NotebookEditTool'
@@ -66,8 +67,11 @@ export const FileEditTool = {
   renderToolUseMessage(input, { verbose }) {
     return `file_path: ${verbose ? input.file_path : relative(getCwd(), input.file_path)}`
   },
-  renderToolResultMessage({ filePath, structuredPatch }) {
-    const verbose = false // Set default value for verbose
+  renderToolResultMessage(
+    { filePath, structuredPatch },
+    options?: { verbose?: boolean },
+  ) {
+    const verbose = options?.verbose ?? getGlobalConfig().verbose ?? false
     return (
       <FileEditToolUpdatedMessage
         filePath={filePath}

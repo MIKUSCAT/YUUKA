@@ -21,6 +21,7 @@ import {
 import { logError } from '@utils/log'
 import { getCwd } from '@utils/state'
 import { getTheme } from '@utils/theme'
+import { getGlobalConfig } from '@utils/config'
 import { PROMPT } from './prompt'
 import { hasWritePermission } from '@utils/permissions/filesystem'
 import { getPatch } from '@utils/diff'
@@ -28,6 +29,7 @@ import { PROJECT_FILE } from '@constants/product'
 import { emitReminderEvent } from '@services/systemReminder'
 import { recordFileEdit } from '@services/fileFreshness'
 import { TREE_END } from '@constants/figures'
+import { sanitizeLongLine } from '@utils/outputPreview'
 
 const MAX_LINES_TO_RENDER = 5
 const MAX_LINES_TO_RENDER_FOR_ASSISTANT = 16000
@@ -125,14 +127,22 @@ export const FileWriteTool = {
     }
   },
   renderToolResultMessage(
-    { filePath, content, structuredPatch, type }
+    { filePath, content, structuredPatch, type },
+    options?: { verbose?: boolean },
   ) {
-    const verbose = false // Default to false since verbose is no longer passed
+    const verbose = options?.verbose ?? getGlobalConfig().verbose ?? false
     const theme = getTheme()
     switch (type) {
       case 'create': {
         const contentWithFallback = content || '(No content)'
         const numLines = content.split(EOL).length
+        const previewCode = (verbose
+          ? contentWithFallback.split('\n')
+          : contentWithFallback.split('\n').slice(0, MAX_LINES_TO_RENDER)
+        )
+          .map(line => sanitizeLongLine(line))
+          .filter(_ => _.trim() !== '')
+          .join('\n')
 
         return (
           <Box flexDirection="column">
@@ -147,15 +157,7 @@ export const FileWriteTool = {
             </Text>
             <Box flexDirection="column" paddingLeft={5}>
               <HighlightedCode
-                code={
-                  verbose
-                    ? contentWithFallback
-                    : contentWithFallback
-                        .split('\n')
-                        .slice(0, MAX_LINES_TO_RENDER)
-                        .filter(_ => _.trim() !== '')
-                        .join('\n')
-                }
+                code={previewCode}
                 language={extname(filePath).slice(1)}
               />
               {!verbose && numLines > MAX_LINES_TO_RENDER && (

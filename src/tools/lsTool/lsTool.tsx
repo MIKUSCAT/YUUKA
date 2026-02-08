@@ -12,6 +12,7 @@ import { DESCRIPTION } from './prompt'
 import { hasReadPermission } from '@utils/permissions/filesystem'
 import { getGlobalConfig } from '@utils/config'
 import { TREE_END } from '@constants/figures'
+import { sanitizeLongLine } from '@utils/outputPreview'
 
 const MAX_LINES = 5
 const MAX_FILES = 1000
@@ -65,8 +66,8 @@ export const LSTool = {
   renderToolUseRejectedMessage() {
     return <FallbackToolUseRejectedMessage />
   },
-  renderToolResultMessage(content) {
-    const verbose = getGlobalConfig().verbose ?? false
+  renderToolResultMessage(content, options?: { verbose?: boolean }) {
+    const verbose = options?.verbose ?? getGlobalConfig().verbose ?? false
     const theme = getTheme()
     if (typeof content !== 'string') {
       return null
@@ -75,23 +76,21 @@ export const LSTool = {
     if (!result) {
       return null
     }
+    const lines = result.split('\n').filter(_ => _.trim() !== '')
+    const visibleLines = lines.slice(0, verbose ? undefined : MAX_LINES)
     return (
       <Box justifyContent="space-between" width="100%">
         <Box>
           <Text color={theme.secondaryText}>{TREE_END} </Text>
           <Box flexDirection="column" paddingLeft={0}>
-            {result
-              .split('\n')
-              .filter(_ => _.trim() !== '')
-              .slice(0, verbose ? undefined : MAX_LINES)
-              .map((_, i) => (
+            {visibleLines.map((line, i) => (
                 <React.Fragment key={i}>
-                  <Text>{_}</Text>
+                  <Text>{sanitizeLongLine(line)}</Text>
                 </React.Fragment>
               ))}
-            {!verbose && result.split('\n').length > MAX_LINES && (
+            {!verbose && lines.length > MAX_LINES && (
               <Text color={getTheme().secondaryText}>
-                ... (+{result.split('\n').length - MAX_LINES} items)
+                ... (+{lines.length - MAX_LINES} items)
               </Text>
             )}
           </Box>

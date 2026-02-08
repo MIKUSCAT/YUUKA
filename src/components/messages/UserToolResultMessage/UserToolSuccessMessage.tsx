@@ -5,6 +5,7 @@ import { Tool } from '@tool'
 import { Message, UserMessage } from '@query'
 import { useGetToolFromMessages } from './utils'
 import { getTheme } from '@utils/theme'
+import { sanitizeLongLine } from '@utils/outputPreview'
 
 type Props = {
   param: ToolResultBlockParam
@@ -23,6 +24,7 @@ export function UserToolSuccessMessage({
   verbose,
   width,
 }: Props): React.ReactNode {
+  const MAX_FALLBACK_LINES = 10
   const { tool } = useGetToolFromMessages(param.tool_use_id, tools, messages)
 
   const fallbackText = (() => {
@@ -42,7 +44,21 @@ export function UserToolSuccessMessage({
     <Box flexDirection="column" width={width}>
       {tool?.renderToolResultMessage?.(message.toolUseResult?.data as never, { verbose }) ??
         (fallbackText ? (
-          <Text color={getTheme().secondaryText}>{fallbackText}</Text>
+          <>
+            <Text color={getTheme().secondaryText}>
+              {(verbose
+                ? fallbackText.split('\n')
+                : fallbackText.split('\n').slice(0, MAX_FALLBACK_LINES)
+              )
+                .map(line => sanitizeLongLine(line))
+                .join('\n')}
+            </Text>
+            {!verbose && fallbackText.split('\n').length > MAX_FALLBACK_LINES && (
+              <Text color={getTheme().secondaryText}>
+                ... (+{fallbackText.split('\n').length - MAX_FALLBACK_LINES} lines)
+              </Text>
+            )}
+          </>
         ) : null)}
     </Box>
   )

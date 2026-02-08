@@ -8,9 +8,29 @@ export type GeminiResolvedModelConfig = {
   config: GeminiGenerateContentConfig
 }
 
+const DEFAULT_THINKING_BUDGET = 8192
+
 function asTools(tools?: GeminiTool[]): GeminiTool[] | undefined {
   if (!tools || tools.length === 0) return undefined
   return tools
+}
+
+function getThinkingConfig(modelName: string): Record<string, unknown> {
+  const normalized = normalizeGeminiModelName(modelName)
+    .replace(/^models\//, '')
+    .toLowerCase()
+
+  if (normalized.startsWith('gemini-3')) {
+    return {
+      includeThoughts: true,
+      thinkingLevel: 'HIGH',
+    }
+  }
+
+  return {
+    includeThoughts: true,
+    thinkingBudget: DEFAULT_THINKING_BUDGET,
+  }
 }
 
 export function resolveGeminiModelConfig(
@@ -44,6 +64,7 @@ export function resolveGeminiModelConfig(
           tools: asTools(declaredTools),
           generationConfig: {
             temperature: 0,
+            thinkingConfig: getThinkingConfig(baseModel),
           },
         },
       }
@@ -83,10 +104,10 @@ export function resolveGeminiModelConfig(
           tools: asTools(declaredTools),
           generationConfig: {
             temperature: 1,
+            thinkingConfig: getThinkingConfig(baseModel),
           },
         },
       }
     }
   }
 }
-

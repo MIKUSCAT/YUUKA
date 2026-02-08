@@ -183,6 +183,10 @@ cli.js
 **/.gemini/settings.json
 .gemini/yuuka/
 **/.gemini/yuuka/
+.gemini/oauth_creds.json
+**/.gemini/oauth_creds.json
+.gemini/oauth_creds*.json
+**/.gemini/oauth_creds*.json
 
 # Lock files
 bun.lock

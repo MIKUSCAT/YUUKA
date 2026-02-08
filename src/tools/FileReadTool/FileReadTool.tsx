@@ -17,6 +17,7 @@ import {
 } from '@utils/file'
 import { logError } from '@utils/log'
 import { getTheme } from '@utils/theme'
+import { getGlobalConfig } from '@utils/config'
 import { emitReminderEvent } from '@services/systemReminder'
 import { PRODUCT_COMMAND } from '@constants/product'
 import {
@@ -27,6 +28,7 @@ import { DESCRIPTION, PROMPT } from './prompt'
 import { hasReadPermission } from '@utils/permissions/filesystem'
 import { secureFileService } from '@utils/secureFile'
 import { TREE_END } from '@constants/figures'
+import { sanitizeLongLine } from '@utils/outputPreview'
 
 const MAX_LINES_TO_RENDER = 5
 const MAX_OUTPUT_SIZE = 0.25 * 1024 * 1024 // 0.25MB in bytes
@@ -106,8 +108,8 @@ export const FileReadTool = {
       .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
       .join(', ')
   },
-  renderToolResultMessage(output) {
-    const verbose = false // Set default value for verbose
+  renderToolResultMessage(output, options?: { verbose?: boolean }) {
+    const verbose = options?.verbose ?? getGlobalConfig().verbose ?? false
     const theme = getTheme()
     // TODO: Render recursively
     switch (output.type) {
@@ -123,21 +125,20 @@ export const FileReadTool = {
       case 'text': {
         const { filePath, content, numLines } = output.file
         const contentWithFallback = content || '(No content)'
+        const previewCode = (verbose
+          ? contentWithFallback.split('\n')
+          : contentWithFallback.split('\n').slice(0, MAX_LINES_TO_RENDER)
+        )
+          .map(line => sanitizeLongLine(line))
+          .filter(_ => _.trim() !== '')
+          .join('\n')
         return (
           <Box justifyContent="space-between" overflowX="hidden" width="100%">
             <Box flexDirection="row">
               <Text color={theme.secondaryText}>{TREE_END} </Text>
               <Box flexDirection="column">
                 <HighlightedCode
-                  code={
-                    verbose
-                      ? contentWithFallback
-                      : contentWithFallback
-                          .split('\n')
-                          .slice(0, MAX_LINES_TO_RENDER)
-                          .filter(_ => _.trim() !== '')
-                          .join('\n')
-                  }
+                  code={previewCode}
                   language={extname(filePath).slice(1)}
                 />
                 {!verbose && numLines > MAX_LINES_TO_RENDER && (

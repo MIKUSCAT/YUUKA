@@ -10,6 +10,9 @@ import { resolveAgentId } from '@utils/agentStorage'
 import { DESCRIPTION, PROMPT } from './prompt'
 import { getTheme } from '@utils/theme'
 import { TREE_END } from '@constants/figures'
+import { sanitizeLongLine } from '@utils/outputPreview'
+
+const MAX_RENDERED_LINES = 10
 
 const inputSchema = z.strictObject({
   file_path: z
@@ -56,11 +59,25 @@ export const MemoryReadTool = {
   },
   renderToolResultMessage(output) {
     const theme = getTheme()
+    const rawContent =
+      typeof output?.content === 'string' ? output.content.trim() : ''
+    const lines = rawContent ? rawContent.split('\n') : []
+    const shown = lines
+      .slice(0, MAX_RENDERED_LINES)
+      .map(line => sanitizeLongLine(line))
+      .join('\n')
     return (
       <Box justifyContent="space-between" overflowX="hidden" width="100%">
         <Box flexDirection="row">
           <Text color={theme.secondaryText}>{TREE_END} </Text>
-          <Text>{output.content}</Text>
+          <Box flexDirection="column">
+            <Text>{shown || '(No content)'}</Text>
+            {lines.length > MAX_RENDERED_LINES && (
+              <Text color={theme.secondaryText}>
+                ... (+{lines.length - MAX_RENDERED_LINES} lines)
+              </Text>
+            )}
+          </Box>
         </Box>
       </Box>
     )

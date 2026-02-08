@@ -3,6 +3,7 @@ import { Box, Text } from 'ink'
 import * as React from 'react'
 import { getTheme } from '@utils/theme'
 import { TREE_END } from '@constants/figures'
+import { sanitizeLongLine } from '@utils/outputPreview'
 
 const MAX_RENDERED_LINES = 10
 
@@ -18,18 +19,18 @@ export function UserToolErrorMessage({
   const theme = getTheme()
   const error =
     typeof param.content === 'string' ? param.content.trim() : 'Error'
+  const errorLines = error.split('\n')
+  const shownLines = (verbose ? errorLines : errorLines.slice(0, MAX_RENDERED_LINES))
+    .map(line => sanitizeLongLine(line))
+    .join('\n')
   return (
     <Box flexDirection="row" width="100%">
       <Text color={theme.secondaryText}>{TREE_END} </Text>
       <Box flexDirection="column">
-        <Text color={theme.error}>
-          {verbose
-            ? error
-            : error.split('\n').slice(0, MAX_RENDERED_LINES).join('\n') || ''}
-        </Text>
-        {!verbose && error.split('\n').length > MAX_RENDERED_LINES && (
+        <Text color={theme.error}>{shownLines}</Text>
+        {!verbose && errorLines.length > MAX_RENDERED_LINES && (
           <Text color={theme.secondaryText}>
-            ... (+{error.split('\n').length - MAX_RENDERED_LINES} lines)
+            ... (+{errorLines.length - MAX_RENDERED_LINES} lines)
           </Text>
         )}
       </Box>

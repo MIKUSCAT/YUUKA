@@ -77,7 +77,10 @@ export interface Tool<
     options: { verbose: boolean },
   ) => string
   renderToolUseRejectedMessage?: (...args: any[]) => React.ReactElement
-  renderToolResultMessage?: (output: TOutput) => React.ReactElement
+  renderToolResultMessage?: (
+    output: TOutput,
+    options?: { verbose?: boolean },
+  ) => React.ReactElement
   call: (
     input: z.infer<TInput>,
     context: ToolUseContext,

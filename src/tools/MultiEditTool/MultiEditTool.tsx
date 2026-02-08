@@ -17,6 +17,7 @@ import {
 import { logError } from '@utils/log'
 import { getCwd } from '@utils/state'
 import { getTheme } from '@utils/theme'
+import { getGlobalConfig } from '@utils/config'
 import { NotebookEditTool } from '@tools/NotebookEditTool/NotebookEditTool'
 // Local content-based edit function for MultiEditTool
 function applyContentEdit(
@@ -124,7 +125,8 @@ export const MultiEditTool = {
       </Box>
     )
   },
-  renderToolResultMessage(output) {
+  renderToolResultMessage(output, options?: { verbose?: boolean }) {
+    const verbose = options?.verbose ?? getGlobalConfig().verbose ?? false
     if (typeof output === 'string') {
       const isError = output.includes('Error:')
       return (
@@ -140,7 +142,7 @@ export const MultiEditTool = {
       <FileEditToolUpdatedMessage
         filePath={output.filePath}
         structuredPatch={output.structuredPatch}
-        verbose={false}
+        verbose={verbose}
       />
     )
   },

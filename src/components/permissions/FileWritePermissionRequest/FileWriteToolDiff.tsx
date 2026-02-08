@@ -16,6 +16,7 @@ type Props = {
   content: string
   verbose: boolean
   width: number
+  useBorder?: boolean
 }
 
 export function FileWriteToolDiff({
@@ -23,6 +24,7 @@ export function FileWriteToolDiff({
   content,
   verbose,
   width,
+  useBorder = true,
 }: Props): React.ReactNode {
   const fileExists = useMemo(() => existsSync(file_path), [file_path])
   const oldContent = useMemo(() => {
@@ -47,7 +49,7 @@ export function FileWriteToolDiff({
   return (
     <Box
       borderColor={getTheme().secondaryBorder}
-      borderStyle="round"
+      borderStyle={useBorder ? 'round' : undefined}
       flexDirection="column"
       paddingX={1}
     >

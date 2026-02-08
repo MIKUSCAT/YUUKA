@@ -14,6 +14,7 @@ import { logUnaryPermissionEvent } from '@components/permissions/utils'
 import { Select } from '@components/CustomSelect/select'
 import { toolUseOptions } from '@components/permissions/toolUseOptions'
 import { isUnsafeCompoundCommand } from '@utils/commands'
+import { logError } from '@utils/log'
 
 type Props = {
   toolUseConfirm: ToolUseConfirm
@@ -67,8 +68,8 @@ export function BashPermissionRequest({
                   toolUseConfirm,
                   'accept',
                 )
-                toolUseConfirm.onAllow('temporary')
                 onDone()
+                toolUseConfirm.onAllow('temporary')
                 break
               case 'yes-allow-session': {
                 const prefix = toolUseConfirmGetPrefix(toolUseConfirm)
@@ -83,14 +84,19 @@ export function BashPermissionRequest({
                   toolUseConfirm,
                   'accept',
                 )
+                onDone()
                 saveSessionPermission(
                   toolUseConfirm.tool,
                   toolUseConfirm.input,
                   canUsePrefix ? prefix : null,
-                ).then(() => {
-                  toolUseConfirm.onAllow('session')
-                  onDone()
-                })
+                )
+                  .then(() => {
+                    toolUseConfirm.onAllow('session')
+                  })
+                  .catch(error => {
+                    logError(error)
+                    toolUseConfirm.onAllow('temporary')
+                  })
                 break
               }
               case 'no':
@@ -99,8 +105,8 @@ export function BashPermissionRequest({
                   toolUseConfirm,
                   'reject',
                 )
-                toolUseConfirm.onReject()
                 onDone()
+                toolUseConfirm.onReject()
                 break
             }
           }}
