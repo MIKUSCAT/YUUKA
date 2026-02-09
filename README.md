@@ -192,112 +192,16 @@ Minimal `./.gemini/settings.json` example:
 - `/resume` - Resume last session
 - `/memory` - Append today's summary into AGENTS.md
 
-## Multi-Model Intelligent Collaboration
+## Architecture Notes (Current)
 
-> Note: The chapter below is legacy documentation. This version is Gemini-only; content will be updated.
+This release is Gemini-first and keeps one runtime LLM path:
 
-Unlike official Claude which supports only a single model, YUUKA implements **true multi-model collaboration**, allowing you to fully leverage the unique strengths of different AI models.
+- Runtime query path: `src/query.ts` → `src/services/llm.ts` → `src/services/gemini/query.ts`
+- Legacy provider branches were removed from the old `src/services/claude.ts`; runtime now stays on `src/services/llm.ts` (Gemini-only)
+- Provider verification helpers are now isolated under `src/services/llm/*`
+- Prompt/context assembly stays in dedicated modules (`src/services/llm/systemPrompt.ts`, `src/services/llm/yuukaContext.ts`)
 
-### Core Technical Architecture
-
-#### 1. **ModelManager Multi-Model Manager**
-We designed a unified `ModelManager` system that supports:
-- **Model Profiles**: Each model has an independent configuration file containing API endpoints, authentication, context window size, cost parameters, etc.
-- **Model Pointers**: Users can configure default models for different purposes in the `/model` command:
-  - `main`: Default model for main Agent
-  - `task`: Default model for SubAgent
-  - `reasoning`: Reserved for future ThinkTool usage
-  - `quick`: Fast model for simple NLP tasks (security identification, title generation, etc.)
-
-#### 2. **TaskTool Intelligent Task Distribution**
-Our specially designed `TaskTool` implements:
-- **Subagent Mechanism**: Can launch multiple sub-agents to process tasks in parallel
-- **Model Parameter Passing**: Users can specify which model SubAgents should use in their requests
-- **Default Model Configuration**: SubAgents use the model configured by the `task` pointer by default
-
-#### Intelligent Work Allocation Strategy
-
-**Architecture Design Phase**
-- Use **o3 model** or **GPT-5 model** to explore system architecture and formulate sharp and clear technical solutions
-- These models excel in abstract thinking and system design
-
-**Solution Refinement Phase**
-- Use **gemini model** to deeply explore production environment design details
-- Leverage its deep accumulation in practical engineering and balanced reasoning capabilities
-
-**Code Implementation Phase**
-- Use **Qwen Coder model**, **Kimi k2 model**, **GLM-4.5 model**, or **Claude Sonnet 4 model** for specific code writing
-- These models have strong performance in code generation, file editing, and engineering implementation
-- Support parallel processing of multiple coding tasks through subagents
-
-#### Practical Application Scenarios
-
-```bash
-# Example 1: Architecture Design
-"Use o3 model to help me design a high-concurrency message queue system architecture"
-
-# Example 2: Multi-Model Collaboration
-"First use GPT-5 model to analyze the root cause of this performance issue, then use Claude Sonnet 4 model to write optimization code"
-
-# Example 3: Parallel Task Processing
-"Use Qwen Coder model as subagent to refactor these three modules simultaneously"
-
-# Example 5: Code Review
-"Have Kimi k2 model review the code quality of this PR"
-
-# Example 6: Complex Reasoning
-"Use Grok 4 model to help me derive the time complexity of this algorithm"
-
-# Example 7: Solution Design
-"Have GLM-4.5 model design a microservice decomposition plan"
-```
-
-### Key Implementation Mechanisms
-
-#### **Configuration System**
-```typescript
-// Example of multi-model configuration support
-{
-  "modelProfiles": {
-    "o3": { "provider": "openai", "model": "o3", "apiKey": "..." },
-    "claude4": { "provider": "anthropic", "model": "claude-sonnet-4", "apiKey": "..." },
-    "qwen": { "provider": "alibaba", "model": "qwen-coder", "apiKey": "..." }
-  },
-  "modelPointers": {
-    "main": "claude4",      // Main conversation model
-    "task": "qwen",         // Task execution model
-    "reasoning": "o3",      // Reasoning model
-    "quick": "glm-4.5"      // Quick response model
-  }
-}
-```
-
-#### **Cost Tracking System**
-- **Usage Statistics**: Use `/cost` command to view token usage and costs for each model
-- **Multi-Model Cost Comparison**: Track usage costs of different models in real-time
-- **History Records**: Save cost data for each session
-
-#### **Context Manager**
-- **Context Window Adaptation**: Automatically adjust based on different models' context window sizes
-- **Session State Preservation**: Ensure information consistency during multi-model collaboration
-
-### Advantages of Multi-Model Collaboration
-
-1. **Maximized Efficiency**: Each task is handled by the most suitable model
-2. **Cost Optimization**: Use lightweight models for simple tasks, powerful models for complex tasks
-3. **Parallel Processing**: Multiple models can work on different subtasks simultaneously
-4. **Leveraging Strengths**: Combine advantages of different models for optimal overall results
-
-### Comparison with Official Implementation
-
-| Feature | YUUKA | Official Claude |
-|---------|------|-----------------|
-| Number of Supported Models | Unlimited, configurable for any model | Only supports single Claude model |
-| Parallel Processing | Multiple SubAgents work in parallel | Single-threaded processing |
-| Cost Tracking | Separate statistics for multiple models | Single model cost |
-| Task Model Configuration | Different default models for different purposes | Same model for all tasks |
-
-This multi-model collaboration capability makes YUUKA a true **AI Development Workbench**, not just a single AI assistant.
+If you are upgrading from older YUUKA versions, treat previous multi-provider runtime docs as historical.
 
 ## Development
 
@@ -326,11 +230,73 @@ npm run build
 ### Testing
 
 ```bash
-# Run tests
-npm run test
+# Type check
+npm run typecheck
+
+# Build verification
+npm run build
 
 # Test the CLI
 ./cli.cjs --help
+```
+
+### Forum Patrol Command
+
+Run one patrol cycle (browse + optional single reply):
+
+```bash
+npm run forum:patrol
+```
+
+Prerequisites:
+- `~/.config/astrbook/credentials.json` must exist
+- File format:
+
+```json
+{
+  "api_base": "https://your-astrbook-host",
+  "token": "YOUR_TOKEN"
+}
+```
+
+Optional:
+- Set `FORUM_PATROL_PROMPT` to override the default patrol prompt.
+
+### Scheduled Forum Patrol (Every 4 Hours)
+
+Workflow file: `.github/workflows/forum-patrol.yml`
+
+- Trigger: every 4 hours (`cron: 0 */4 * * *`, UTC) + manual `workflow_dispatch`
+- Required GitHub Secrets:
+  - `GEMINI_API_KEY`
+  - `ASTRBOOK_API_BASE`
+  - `ASTRBOOK_TOKEN`
+- Optional GitHub Secrets:
+  - `GEMINI_BASE_URL` (default: `https://generativelanguage.googleapis.com`)
+  - `GEMINI_MODEL` (default: `models/gemini-2.5-flash`)
+
+If required secrets are missing, the workflow exits safely without posting.
+
+### MCP on GitHub (Important)
+
+Local MCP works on your machine, but GitHub-hosted runners cannot access your local processes/files directly. Use one of these patterns:
+
+1. Self-hosted runner on your own machine/VPS, then reuse your local MCP setup.
+2. Package MCP as a service/container and start it inside GitHub Actions.
+3. Use a remote MCP endpoint and inject credentials via GitHub Secrets.
+
+### GitHub Publish Hygiene Checklist
+
+Before pushing:
+- Do not commit secrets: `.gemini/settings.json`, OAuth creds, tokens, local history.
+- Do not commit local caches/build junk: `node_modules/`, `dist/` (unless intentionally required), `.npm-cache-local/`.
+- Do not commit local-only binaries (for this repo: `mcp-servers/windows-mcp/bin/`).
+- Run:
+
+```bash
+npm run typecheck
+npm run build
+git status --ignored=matching
 ```
 
 ## License

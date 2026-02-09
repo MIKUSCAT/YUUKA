@@ -124,126 +124,16 @@ yuuka -p "解释这个函数" 路径/到/文件.js
 - `/resume` - 恢复上次会话
 - `/memory` - 把今日总结写入 AGENTS.md
 
-## 多模型智能协同
+## 架构说明（当前版本）
 
-> 注意：下面这章是旧文档（历史功能介绍），当前版本已收敛为 Gemini-only，内容待更新。
+当前版本以 Gemini 为唯一运行时链路，核心路径如下：
 
-与 CC 仅支持单一模型不同，YUUKA 实现了**真正的多模型协同工作**，让你能够充分发挥不同 AI 模型的独特优势。
+- 对话主链路：`src/query.ts` → `src/services/llm.ts` → `src/services/gemini/query.ts`
+- 历史 `src/services/claude.ts` 分叉已下线，运行时统一收敛到 `src/services/llm.ts`（Gemini-only）
+- Provider 校验与模型列表能力拆分到 `src/services/llm/*` 独立模块
+- 系统提示词与项目上下文拼装独立到 `src/services/llm/systemPrompt.ts`、`src/services/llm/yuukaContext.ts`
 
-### 核心技术架构
-
-#### 1. **ModelManager 多模型管理器**
-我们设计了统一的 `ModelManager` 系统，支持：
-- **模型配置文件（Model Profiles）**：每个模型都有独立的配置文件，包含 API 端点、认证信息、上下文窗口大小、成本等参数
-- **模型指针（Model Pointers）**：用户可以在 `/model` 命令中配置不同用途的默认模型：
-  - `main`：主 Agent 的默认模型
-  - `task`：SubAgent 的默认模型
-  - `reasoning`：预留给未来 ThinkTool 使用
-  - `quick`：用于简单 NLP 任务（如安全性识别、生成标题描述等）的快速模型
-
-#### 2. **TaskTool 智能任务分发工具**
-专门设计的 `TaskTool`（Architect 工具）实现了：
-- **Subagent 机制**：可以启动多个子代理并行处理任务
-- **模型参数传递**：用户可以在请求中指定 SubAgent 使用的模型
-- **默认模型配置**：SubAgent 默认使用 `task` 指针配置的模型
-
-#### 3. **AskExpertModel 专家咨询工具**
-我们专门设计了 `AskExpertModel` 工具：
-- **专家模型调用**：允许在对话中临时调用特定的专家模型解决疑难问题
-- **模型隔离执行**：专家模型的响应独立处理，不影响主对话流程
-- **知识整合**：将专家模型的见解整合到当前任务中
-
-#### 智能的工作分配策略
-
-**架构设计阶段**
-- 使用 **o3 模型** 或 **GPT-5 模型** 探讨系统架构，制定犀利明确的技术方案
-- 这些模型在抽象思维和系统设计方面表现卓越
-
-**方案细化阶段**
-- 使用 **gemini 模型** 深入探讨生产环境的设计细节
-- 利用其在实际工程实践中的深厚积累和平衡的推理能力
-
-**代码实现阶段**
-- 使用 **Qwen Coder 模型**、**Kimi k2 模型** 、**GLM-4.5 模型** 或 **Claude Sonnet 4 模型** 进行具体的代码编写
-- 这些模型在代码生成、文件编辑和工程实现方面性能强劲
-- 支持通过 subagent 并行处理多个编码任务
-
-**疑难问题解决**
-- 遇到复杂问题时，可单独咨询 **o3 模型**、**Claude Opus 4.1 模型** 或 **Grok 4 模型** 等专家模型
-- 获得深度的技术见解和创新的解决方案
-
-#### 实际应用场景
-
-```bash
-# 示例 1：架构设计
-"用 o3 模型帮我设计一个高并发的消息队列系统架构"
-
-# 示例 2：多模型协作
-"先用 GPT-5 模型分析这个性能问题的根本原因，然后用 Claude Sonnet 4 模型编写优化代码"
-
-# 示例 3：并行任务处理
-"用 Qwen Coder 模型作为 subagent 同时重构这三个模块"
-
-# 示例 4：专家咨询
-"这个内存泄漏问题很棘手，单独问问 Claude Opus 4.1 模型有什么解决方案"
-
-# 示例 5：代码审查
-"让 Kimi k2 模型审查这个 PR 的代码质量"
-
-# 示例 6：复杂推理
-"用 Grok 4 模型帮我推导这个算法的时间复杂度"
-
-# 示例 7：方案设计
-"让 GLM-4.5 模型设计微服务拆分方案"
-```
-
-### 关键实现机制
-
-#### **配置系统（Configuration System）**
-```typescript
-// 支持多模型配置的示例
-{
-  "modelProfiles": {
-    "o3": { "provider": "openai", "model": "o3", "apiKey": "..." },
-    "claude4": { "provider": "anthropic", "model": "claude-sonnet-4", "apiKey": "..." },
-    "qwen": { "provider": "alibaba", "model": "qwen-coder", "apiKey": "..." }
-  },
-  "modelPointers": {
-    "main": "claude4",      // 主对话模型
-    "task": "qwen",         // 任务执行模型
-    "reasoning": "o3",      // 推理模型
-    "quick": "glm-4.5"      // 快速响应模型
-  }
-}
-```
-
-#### **成本追踪系统（Cost Tracking）**
-- **使用统计**：`/cost` 命令查看各模型的 token 使用量和花费
-- **多模型成本对比**：实时追踪不同模型的使用成本
-- **历史记录**：保存每个会话的成本数据
-
-#### **上下文管理器（Context Manager）**
-- **上下文窗口适配**：根据不同模型的上下文窗口大小自动调整
-- **会话状态保持**：确保多模型协作时的信息一致性
-
-### 多模型协同的优势
-
-1. **效率最大化**：每个任务都由最适合的模型处理
-2. **成本优化**：简单任务用轻量模型，复杂任务用强大模型
-3. **并行处理**：多个模型可以同时处理不同的子任务
-4. **取长补短**：结合不同模型的优势，获得最佳的整体效果
-
-### 与官方实现的对比
-
-| 特性 | YUUKA | 官方 CC |
-|------|------|---------|
-| 支持模型数量 | 无限制，可配置任意模型 | 仅支持单一 Claude 模型 |
-| 并行处理 | 多个 SubAgent 并行工作 | 单线程处理 |
-| 成本追踪 | 多模型成本分别统计 | 单一模型成本 |
-| 任务模型配置 | 不同用途配置不同默认模型 | 所有任务用同一模型 |
-| 专家咨询 | AskExpertModel 工具 | 不支持 |
-
-这种多模型协同能力让 YUUKA 成为真正的 **AI 开发工作台**，而不仅仅是一个单一的 AI 助手。
+如果你从旧版本升级，可把历史“多 provider 运行时”文档视为过时内容。
 
 ## 开发
 
@@ -272,11 +162,73 @@ npm run build
 ### 测试
 
 ```bash
-# 运行测试
-npm run test
+# 类型检查
+npm run typecheck
+
+# 构建校验
+npm run build
 
 # 测试 CLI
 ./cli.cjs --help
+```
+
+### 论坛巡检命令
+
+执行一轮“逛论坛 + 可选回复 1 条”：
+
+```bash
+npm run forum:patrol
+```
+
+前置条件：
+- 必须存在 `~/.config/astrbook/credentials.json`
+- 文件格式：
+
+```json
+{
+  "api_base": "https://your-astrbook-host",
+  "token": "YOUR_TOKEN"
+}
+```
+
+可选：
+- 你可以用 `FORUM_PATROL_PROMPT` 覆盖默认巡检提示词。
+
+### 定时巡检（每 4 小时）
+
+工作流文件：`.github/workflows/forum-patrol.yml`
+
+- 触发：每 4 小时一次（`cron: 0 */4 * * *`，UTC）+ 手动触发 `workflow_dispatch`
+- 必需 GitHub Secrets：
+  - `GEMINI_API_KEY`
+  - `ASTRBOOK_API_BASE`
+  - `ASTRBOOK_TOKEN`
+- 可选 GitHub Secrets：
+  - `GEMINI_BASE_URL`（默认 `https://generativelanguage.googleapis.com`）
+  - `GEMINI_MODEL`（默认 `models/gemini-2.5-flash`）
+
+如果缺少必需密钥，工作流会安全跳过，不会发帖/回复。
+
+### MCP 在 GitHub 上怎么配（重点）
+
+你本机 MCP 正常不代表 GitHub Runner 能直接用。GitHub 托管 Runner 无法直接访问你本机进程/文件。常见做法：
+
+1. 用 `self-hosted runner`（部署在你自己的机器/VPS）复用本地 MCP。
+2. 把 MCP 打包成服务/容器，在 GitHub Actions 里临时启动。
+3. 用远程 MCP 服务地址，通过 GitHub Secrets 注入凭据。
+
+### GitHub 发布前清单
+
+推送前请检查：
+- 不提交密钥：`.gemini/settings.json`、OAuth 凭据、token、本地历史。
+- 不提交本地缓存/构建垃圾：`node_modules/`、`dist/`（除非你明确需要）、`.npm-cache-local/`。
+- 不提交本地专用二进制（本仓库：`mcp-servers/windows-mcp/bin/`）。
+- 执行：
+
+```bash
+npm run typecheck
+npm run build
+git status --ignored=matching
 ```
 
 ## 许可证

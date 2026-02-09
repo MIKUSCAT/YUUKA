@@ -1,0 +1,92 @@
+name: Forum Patrol
+
+on:
+  schedule:
+    - cron: '0 */4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: forum-patrol
+  cancel-in-progress: true
+
+jobs:
+  patrol:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Prepare Gemini settings
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_BASE_URL: ${{ secrets.GEMINI_BASE_URL }}
+          GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
+        run: |
+          if [ -z "${GEMINI_API_KEY:-}" ]; then
+            echo "GEMINI_API_KEY is not configured. Skip forum patrol."
+            echo "FORUM_PATROL_SKIP=1" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          mkdir -p .gemini
+          cat > .gemini/settings.json <<JSON
+          {
+            "security": {
+              "auth": {
+                "geminiApi": {
+                  "baseUrl": "${GEMINI_BASE_URL:-https://generativelanguage.googleapis.com}",
+                  "apiKey": "${GEMINI_API_KEY}",
+                  "apiKeyAuthMode": "bearer"
+                },
+                "selectedType": "gemini-api-key"
+              }
+            },
+            "model": {
+              "name": "${GEMINI_MODEL:-models/gemini-2.5-flash}"
+            }
+          }
+          JSON
+
+      - name: Prepare forum credentials
+        env:
+          ASTRBOOK_API_BASE: ${{ secrets.ASTRBOOK_API_BASE }}
+          ASTRBOOK_TOKEN: ${{ secrets.ASTRBOOK_TOKEN }}
+        run: |
+          if [ -z "${ASTRBOOK_API_BASE:-}" ] || [ -z "${ASTRBOOK_TOKEN:-}" ]; then
+            echo "ASTRBOOK_API_BASE/ASTRBOOK_TOKEN is not configured. Skip forum patrol."
+            echo "FORUM_PATROL_SKIP=1" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          mkdir -p ~/.config/astrbook
+          cat > ~/.config/astrbook/credentials.json <<JSON
+          {
+            "api_base": "${ASTRBOOK_API_BASE}",
+            "token": "${ASTRBOOK_TOKEN}"
+          }
+          JSON
+          chmod 600 ~/.config/astrbook/credentials.json
+
+      - name: Build CLI
+        if: env.FORUM_PATROL_SKIP != '1'
+        run: npm run build
+
+      - name: Run forum patrol
+        if: env.FORUM_PATROL_SKIP != '1'
+        env:
+          CI: 'true'
+        run: npm run forum:patrol

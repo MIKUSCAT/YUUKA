@@ -31,6 +31,7 @@
     "dev": "node --import tsx ./src/entrypoints/cli.tsx --verbose",
     "build": "node scripts/build.mjs",
     "clean": "rm -rf cli.cjs",
+    "forum:patrol": "node scripts/forum-patrol.cjs",
     "prepublishOnly": "node scripts/build.mjs && node scripts/prepublish-check.cjs",
     "postinstall": "node scripts/postinstall.cjs || true",
     "format": "prettier --write \"src/**/*.{ts,tsx,js,jsx,json}\"",
@@ -40,9 +41,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@anthropic-ai/bedrock-sdk": "^0.12.6",
     "@anthropic-ai/sdk": "^0.39.0",
-    "@anthropic-ai/vertex-sdk": "^0.7.0",
     "@commander-js/extra-typings": "^13.1.0",
     "@inkjs/ui": "^2.0.0",
     "@modelcontextprotocol/sdk": "^1.15.1",
@@ -72,7 +71,6 @@
     "nanoid": "^5.1.5",
     "node-fetch": "^3.3.2",
     "node-html-parser": "^7.0.1",
-    "openai": "^4.104.0",
     "react": "18.3.1",
     "semver": "^7.7.2",
     "shell-quote": "^1.8.3",
