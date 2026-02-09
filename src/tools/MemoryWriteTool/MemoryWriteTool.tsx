@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { FallbackToolUseRejectedMessage } from '@components/FallbackToolUseRejectedMessage'
 import { Tool } from '@tool'
 import { MEMORY_DIR } from '@utils/env'
+import { getGlobalConfig } from '@utils/config'
 import { resolveAgentId } from '@utils/agentStorage'
 import { recordFileEdit } from '@services/fileFreshness'
 import { DESCRIPTION, PROMPT } from './prompt'
@@ -30,8 +31,7 @@ export const MemoryWriteTool = {
     return 'Write Memory'
   },
   async isEnabled() {
-    // TODO: Gate with a setting or feature flag
-    return false
+    return getGlobalConfig().memoryWriteEnabled ?? true
   },
   isReadOnly() {
     return false

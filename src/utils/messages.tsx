@@ -12,7 +12,7 @@ import { MalformedCommandError } from './errors'
 import { logError } from './log'
 import { last, memoize } from 'lodash-es'
 import type { SetToolJSXFn, Tool, ToolUseContext } from '@tool'
-import { NO_CONTENT_MESSAGE } from '@services/claude'
+import { NO_CONTENT_MESSAGE } from '@services/llm'
 import {
   ImageBlockParam,
   TextBlockParam,

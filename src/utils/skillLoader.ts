@@ -14,6 +14,7 @@ import matter from 'gray-matter'
 import { getCwd } from './state'
 import { memoize } from 'lodash-es'
 import { emitReloadStatus } from './reloadStatus'
+import { getSessionEnabledSkillNames } from './skillSession'
 
 export interface SkillConfig {
   name: string              // Skill identifier (from frontmatter or directory name)
@@ -228,6 +229,37 @@ export const getAllSkills = memoize(
     return allSkills
   }
 )
+
+function filterSkillsBySessionSelection(skills: SkillConfig[]): SkillConfig[] {
+  const selectedNames = getSessionEnabledSkillNames()
+  if (!selectedNames) {
+    return skills
+  }
+  if (selectedNames.length === 0) {
+    return []
+  }
+  const selectedSet = new Set(selectedNames)
+  return skills.filter(skill => selectedSet.has(skill.name))
+}
+
+export async function getRuntimeActiveSkills(): Promise<SkillConfig[]> {
+  const skills = await getActiveSkills()
+  return filterSkillsBySessionSelection(skills)
+}
+
+export async function getRuntimeAvailableSkillNames(): Promise<string[]> {
+  const skills = await getRuntimeActiveSkills()
+  return skills.map(skill => skill.name)
+}
+
+export async function getRuntimeSkillByName(
+  skillName: string,
+): Promise<SkillConfig | undefined> {
+  const normalized = String(skillName ?? '').trim()
+  if (!normalized) return undefined
+  const skills = await getRuntimeActiveSkills()
+  return skills.find(skill => skill.name === normalized)
+}
 
 // Clear cache when needed
 export function clearSkillCache() {

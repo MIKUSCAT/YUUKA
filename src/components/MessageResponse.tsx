@@ -10,9 +10,11 @@ type Props = {
 export function MessageResponse({ children }: Props): React.ReactNode {
   const theme = getTheme()
   return (
-    <Box flexDirection="row" height={1} overflow="hidden">
+    <Box flexDirection="row" width="100%">
       <Text color={theme.secondaryText}>{TREE_END} </Text>
-      {children}
+      <Box flexDirection="column" flexGrow={1}>
+        {children}
+      </Box>
     </Box>
   )
 }

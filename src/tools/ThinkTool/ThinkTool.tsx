@@ -5,7 +5,6 @@ import { Tool } from '@tool'
 import { DESCRIPTION, PROMPT } from './prompt'
 import { getTheme } from '@utils/theme'
 import { MessageResponse } from '@components/MessageResponse'
-import { USE_BEDROCK, USE_VERTEX } from '@utils/model'
 
 const thinkToolSchema = z.object({
   thought: z.string().describe('Your thoughts.'),

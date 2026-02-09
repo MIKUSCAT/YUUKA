@@ -1,5 +1,4 @@
 #!/usr/bin/env -S node --no-warnings=ExperimentalWarning --enable-source-maps
-import '@utils/sanitizeAnthropicEnv'
 
 // Global handler for AbortError - this prevents unhandled rejection crashes
 // when user presses ESC to cancel streaming requests
@@ -16,8 +15,17 @@ process.on('unhandledRejection', (reason: any, promise) => {
 })
 
 import { fileURLToPath } from 'node:url'
-import { dirname, join, resolve } from 'node:path'
-import { existsSync } from 'node:fs'
+import { dirname, join, resolve, basename } from 'node:path'
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
+import { homedir } from 'node:os'
 import { initSentry } from '@services/sentry'
 import { PRODUCT_COMMAND, PRODUCT_NAME } from '@constants/product'
 initSentry() // Initialize Sentry as early as possible
@@ -41,11 +49,8 @@ try {
   }
 } catch {}
 
-import '@anthropic-ai/sdk/shims/node'
-
 import React from 'react'
 import { ReadStream } from 'tty'
-import { openSync } from 'fs'
 // ink and REPL are imported lazily to avoid top-level awaits during module init
 import type { RenderOptions } from 'ink'
 import { addToHistory } from '@history'
@@ -116,6 +121,135 @@ import {
   readGeminiSettingsFile,
   writeGeminiSettingsFile,
 } from '@utils/geminiSettings'
+import matter from 'gray-matter'
+import { clearSkillCache } from '@utils/skillLoader'
+
+type SkillImportScope = 'project' | 'user'
+
+function normalizeSkillName(input: string): string {
+  let name = input.trim().toLowerCase()
+  name = name.replace(/[\s_]+/g, '-')
+  name = name.replace(/[^a-z0-9-]/g, '-')
+  name = name.replace(/-+/g, '-')
+  name = name.replace(/^-+/, '').replace(/-+$/, '')
+  if (name.length > 64) {
+    name = name.slice(0, 64).replace(/-+$/, '')
+  }
+  return name
+}
+
+function isValidSkillName(name: string): boolean {
+  return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name)
+}
+
+function parseSkillImportScope(rawScope: string): SkillImportScope {
+  const normalized = String(rawScope ?? 'project').trim().toLowerCase()
+  if (normalized === 'project' || normalized === 'local') {
+    return 'project'
+  }
+  if (
+    normalized === 'user' ||
+    normalized === 'personal' ||
+    normalized === 'global'
+  ) {
+    return 'user'
+  }
+  throw new Error('scope 只支持: project | user')
+}
+
+function getSkillImportBaseDir(scope: SkillImportScope): string {
+  if (scope === 'user') {
+    return join(homedir(), '.gemini', 'skills')
+  }
+  return join(getCwd(), '.gemini', 'skills')
+}
+
+function importSkillFromPath(params: {
+  source: string
+  scope: string
+  name?: string
+}): { name: string; scope: SkillImportScope; targetDir: string } {
+  const sourcePath = resolve(params.source)
+  if (!existsSync(sourcePath)) {
+    throw new Error(`源路径不存在: ${sourcePath}`)
+  }
+
+  const sourceStat = statSync(sourcePath)
+  let sourceDir = sourcePath
+  let sourceSkillFile = join(sourcePath, 'SKILL.md')
+
+  if (sourceStat.isFile()) {
+    if (basename(sourcePath).toLowerCase() !== 'skill.md') {
+      throw new Error('source 若是文件，必须是 SKILL.md')
+    }
+    sourceDir = dirname(sourcePath)
+    sourceSkillFile = sourcePath
+  }
+
+  if (!existsSync(sourceSkillFile)) {
+    throw new Error(`未找到 SKILL.md: ${sourceSkillFile}`)
+  }
+
+  const sourceContent = readFileSync(sourceSkillFile, 'utf-8')
+  const parsedSource = matter(sourceContent)
+  const sourceFrontmatterName =
+    typeof parsedSource.data?.name === 'string'
+      ? String(parsedSource.data.name).trim()
+      : ''
+  const sourceDescription =
+    typeof parsedSource.data?.description === 'string'
+      ? String(parsedSource.data.description).trim()
+      : ''
+  if (!sourceDescription) {
+    throw new Error('SKILL.md 缺少 description 字段，无法导入')
+  }
+
+  const inferredName =
+    String(params.name ?? '').trim() ||
+    sourceFrontmatterName ||
+    basename(sourceDir)
+  const normalizedName = normalizeSkillName(inferredName)
+  if (!isValidSkillName(normalizedName)) {
+    throw new Error(
+      `技能名不合法: ${inferredName}（需要 kebab-case，1-64 字符）`,
+    )
+  }
+
+  const scope = parseSkillImportScope(params.scope)
+  const targetBaseDir = getSkillImportBaseDir(scope)
+  const targetDir = join(targetBaseDir, normalizedName)
+  if (existsSync(targetDir)) {
+    throw new Error(`目标技能已存在: ${targetDir}`)
+  }
+
+  mkdirSync(targetBaseDir, { recursive: true })
+  cpSync(sourceDir, targetDir, {
+    recursive: true,
+    force: false,
+    errorOnExist: true,
+  })
+
+  const targetSkillFile = join(targetDir, 'SKILL.md')
+  if (!existsSync(targetSkillFile)) {
+    throw new Error(`导入失败：目标目录缺少 SKILL.md (${targetSkillFile})`)
+  }
+
+  const targetContent = readFileSync(targetSkillFile, 'utf-8')
+  const parsedTarget = matter(targetContent)
+  parsedTarget.data = {
+    ...(parsedTarget.data ?? {}),
+    name: normalizedName,
+  }
+  writeFileSync(
+    targetSkillFile,
+    matter.stringify(parsedTarget.content, parsedTarget.data),
+    'utf-8',
+  )
+
+  clearSkillCache()
+  return { name: normalizedName, scope, targetDir }
+}
+
 export function completeOnboarding(): void {
   const config = getGlobalConfig()
   saveGlobalConfig({
@@ -583,7 +717,7 @@ ${commandList}`,
     )
     .option(
       '--safe',
-      'Enable strict permission checking mode (default is permissive)',
+      'Enable strict permission checking mode (default is permissive in interactive mode)',
       () => true,
     )
     .action(
@@ -721,6 +855,39 @@ ${commandList}`,
         JSON.stringify(global ? listConfigForCLI(true) : listConfigForCLI(false), null, 2),
       )
       process.exit(0)
+    })
+
+  const skills = program
+    .command('skills')
+    .description('Manage skills from command line')
+
+  skills
+    .command('import <source> [name]')
+    .description(
+      'Import a skill directory (or SKILL.md file) into .gemini/skills',
+    )
+    .option('-c, --cwd <cwd>', 'The current working directory', String, cwd())
+    .option(
+      '-s, --scope <scope>',
+      'Import scope: project or user',
+      'project',
+    )
+    .action(async (source, name, { cwd, scope }) => {
+      try {
+        await setup(cwd, false)
+        const result = importSkillFromPath({
+          source,
+          name,
+          scope,
+        })
+        console.log(
+          `Imported skill "${result.name}" to ${result.scope} scope:\n${result.targetDir}`,
+        )
+        process.exit(0)
+      } catch (error) {
+        console.error((error as Error).message)
+        process.exit(1)
+      }
     })
 
   // claude approved-tools
@@ -1485,7 +1652,7 @@ ${commandList}`,
     .option('-v, --verbose', 'Do not truncate message output', () => true)
     .option(
       '--safe',
-      'Enable strict permission checking mode (default is permissive)',
+      'Enable strict permission checking mode (default is permissive in interactive mode)',
       () => true,
     )
     .action(async (identifier, { cwd, safe, verbose }) => {

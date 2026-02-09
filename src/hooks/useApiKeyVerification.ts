@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react'
-import { verifyApiKey } from '@services/claude'
+import { verifyApiKey } from '@services/llm'
 
 export type VerificationStatus =
   | 'loading'

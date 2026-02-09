@@ -5,7 +5,6 @@ import { join, dirname, basename, resolve } from 'path'
 import { getCwd } from '@utils/state'
 import { getCommand } from '@commands'
 import { getActiveAgents } from '@utils/agentLoader'
-import { getActiveSkills } from '@utils/skillLoader'
 import { glob } from 'glob'
 import { matchCommands } from '@utils/fuzzyMatcher'
 import { 
@@ -373,47 +372,21 @@ export function useUnifiedCompletion({
     loadSystemCommands()
   }, [loadSystemCommands])
 
-  // Skill suggestions cache (for slash completion)
-  const [skillSuggestions, setSkillSuggestions] = useState<Array<{ name: string; description: string }>>([])
-
   // Generate command suggestions (slash commands)
   const generateCommandSuggestions = useCallback((prefix: string): UnifiedSuggestion[] => {
     const filteredCommands = commands.filter(cmd => !cmd.isHidden)
-    const lowerPrefix = prefix.toLowerCase()
-
-    // Avoid collisions: slash command takes precedence over skill of same name
-    const commandNameSet = new Set<string>()
-    for (const cmd of filteredCommands) {
-      commandNameSet.add(cmd.userFacingName())
-      for (const alias of cmd.aliases || []) {
-        commandNameSet.add(alias)
-      }
-    }
     
     if (!prefix) {
       // Show all commands when prefix is empty (for single /)
-      const commandSuggestions = filteredCommands.map(cmd => ({
+      return filteredCommands.map(cmd => ({
         value: cmd.userFacingName(),
         displayValue: `/${cmd.userFacingName()}`,
         type: 'command' as const,
         score: 100,
       }))
-
-      const skillSuggestionsForSlash = skillSuggestions
-        .filter(skill => !commandNameSet.has(skill.name))
-        .sort((a, b) => a.name.localeCompare(b.name))
-        .map(skill => ({
-          value: skill.name,
-          displayValue: `/${skill.name}`,
-          type: 'command' as const,
-          score: 90,
-          metadata: { isSkill: true, description: skill.description },
-        }))
-
-      return [...commandSuggestions, ...skillSuggestionsForSlash]
     }
     
-    const commandMatches = filteredCommands
+    return filteredCommands
       .filter(cmd => {
         const names = [cmd.userFacingName(), ...(cmd.aliases || [])]
         return names.some(name => name.toLowerCase().startsWith(prefix.toLowerCase()))
@@ -424,21 +397,7 @@ export function useUnifiedCompletion({
         type: 'command' as const,
         score: 100 - prefix.length + (cmd.userFacingName().startsWith(prefix) ? 10 : 0),
       }))
-
-    const skillMatches = skillSuggestions
-      .filter(skill => !commandNameSet.has(skill.name))
-      .filter(skill => skill.name.toLowerCase().startsWith(lowerPrefix))
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .map(skill => ({
-        value: skill.name,
-        displayValue: `/${skill.name}`,
-        type: 'command' as const,
-        score: 90 - prefix.length,
-        metadata: { isSkill: true, description: skill.description },
-      }))
-
-    return [...commandMatches, ...skillMatches]
-  }, [commands, skillSuggestions])
+  }, [commands])
 
   // Clean Unix command scoring using fuzzy matcher
   const calculateUnixCommandScore = useCallback((cmd: string, prefix: string): number => {
@@ -592,23 +551,6 @@ export function useUnifiedCompletion({
       // No fallback - rely on dynamic loading only
       setAgentSuggestions([])
     })
-  }, [])
-
-  // Load skill suggestions on mount
-  useEffect(() => {
-    getActiveSkills()
-      .then(skills => {
-        setSkillSuggestions(
-          skills.map(skill => ({
-            name: skill.name,
-            description: skill.description,
-          }))
-        )
-      })
-      .catch(error => {
-        console.warn('[useUnifiedCompletion] Failed to load skills:', error)
-        setSkillSuggestions([])
-      })
   }, [])
 
   // Generate agent and model suggestions using fuzzy matching

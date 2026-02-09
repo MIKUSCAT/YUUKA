@@ -1,7 +1,7 @@
-import { getActiveSkills } from '@utils/skillLoader'
+import { getRuntimeActiveSkills } from '@utils/skillLoader'
 
 export async function getPrompt(): Promise<string> {
-  const skills = await getActiveSkills()
+  const skills = await getRuntimeActiveSkills()
 
   if (skills.length === 0) {
     return `Execute a skill within the main conversation

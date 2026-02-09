@@ -1,10 +1,14 @@
 import { z } from 'zod'
 import React from 'react'
 import { Box, Text } from 'ink'
+import { readdirSync } from 'fs'
 import { Tool } from '@tool'
 import { TOOL_NAME } from './constants'
 import { getPrompt, DESCRIPTION } from './prompt'
-import { getSkillByName, getAvailableSkillNames, listSkillFiles, readSkillFile } from '@utils/skillLoader'
+import {
+  getRuntimeSkillByName,
+  getRuntimeAvailableSkillNames,
+} from '@utils/skillLoader'
 import { getTheme } from '@utils/theme'
 import { MessageResponse } from '@components/MessageResponse'
 
@@ -46,10 +50,10 @@ export const SkillTool = {
     const { skill: skillName } = input
 
     // Load the skill configuration
-    const skill = await getSkillByName(skillName)
+    const skill = await getRuntimeSkillByName(skillName)
 
     if (!skill) {
-      const availableSkills = await getAvailableSkillNames()
+      const availableSkills = await getRuntimeAvailableSkillNames()
       const errorMessage = availableSkills.length > 0
         ? `Skill "${skillName}" not found.\n\nAvailable skills:\n${availableSkills.map(s => `  - ${s}`).join('\n')}`
         : `Skill "${skillName}" not found. No skills are currently configured.\n\nTo add skills, create directories with SKILL.md files under:\n  - ~/.gemini/skills/\n  - ./.gemini/skills/\n\nAny subdirectory containing SKILL.md will be discovered (e.g., ~/.gemini/skills/category/skill-name/SKILL.md).`
@@ -67,7 +71,14 @@ export const SkillTool = {
     }
 
     // Get list of supporting files in the skill directory
-    const supportingFiles = await listSkillFiles(skillName)
+    let supportingFiles: string[] = []
+    try {
+      supportingFiles = readdirSync(skill.dirPath).filter(
+        file => file !== 'SKILL.md',
+      )
+    } catch {
+      supportingFiles = []
+    }
 
     // Build the result with skill instructions
     const result: SkillResult = {

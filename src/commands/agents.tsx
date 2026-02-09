@@ -45,10 +45,10 @@ const FOLDER_CONFIG = {
 // Tool categories for sophisticated selection
 const TOOL_CATEGORIES = {
   read: ['Read', 'Glob', 'Grep', 'LS'],
-  edit: ['Edit', 'MultiEdit', 'Write', 'NotebookEdit'],
-  execution: ['Bash', 'BashOutput', 'KillBash'],
-  web: ['WebFetch', 'WebSearch'],
-  other: ['TodoWrite', 'ExitPlanMode', 'Task']
+  edit: ['Edit', 'MultiEdit', 'Write', 'NotebookEditCell'],
+  execution: ['Bash', 'TaskOutput', 'Task'],
+  web: ['URLFetcher', 'WebSearch'],
+  other: ['TodoWrite', 'Skill']
 } as const
 
 type AgentLocation = typeof AGENT_LOCATIONS[keyof typeof AGENT_LOCATIONS]
@@ -119,7 +119,7 @@ type GeneratedAgent = {
 // AI generation function (use main pointer model)
 async function generateAgentWithClaude(prompt: string): Promise<GeneratedAgent> {
   // Import Claude service dynamically to avoid circular dependencies
-  const { queryModel } = await import('@services/claude')
+  const { queryModel } = await import('@services/llm')
   
   const systemPrompt = `You are an expert at creating AI agent configurations. Based on the user's description, generate a specialized agent configuration.
 
@@ -925,17 +925,17 @@ function AgentsUI({ onExit }: AgentsUIProps) {
         { name: 'Write', description: 'Write files to filesystem' },
         { name: 'Edit', description: 'Edit existing files' },
         { name: 'MultiEdit', description: 'Make multiple edits to files' },
-        { name: 'NotebookEdit', description: 'Edit Jupyter notebooks' },
+        { name: 'NotebookEditCell', description: 'Edit Jupyter notebooks' },
         { name: 'Bash', description: 'Execute bash commands' },
         { name: 'Glob', description: 'Find files matching patterns' },
         { name: 'Grep', description: 'Search file contents' },
         { name: 'LS', description: 'List directory contents' },
-        { name: 'WebFetch', description: 'Fetch web content' },
+        { name: 'URLFetcher', description: 'Fetch web content' },
         { name: 'WebSearch', description: 'Search the web' },
         { name: 'TodoWrite', description: 'Manage task lists' }
       ]
       // Hide agent orchestration/self-control tools for subagent configs
-      coreTools = coreTools.filter(t => t.name !== 'Task' && t.name !== 'ExitPlanMode')
+      coreTools = coreTools.filter(t => t.name !== 'Task')
       
       availableTools.push(...coreTools)
       

@@ -1,7 +1,7 @@
 import { Command } from '@commands'
 import { getContext } from '@context'
 import { getMessagesGetter, getMessagesSetter } from '@messages'
-import { API_ERROR_MESSAGE_PREFIX, queryLLM } from '@services/claude'
+import { API_ERROR_MESSAGE_PREFIX, queryLLM } from '@services/llm'
 import {
   createUserMessage,
   normalizeMessagesForAPI,

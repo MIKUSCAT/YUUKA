@@ -1,4 +1,4 @@
-import { queryQuick } from '@services/claude'
+import { queryQuick } from '@services/llm'
 import { extractTag } from '@utils/messages'
 import { MAX_OUTPUT_LENGTH } from './prompt'
 

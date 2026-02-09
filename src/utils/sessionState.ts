@@ -3,6 +3,7 @@ type SessionState = {
   modelErrors: Record<string, unknown>
   currentError: string | null
   currentThought: { subject: string; description: string } | null
+  enabledSkillNames: string[] | null
 }
 
 const isDebug =
@@ -14,6 +15,7 @@ const sessionState: SessionState = {
   modelErrors: {},
   currentError: null,
   currentThought: null,
+  enabledSkillNames: null,
 } as const
 
 function setSessionState<K extends keyof SessionState>(

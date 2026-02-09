@@ -24,7 +24,7 @@ import { emitReminderEvent } from '@services/systemReminder'
 import { recordFileEdit } from '@services/fileFreshness'
 import { NotebookEditTool } from '@tools/NotebookEditTool/NotebookEditTool'
 import { DESCRIPTION } from './prompt'
-import { applyEdit } from './utils'
+import { applyEdit, normalizeLineEndings } from './utils'
 import { hasWritePermission } from '@utils/permissions/filesystem'
 import { PROJECT_FILE } from '@constants/product'
 import { TREE_END } from '@constants/figures'
@@ -33,6 +33,10 @@ const inputSchema = z.strictObject({
   file_path: z.string().describe('The absolute path to the file to modify'),
   old_string: z.string().describe('The text to replace'),
   new_string: z.string().describe('The text to replace it with'),
+  replace_all: z
+    .boolean()
+    .optional()
+    .describe('Replace all occurrences of old_string (default false)'),
 })
 
 export type In = typeof inputSchema
@@ -81,7 +85,7 @@ export const FileEditTool = {
     )
   },
   renderToolUseRejectedMessage(
-    { file_path, old_string, new_string }: any = {},
+    { file_path, old_string, new_string, replace_all }: any = {},
     { columns, verbose }: any = {},
   ) {
     const theme = getTheme()
@@ -89,7 +93,12 @@ export const FileEditTool = {
       if (!file_path) {
         return <FallbackToolUseRejectedMessage />
       }
-      const { patch } = applyEdit(file_path, old_string, new_string)
+      const { patch } = applyEdit(
+        file_path,
+        old_string,
+        new_string,
+        Boolean(replace_all),
+      )
       return (
         <Box flexDirection="column">
           <Text>
@@ -127,7 +136,7 @@ export const FileEditTool = {
     }
   },
   async validateInput(
-    { file_path, old_string, new_string },
+    { file_path, old_string, new_string, replace_all },
     { readFileTimestamps },
   ) {
     if (old_string === new_string) {
@@ -205,19 +214,21 @@ export const FileEditTool = {
     }
 
     const enc = detectFileEncoding(fullFilePath)
-    const file = readFileSync(fullFilePath, enc)
-    if (!file.includes(old_string)) {
+    const file = normalizeLineEndings(readFileSync(fullFilePath, enc))
+    const normalizedOldString = normalizeLineEndings(old_string)
+    if (!file.includes(normalizedOldString)) {
       return {
         result: false,
-        message: `String to replace not found in file.`,
+        message:
+          'String to replace not found in file. 请先 Read 最新文件，再检查 old_string 的缩进、空格、换行（CRLF/LF）。',
         meta: {
           isFilePathAbsolute: String(isAbsolute(file_path)),
         },
       }
     }
 
-    const matches = file.split(old_string).length - 1
-    if (matches > 1) {
+    const matches = file.split(normalizedOldString).length - 1
+    if (matches > 1 && !replace_all) {
       return {
         result: false,
         message: `Found ${matches} matches of the string to replace. For safety, this tool only supports replacing exactly one occurrence at a time. Add more lines of context to your edit and try again.`,
@@ -229,8 +240,16 @@ export const FileEditTool = {
 
     return { result: true }
   },
-  async *call({ file_path, old_string, new_string }, { readFileTimestamps }) {
-    const { patch, updatedFile } = applyEdit(file_path, old_string, new_string)
+  async *call(
+    { file_path, old_string, new_string, replace_all },
+    { readFileTimestamps },
+  ) {
+    const { patch, updatedFile } = applyEdit(
+      file_path,
+      old_string,
+      new_string,
+      Boolean(replace_all),
+    )
 
     const fullFilePath = isAbsolute(file_path)
       ? file_path

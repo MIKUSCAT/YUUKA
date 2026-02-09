@@ -10,7 +10,7 @@ import {
   CREDIT_BALANCE_TOO_LOW_ERROR_MESSAGE,
   INVALID_API_KEY_ERROR_MESSAGE,
   PROMPT_TOO_LONG_ERROR_MESSAGE,
-} from '@services/claude'
+} from '@services/llm'
 import {
   CANCEL_MESSAGE,
   INTERRUPT_MESSAGE,
@@ -105,8 +105,7 @@ export function AssistantTextMessage({
         <Text>
           <Text color={getTheme().secondaryText}>{TREE_END} </Text>
           <Text color={getTheme().error}>
-            Credit balance too low &middot; Add funds:
-            https://console.anthropic.com/settings/billing
+            Credit balance too low &middot; Check Gemini billing / quota in your provider console
           </Text>
         </Text>
       )

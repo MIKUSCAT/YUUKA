@@ -14,7 +14,7 @@ import {
   formatSystemPromptWithContext,
   queryLLM,
   queryModel,
-} from '@services/claude'
+} from '@services/llm'
 import { emitReminderEvent } from '@services/systemReminder'
 import { all } from '@utils/generators'
 import { logError } from '@utils/log'
@@ -305,9 +305,15 @@ export async function* query(
   }
 
   markPhase('SYSTEM_PROMPT_BUILD')
-  
+
+  // Collect tool prompts (especially SkillTool which lists available skills)
+  const toolPrompts = await collectToolPrompts(toolUseContext.options.tools)
+  const systemPromptWithToolInstructions = toolPrompts.length > 0
+    ? [...systemPrompt, '\n# Tool Instructions\n', ...toolPrompts]
+    : systemPrompt
+
   const { systemPrompt: fullSystemPrompt, reminders } =
-    formatSystemPromptWithContext(systemPrompt, context, toolUseContext.agentId)
+    formatSystemPromptWithContext(systemPromptWithToolInstructions, context, toolUseContext.agentId)
 
   // Emit session startup event
   emitReminderEvent('session:startup', {
@@ -851,6 +857,37 @@ async function* checkPermissionsAndCallTool(
       },
     ])
   }
+}
+
+/**
+ * Collect prompt() outputs from tools that have meaningful instructions.
+ * This injects tool-specific guidance (e.g., available skills list) into the system prompt
+ * so the model knows WHEN and HOW to use each tool.
+ */
+async function collectToolPrompts(tools: Tool[]): Promise<string[]> {
+  const prompts: string[] = []
+
+  await Promise.all(
+    tools.map(async tool => {
+      try {
+        if (typeof tool.prompt !== 'function') return
+
+        const enabled = typeof tool.isEnabled === 'function'
+          ? await tool.isEnabled()
+          : true
+        if (!enabled) return
+
+        const prompt = await tool.prompt()
+        if (prompt && prompt.trim().length > 0) {
+          prompts.push(prompt)
+        }
+      } catch {
+        // Skip tools whose prompt() throws
+      }
+    }),
+  )
+
+  return prompts
 }
 
 function formatError(error: unknown): string {

@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { FallbackToolUseRejectedMessage } from '@components/FallbackToolUseRejectedMessage'
 import { Tool } from '@tool'
 import { MEMORY_DIR } from '@utils/env'
+import { getGlobalConfig } from '@utils/config'
 import { resolveAgentId } from '@utils/agentStorage'
 import { DESCRIPTION, PROMPT } from './prompt'
 import { getTheme } from '@utils/theme'
@@ -34,8 +35,7 @@ export const MemoryReadTool = {
     return 'Read Memory'
   },
   async isEnabled() {
-    // TODO: Gate with a setting or feature flag
-    return false
+    return getGlobalConfig().memoryReadEnabled ?? true
   },
   isReadOnly() {
     return true

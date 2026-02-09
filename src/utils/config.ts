@@ -88,28 +88,7 @@ export type NotificationChannel =
   | 'iterm2_with_bell'
   | 'notifications_disabled'
 
-export type ProviderType =
-  | 'anthropic'
-  | 'openai'
-  | 'mistral'
-  | 'deepseek'
-  | 'kimi'
-  | 'qwen'
-  | 'glm'
-  | 'glm-coding'
-  | 'minimax'
-  | 'minimax-coding'
-  | 'baidu-qianfan'
-  | 'siliconflow'
-  | 'bigdream'
-  | 'opendev'
-  | 'xai'
-  | 'groq'
-  | 'gemini'
-  | 'ollama'
-  | 'azure'
-  | 'custom'
-  | 'custom-openai'
+export type ProviderType = 'gemini'
 
 // New model system types
 export type ModelProfile = {
@@ -167,6 +146,10 @@ export type GlobalConfig = {
   shiftEnterKeyBindingInstalled?: boolean
   proxy?: string
   stream?: boolean
+  thinkingGemini3Level?: 'low' | 'high'
+  thinkingNonGemini3Budget?: number
+  memoryReadEnabled?: boolean
+  memoryWriteEnabled?: boolean
 
   // New model system
   modelProfiles?: ModelProfile[] // Model configuration list
@@ -188,6 +171,10 @@ export const DEFAULT_GLOBAL_CONFIG: GlobalConfig = {
     rejected: [],
   },
   stream: true,
+  thinkingGemini3Level: 'high',
+  thinkingNonGemini3Budget: 8192,
+  memoryReadEnabled: true,
+  memoryWriteEnabled: true,
 
   // New model system defaults
   modelProfiles: [],
@@ -213,6 +200,10 @@ export const GLOBAL_CONFIG_KEYS = [
   'preferredNotifChannel',
   'shiftEnterKeyBindingInstalled',
   'maxTokens',
+  'thinkingGemini3Level',
+  'thinkingNonGemini3Budget',
+  'memoryReadEnabled',
+  'memoryWriteEnabled',
 ] as const
 
 export type GlobalConfigKey = (typeof GLOBAL_CONFIG_KEYS)[number]
@@ -698,9 +689,10 @@ export function getConfigForCLI(key: string, global: boolean): unknown {
 
 export function setConfigForCLI(
   key: string,
-  value: unknown,
+  rawValue: unknown,
   global: boolean,
 ): void {
+  let value = rawValue
   
   if (global) {
     if (!isGlobalConfigKey(key)) {
@@ -715,6 +707,30 @@ export function setConfigForCLI(
         `Error: Invalid value for autoUpdaterStatus. Must be one of: disabled, enabled, no_permissions, not_configured`,
       )
       process.exit(1)
+    }
+    if (key === 'thinkingGemini3Level') {
+      const normalized = String(value).trim().toLowerCase()
+      if (normalized !== 'low' && normalized !== 'high') {
+        console.error(`Error: thinkingGemini3Level must be one of: low, high`)
+        process.exit(1)
+      }
+      value = normalized
+    }
+    if (key === 'thinkingNonGemini3Budget') {
+      const parsed = Number.parseInt(String(value), 10)
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        console.error(`Error: thinkingNonGemini3Budget must be a positive integer`)
+        process.exit(1)
+      }
+      value = Math.floor(parsed)
+    }
+    if (key === 'memoryReadEnabled' || key === 'memoryWriteEnabled') {
+      const normalized = String(value).trim().toLowerCase()
+      if (normalized !== 'true' && normalized !== 'false') {
+        console.error(`Error: ${key} must be true or false`)
+        process.exit(1)
+      }
+      value = normalized === 'true'
     }
 
     const currentConfig = getGlobalConfig()
@@ -777,14 +793,6 @@ export function listConfigForCLI(global: boolean): object {
   } else {
     return pick(getCurrentProjectConfig(), PROJECT_CONFIG_KEYS)
   }
-}
-
-export function getOpenAIApiKey(): string | undefined {
-  return process.env.OPENAI_API_KEY
-}
-
-export function getAnthropicApiKey(): string {
-  return process.env.ANTHROPIC_API_KEY || ''
 }
 
 // Configuration migration utility functions

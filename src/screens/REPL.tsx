@@ -18,7 +18,6 @@ import {
 import PromptInput from '@components/PromptInput'
 import { Spinner } from '@components/Spinner'
 import { getSystemPrompt } from '@constants/prompts'
-import { SPINNER_FRAMES } from '@constants/figures'
 import { getContext } from '@context'
 import { getTotalCost, useCostSummary } from '@costTracker'
 import { useLogStartupTime } from '@hooks/useLogStartupTime'
@@ -67,7 +66,6 @@ import { getMaxThinkingTokens } from '@utils/thinking'
 import { getOriginalCwd } from '@utils/state'
 import { debug as debugLogger } from '@utils/debugLogger'
 import { logError } from '@utils/log'
-import { subscribeReloadStatus, type ReloadStatusEvent } from '@utils/reloadStatus'
 
 type Props = {
   commands: Command[]
@@ -91,10 +89,6 @@ export type BinaryFeedbackContext = {
   resolve: (result: BinaryFeedbackResult) => void
 }
 
-type ReloadBannerState = ReloadStatusEvent & {
-  id: number
-}
-
 export function REPL({
   commands,
   safeMode,
@@ -108,9 +102,8 @@ export function REPL({
   verbose: verboseFromCLI,
   initialMessages,
 }: Props): React.ReactNode {
-  // Default to strict permission checking in interactive sessions.
-  // (Non-interactive `--print` keeps the old default via `ask()`.)
-  const baseSafeMode = safeMode ?? true
+  // Keep CLI default permissive unless user explicitly enables --safe.
+  const baseSafeMode = safeMode ?? false
   const [autoMode, setAutoMode] = useState(false)
   const effectiveSafeMode = baseSafeMode && !autoMode
 
@@ -150,8 +143,6 @@ export function REPL({
   const [haveShownCostDialog, setHaveShownCostDialog] = useState(
     getGlobalConfig().hasAcknowledgedCostThreshold,
   )
-  const [reloadBanner, setReloadBanner] = useState<ReloadBannerState | null>(null)
-  const [reloadFrame, setReloadFrame] = useState(0)
 
   const [binaryFeedbackContext, setBinaryFeedbackContext] =
     useState<BinaryFeedbackContext | null>(null)
@@ -177,7 +168,6 @@ export function REPL({
   }>({})
 
   const lastSubmittedPromptRef = useRef<string>('')
-  const reloadHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const { status: apiKeyStatus, reverify } = useApiKeyVerification()
 
@@ -207,46 +197,6 @@ export function REPL({
       isCancelled = true
     }
   }, [loadMcpToolsInBackground])
-
-  useEffect(() => {
-    const unsubscribe = subscribeReloadStatus(event => {
-      const next: ReloadBannerState = {
-        ...event,
-        id: Date.now(),
-      }
-      setReloadBanner(next)
-
-      if (reloadHideTimerRef.current) {
-        clearTimeout(reloadHideTimerRef.current)
-        reloadHideTimerRef.current = null
-      }
-
-      if (event.state === 'ok') {
-        reloadHideTimerRef.current = setTimeout(() => {
-          setReloadBanner(current => (current?.id === next.id ? null : current))
-        }, 1200)
-      }
-    })
-
-    return () => {
-      unsubscribe()
-      if (reloadHideTimerRef.current) {
-        clearTimeout(reloadHideTimerRef.current)
-      }
-    }
-  }, [])
-
-  useEffect(() => {
-    if (reloadBanner?.state !== 'loading') {
-      return
-    }
-
-    const timer = setInterval(() => {
-      setReloadFrame(prev => (prev + 1) % SPINNER_FRAMES.length)
-    }, 90)
-
-    return () => clearInterval(timer)
-  }, [reloadBanner?.state])
 
   function onCancel() {
     if (!isLoading) {
@@ -547,18 +497,23 @@ export function REPL({
     [normalizedMessages],
   )
 
+  const orderedMessages = useMemo(
+    () => reorderMessages(normalizedMessages),
+    [normalizedMessages],
+  )
+
+  const replStaticPrefixLength = useMemo(
+    () =>
+      getReplStaticPrefixLength(
+        orderedMessages,
+        normalizedMessages,
+        unresolvedToolUseIDs,
+      ),
+    [orderedMessages, normalizedMessages, unresolvedToolUseIDs],
+  )
+
   const messagesJSX = useMemo(() => {
-    return [
-      {
-        type: 'static',
-        jsx: (
-          <Box flexDirection="column" width="100%" key={`logo${forkNumber}`}>
-            <Logo />
-            <ProjectOnboarding workspaceDir={getOriginalCwd()} />
-          </Box>
-        ),
-      },
-      ...reorderMessages(normalizedMessages).map(_ => {
+    return orderedMessages.map((_, index) => {
         const toolUseID = getToolUseID(_)
         const message =
           _.type === 'progress' ? (
@@ -623,21 +578,14 @@ export function REPL({
             />
           )
 
-        const type = shouldRenderStatically(
-          _,
-          normalizedMessages,
-          unresolvedToolUseIDs,
-        )
-          ? 'static'
-          : 'transient'
+        const isInStaticPrefix = index < replStaticPrefixLength
 
         if (debug) {
           return {
-            type,
             jsx: (
               <Box
                 borderStyle="single"
-                borderColor={type === 'static' ? 'green' : 'red'}
+                borderColor={isInStaticPrefix ? 'green' : 'red'}
                 key={_.uuid}
                 width="100%"
               >
@@ -648,18 +596,16 @@ export function REPL({
         }
 
         return {
-          type,
           jsx: (
             <Box key={_.uuid} width="100%">
               {message}
             </Box>
           ),
         }
-      }),
-    ]
+      })
   }, [
-    forkNumber,
     normalizedMessages,
+    orderedMessages,
     tools,
     verbose,
     debug,
@@ -669,38 +615,45 @@ export function REPL({
     toolUseConfirm,
     isMessageSelectorVisible,
     unresolvedToolUseIDs,
+    replStaticPrefixLength,
   ])
+
+  const staticItems = useMemo(
+    () => [
+      {
+        jsx: (
+          <Box flexDirection="column" width="100%" key={`logo${forkNumber}`}>
+            <Logo />
+            <ProjectOnboarding workspaceDir={getOriginalCwd()} />
+          </Box>
+        ),
+      },
+      ...messagesJSX.slice(0, replStaticPrefixLength),
+    ],
+    [forkNumber, messagesJSX, replStaticPrefixLength],
+  )
+
+  const transientItems = useMemo(
+    () => messagesJSX.slice(replStaticPrefixLength),
+    [messagesJSX, replStaticPrefixLength],
+  )
 
   // only show the dialog once not loading
   const showingCostDialog = !isLoading && showCostDialog
-  const reloadLabel =
-    reloadBanner?.domain === 'agents' ? 'Agent 配置' : 'Skill 配置'
 
   return (
     <PermissionProvider 
       isBypassPermissionsModeAvailable={!effectiveSafeMode}
       children={
         <React.Fragment>
-        {/* Update banner now renders inside Logo for stable placement */}
         <ModeIndicator />
-        {reloadBanner && (
-          <Box marginBottom={1}>
-            {reloadBanner.state === 'loading' ? (
-              <Text color="cyan">
-                {SPINNER_FRAMES[reloadFrame]} 正在刷新 {reloadLabel}...
-              </Text>
-            ) : (
-              <Text color="green">✓ {reloadLabel} 刷新 OK</Text>
-            )}
-          </Box>
-        )}
       <React.Fragment key={`static-messages-${forkNumber}`}>
         <Static
-          items={messagesJSX.filter(_ => _.type === 'static')}
+          items={staticItems}
           children={(item: any) => item.jsx}
         />
       </React.Fragment>
-      {messagesJSX.filter(_ => _.type === 'transient').map(_ => _.jsx)}
+      {transientItems.map(_ => _.jsx)}
       <Box
         borderColor="red"
         borderStyle={debug ? 'single' : undefined}
@@ -895,6 +848,20 @@ function shouldRenderStatically(
     case 'progress':
       return !intersects(unresolvedToolUseIDs, message.siblingToolUseIDs)
   }
+}
+
+function getReplStaticPrefixLength(
+  orderedMessages: NormalizedMessage[],
+  allMessages: NormalizedMessage[],
+  unresolvedToolUseIDs: Set<string>,
+): number {
+  for (let i = 0; i < orderedMessages.length; i++) {
+    const message = orderedMessages[i]!
+    if (!shouldRenderStatically(message, allMessages, unresolvedToolUseIDs)) {
+      return i
+    }
+  }
+  return orderedMessages.length
 }
 
 function intersects<A>(a: Set<A>, b: Set<A>): boolean {

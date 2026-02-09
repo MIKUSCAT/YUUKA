@@ -6,7 +6,7 @@ import { useArrowKeyHistory } from '@hooks/useArrowKeyHistory'
 import { useUnifiedCompletion } from '@hooks/useUnifiedCompletion'
 import { addToHistory } from '@history'
 import TextInput from './TextInput'
-import { memo, useCallback, useEffect, useMemo, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { countTokens } from '@utils/tokens'
 import { SentryErrorBoundary } from './SentryErrorBoundary'
 import type { Command } from '@commands'
@@ -21,6 +21,8 @@ import { getGlobalGeminiSettingsPath, readGeminiSettingsFile } from '@utils/gemi
 import figures from 'figures'
 import { getTodos } from '@utils/todoStorage'
 import { TodoPanel } from './TodoPanel'
+import { getActiveSkills, type SkillConfig } from '@utils/skillLoader'
+import { setSessionEnabledSkillNames } from '@utils/skillSession'
 
 type Props = {
   commands: Command[]
@@ -98,6 +100,16 @@ function PromptInput({
   const [pastedText, setPastedText] = useState<string | null>(null)
   const [isEditingExternally, setIsEditingExternally] = useState(false)
   const [showTodoPanel, setShowTodoPanel] = useState(false)
+  const [skillsLoadedNotice, setSkillsLoadedNotice] = useState<string | null>(
+    null,
+  )
+  const skillsNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  )
+  const hasUserStartedConversation = useMemo(
+    () => messages.some(message => message.type === 'user'),
+    [messages],
+  )
 
   // Permission context for mode management
   const { cycleMode } = usePermissionContext()
@@ -131,6 +143,48 @@ function PromptInput({
     }
     return map
   }, [commands])
+
+  useEffect(() => {
+    if (hasUserStartedConversation) {
+      return
+    }
+
+    let cancelled = false
+    ;(async () => {
+      let count = 0
+      try {
+        const skills = await getActiveSkills()
+        if (cancelled) {
+          return
+        }
+        const names = skills.map((skill: SkillConfig) => skill.name)
+        setSessionEnabledSkillNames(names.length > 0 ? names : null)
+        count = names.length
+      } catch {
+        if (cancelled) {
+          return
+        }
+        setSessionEnabledSkillNames(null)
+      }
+
+      setSkillsLoadedNotice(`✓ Skills 已加载（${count}个）`)
+      if (skillsNoticeTimerRef.current) {
+        clearTimeout(skillsNoticeTimerRef.current)
+      }
+      skillsNoticeTimerRef.current = setTimeout(() => {
+        setSkillsLoadedNotice(null)
+        skillsNoticeTimerRef.current = null
+      }, 3000)
+    })()
+
+    return () => {
+      cancelled = true
+      if (skillsNoticeTimerRef.current) {
+        clearTimeout(skillsNoticeTimerRef.current)
+        skillsNoticeTimerRef.current = null
+      }
+    }
+  }, [hasUserStartedConversation])
 
   // Memoized completion suggestions rendering - after useUnifiedCompletion
   const renderedSuggestions = useMemo(() => {
@@ -426,7 +480,7 @@ function PromptInput({
     return false // Not handled, allow normal processing
   }, [handleExternalEdit, isEditingExternally])
 
-  const textInputColumns = useTerminalSize().columns - 6
+  const textInputColumns = useTerminalSize().columns - 4
   const tokenUsage = useMemo(() => countTokens(messages), [messages])
   const showTokenWarning = tokenUsage >= 600000
   const todos = getTodos()
@@ -439,18 +493,43 @@ function PromptInput({
     todoStats.total > 0
       ? `Todo(${todoStats.completed}/${todoStats.total})`
       : 'Todo'
+  const topNoticeText = exitMessage.show
+    ? `Press ${exitMessage.key} again to exit`
+    : message.show
+      ? message.text ?? ''
+      : skillsLoadedNotice
+  const showTopNotice =
+    !completionActive &&
+    suggestions.length === 0 &&
+    (Boolean(topNoticeText) || showTokenWarning)
 
   return (
     <Box flexDirection="column">
+      {showTopNotice && (
+        <Box
+          flexDirection="row"
+          justifyContent="space-between"
+          paddingX={2}
+          paddingY={0}
+          marginBottom={1}
+        >
+          <Box justifyContent="flex-start" gap={1}>
+            {topNoticeText ? <Text dimColor>{topNoticeText}</Text> : null}
+          </Box>
+          <SentryErrorBoundary children={
+            <Box justifyContent="flex-end" gap={1}>
+              <TokenWarning tokenUsage={tokenUsage} />
+            </Box>
+          } />
+        </Box>
+      )}
       <Box
         alignItems="flex-start"
         justifyContent="flex-start"
-        borderColor={
-          theme.secondaryBorder
-        }
+        marginTop={showTopNotice ? 0 : 1}
+        borderColor={theme.secondaryBorder}
         borderDimColor
         borderStyle="round"
-        marginTop={1}
         width="100%"
       >
         <Box
@@ -490,27 +569,6 @@ function PromptInput({
         </Box>
       </Box>
       {showTodoPanel && <TodoPanel todos={todos} />}
-      {!completionActive && suggestions.length === 0 && (exitMessage.show || message.show || showTokenWarning) && (
-        <Box
-          flexDirection="row"
-          justifyContent="space-between"
-          paddingX={2}
-          paddingY={0}
-        >
-          <Box justifyContent="flex-start" gap={1}>
-            {exitMessage.show ? (
-              <Text dimColor>Press {exitMessage.key} again to exit</Text>
-            ) : message.show ? (
-              <Text dimColor>{message.text}</Text>
-            ) : null}
-        </Box>
-          <SentryErrorBoundary children={
-            <Box justifyContent="flex-end" gap={1}>
-              <TokenWarning tokenUsage={tokenUsage} />
-            </Box>
-          } />
-        </Box>
-      )}
       {/* Unified completion suggestions - optimized rendering */}
       {suggestions.length > 0 && (
         <Box

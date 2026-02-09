@@ -13,8 +13,9 @@ To make a file edit, provide the following:
 1. file_path: The absolute path to the file to modify (must be absolute, not relative)
 2. old_string: The text to replace (must be unique within the file, and must match the file contents exactly, including all whitespace and indentation)
 3. new_string: The edited text to replace the old_string
+4. replace_all (optional): Set true to replace all exact matches of old_string
 
-The tool will replace ONE occurrence of old_string with new_string in the specified file.
+By default the tool replaces ONE occurrence of old_string with new_string. Set replace_all=true only when you intentionally want to update every exact match.
 
 CRITICAL REQUIREMENTS FOR USING THIS TOOL:
 
@@ -23,9 +24,9 @@ CRITICAL REQUIREMENTS FOR USING THIS TOOL:
    - Include AT LEAST 3-5 lines of context AFTER the change point
    - Include all whitespace, indentation, and surrounding code exactly as it appears in the file
 
-2. SINGLE INSTANCE: This tool can only change ONE instance at a time. If you need to change multiple instances:
-   - Make separate calls to this tool for each instance
-   - Each call must uniquely identify its specific instance using extensive context
+2. SINGLE INSTANCE BY DEFAULT: This tool changes ONE instance at a time unless replace_all=true.
+   - If you need surgical edits, keep replace_all unset and make separate calls
+   - If you need a global exact replacement, set replace_all=true
 
 3. VERIFICATION: Before using this tool:
    - Check how many instances of the target text exist in the file

@@ -10,6 +10,7 @@ import agents from './commands/agents'
 import auth from './commands/auth'
 import memory from './commands/memory'
 import skills from './commands/skills'
+import status from './commands/status'
 import { memoize } from 'lodash-es'
 import type { Message } from './query'
 
@@ -66,6 +67,7 @@ const COMMANDS = memoize((): Command[] => [
   model,
   resume,
   skills,
+  status,
 ])
 
 export const getCommands = memoize(async (): Promise<Command[]> => {

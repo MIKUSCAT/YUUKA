@@ -1,5 +1,6 @@
 import type { GeminiGenerateContentConfig, GeminiTool } from './types'
 import { normalizeGeminiModelName } from '@utils/geminiSettings'
+import { getEffectiveThinkingSetting } from '@utils/thinkingConfig'
 
 export type GeminiModelKey = 'main' | 'task' | 'reasoning' | 'quick' | 'web-search' | 'web-fetch'
 
@@ -8,28 +9,23 @@ export type GeminiResolvedModelConfig = {
   config: GeminiGenerateContentConfig
 }
 
-const DEFAULT_THINKING_BUDGET = 8192
-
 function asTools(tools?: GeminiTool[]): GeminiTool[] | undefined {
   if (!tools || tools.length === 0) return undefined
   return tools
 }
 
 function getThinkingConfig(modelName: string): Record<string, unknown> {
-  const normalized = normalizeGeminiModelName(modelName)
-    .replace(/^models\//, '')
-    .toLowerCase()
-
-  if (normalized.startsWith('gemini-3')) {
+  const effective = getEffectiveThinkingSetting(modelName)
+  if (effective.mode === 'level') {
     return {
       includeThoughts: true,
-      thinkingLevel: 'HIGH',
+      thinkingLevel: effective.level,
     }
   }
 
   return {
     includeThoughts: true,
-    thinkingBudget: DEFAULT_THINKING_BUDGET,
+    thinkingBudget: effective.budget,
   }
 }
 

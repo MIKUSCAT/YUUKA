@@ -573,7 +573,7 @@ export function logLLMInteraction(context: {
   response: any
   usage?: { inputTokens: number; outputTokens: number }
   timing: { start: number; end: number }
-  apiFormat?: 'anthropic' | 'openai'
+  apiFormat?: 'gemini'
 }) {
   if (!isDebugMode()) return
 
@@ -1068,7 +1068,7 @@ export function diagnoseError(error: any, context?: any): ErrorDiagnosis {
       errorType: 'RESPONSE_FORMAT',
       category: 'API',
       severity: 'MEDIUM',
-      description: 'LLM response format mismatch between different providers',
+      description: 'Gemini response format mismatch',
       suggestions: [
         '确认当前版本只使用 Gemini 原生 API',
         '验证 SSE/JSON 响应解析逻辑是否匹配 Gemini',

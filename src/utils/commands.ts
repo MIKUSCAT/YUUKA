@@ -1,5 +1,5 @@
 import { memoize } from 'lodash-es'
-import { API_ERROR_MESSAGE_PREFIX, queryQuick } from '@services/claude'
+import { API_ERROR_MESSAGE_PREFIX, queryQuick } from '@services/llm'
 import { type ControlOperator, parse, ParseEntry } from 'shell-quote'
 import { PRODUCT_NAME } from '@constants/product'
 

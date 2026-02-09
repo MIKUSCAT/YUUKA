@@ -13,7 +13,7 @@ import {
   SkillConfig,
 } from '@utils/skillLoader'
 import { getMessagesGetter } from '@messages'
-import { queryQuick, queryModel } from '@services/claude'
+import { queryQuick, queryModel } from '@services/llm'
 import type { Message } from '@query'
 import { extractTag } from '@utils/messages'
 import { randomUUID } from 'crypto'

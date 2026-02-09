@@ -3,7 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { getMessagesGetter } from '@messages'
 import type { Message } from '@query'
-import { queryQuick } from '@services/claude'
+import { queryQuick } from '@services/llm'
 import { extractTag } from '@utils/messages'
 import { getCwd } from '@utils/state'
 

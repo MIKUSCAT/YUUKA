@@ -118,6 +118,61 @@ export function Config({ onClose }: Props): React.ReactNode {
       },
       type: 'boolean',
     },
+    {
+      id: 'thinkingGemini3Level',
+      label: 'Gemini-3 Thinking',
+      value: globalConfig.thinkingGemini3Level ?? 'high',
+      options: ['high', 'low'],
+      onChange(thinkingGemini3Level: string) {
+        const config = {
+          ...getGlobalConfig(),
+          thinkingGemini3Level: thinkingGemini3Level as 'low' | 'high',
+        }
+        saveGlobalConfig(config)
+        setGlobalConfig(config)
+      },
+      type: 'enum',
+    },
+    {
+      id: 'thinkingNonGemini3Budget',
+      label: 'Non Gemini-3 Thinking Budget',
+      value: globalConfig.thinkingNonGemini3Budget ?? 8192,
+      onChange(thinkingNonGemini3Budget: number) {
+        const normalized = Math.floor(thinkingNonGemini3Budget)
+        if (!Number.isFinite(normalized) || normalized <= 0) {
+          throw new Error('Please enter a positive integer')
+        }
+        const config = {
+          ...getGlobalConfig(),
+          thinkingNonGemini3Budget: normalized,
+        }
+        saveGlobalConfig(config)
+        setGlobalConfig(config)
+      },
+      type: 'number',
+    },
+    {
+      id: 'memoryReadEnabled',
+      label: 'MemoryRead',
+      value: globalConfig.memoryReadEnabled ?? true,
+      onChange(memoryReadEnabled: boolean) {
+        const config = { ...getGlobalConfig(), memoryReadEnabled }
+        saveGlobalConfig(config)
+        setGlobalConfig(config)
+      },
+      type: 'boolean',
+    },
+    {
+      id: 'memoryWriteEnabled',
+      label: 'MemoryWrite',
+      value: globalConfig.memoryWriteEnabled ?? true,
+      onChange(memoryWriteEnabled: boolean) {
+        const config = { ...getGlobalConfig(), memoryWriteEnabled }
+        saveGlobalConfig(config)
+        setGlobalConfig(config)
+      },
+      type: 'boolean',
+    },
 
     // Gemini settings (global ~/.gemini/settings.json)
     {

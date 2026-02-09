@@ -19,6 +19,11 @@ import { getCwd } from '@utils/state'
 import { getTheme } from '@utils/theme'
 import { getGlobalConfig } from '@utils/config'
 import { NotebookEditTool } from '@tools/NotebookEditTool/NotebookEditTool'
+
+function normalizeLineEndings(content: string): string {
+  return content.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+}
+
 // Local content-based edit function for MultiEditTool
 function applyContentEdit(
   content: string,
@@ -26,18 +31,30 @@ function applyContentEdit(
   newString: string,
   replaceAll: boolean = false
 ): { newContent: string; occurrences: number } {
+  const normalizedContent = normalizeLineEndings(content)
+  const normalizedOldString = normalizeLineEndings(oldString)
+  const normalizedNewString = normalizeLineEndings(newString)
+
   if (replaceAll) {
-    const regex = new RegExp(oldString.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')
-    const matches = content.match(regex)
+    const regex = new RegExp(
+      normalizedOldString.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+      'g',
+    )
+    const matches = normalizedContent.match(regex)
     const occurrences = matches ? matches.length : 0
-    const newContent = content.replace(regex, newString)
+    const newContent = normalizedContent.replace(regex, normalizedNewString)
     return { newContent, occurrences }
   } else {
-    if (content.includes(oldString)) {
-      const newContent = content.replace(oldString, newString)
+    if (normalizedContent.includes(normalizedOldString)) {
+      const newContent = normalizedContent.replace(
+        normalizedOldString,
+        normalizedNewString,
+      )
       return { newContent, occurrences: 1 }
     } else {
-      throw new Error(`String not found: ${oldString.substring(0, 50)}...`)
+      throw new Error(
+        `String not found: ${oldString.substring(0, 50)}...（请检查缩进/空格/换行）`,
+      )
     }
   }
 }
@@ -229,17 +246,20 @@ export const MultiEditTool = {
         }
       }
 
-      const currentContent = readFileSync(normalizedPath, 'utf-8')
+      const currentContent = normalizeLineEndings(
+        readFileSync(normalizedPath, 'utf-8'),
+      )
       for (let i = 0; i < edits.length; i++) {
         const edit = edits[i]
+        const normalizedOldString = normalizeLineEndings(edit.old_string)
         if (
           edit.old_string !== '' &&
-          !currentContent.includes(edit.old_string)
+          !currentContent.includes(normalizedOldString)
         ) {
           return {
             result: false,
             errorCode: 10,
-            message: `Edit ${i + 1}: String to replace not found in file: "${edit.old_string.substring(0, 100)}${edit.old_string.length > 100 ? '...' : ''}"`,
+            message: `Edit ${i + 1}: String to replace not found in file: "${edit.old_string.substring(0, 100)}${edit.old_string.length > 100 ? '...' : ''}"。请先 Read 最新文件，再检查 old_string 的缩进、空格、换行（CRLF/LF）。`,
             meta: {
               editIndex: i + 1,
               oldString: edit.old_string.substring(0, 200),
@@ -285,7 +305,7 @@ export const MultiEditTool = {
           }
           return
         }
-        currentContent = readFileSync(filePath, 'utf-8')
+        currentContent = normalizeLineEndings(readFileSync(filePath, 'utf-8'))
       } else {
         // For new files, ensure parent directory exists
         const parentDir = dirname(filePath)
@@ -331,7 +351,7 @@ export const MultiEditTool = {
       }
 
       // Write the modified content
-      const lineEndings = fileExists ? detectLineEndings(currentContent) : 'LF'
+      const lineEndings = fileExists ? detectLineEndings(filePath) : 'LF'
       const encoding = fileExists ? detectFileEncoding(filePath) : 'utf8'
       writeTextContent(filePath, modifiedContent, encoding, lineEndings)
 
