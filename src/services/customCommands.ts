@@ -121,28 +121,6 @@ export async function resolveFileReferences(content: string): Promise<string> {
 }
 
 /**
- * Validate and process allowed-tools specification from frontmatter
- *
- * This function handles tool restriction specifications in custom commands.
- * Currently it provides logging and validation structure - full enforcement
- * would require deep integration with the tool permission system.
- *
- * Future implementation should connect to src/permissions.ts and the
- * tool execution pipeline to enforce these restrictions.
- *
- * @param allowedTools - Array of tool names from frontmatter
- * @returns boolean - Currently always true, future will return actual validation result
- */
-function validateAllowedTools(allowedTools: string[] | undefined): boolean {
-  // Log allowed tools for debugging and future integration
-  if (allowedTools && allowedTools.length > 0) {
-    // TODO: Integrate with src/permissions.ts tool permission system
-    // TODO: Connect to Tool.tsx needsPermissions() mechanism
-  }
-  return true // Allow execution for now - future versions will enforce restrictions
-}
-
-/**
  * Frontmatter configuration for custom commands
  *
  * This interface defines the YAML frontmatter structure that can be used

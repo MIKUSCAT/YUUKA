@@ -453,13 +453,9 @@ function saveConfig<A extends object>(
   }
 }
 
-// Flag to track if config reading is allowed
-let configReadingAllowed = false
-
 export function enableConfigs(): void {
   // Any reads to configuration before this flag is set show an console warning
   // to prevent us from adding config reading during module initialization
-  configReadingAllowed = true
   // 校验项目 .yuuka/settings.json 是否可解析
   getGlobalSettings(true /* throwOnInvalid */)
 }

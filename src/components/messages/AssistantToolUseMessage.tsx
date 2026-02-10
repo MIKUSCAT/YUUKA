@@ -55,7 +55,7 @@ export function AssistantToolUseMessage({
     return null
   }
 
-  const userFacingToolName = tool.userFacingName ? tool.userFacingName() : tool.name
+  const userFacingToolName = tool.userFacingName ? tool.userFacingName(param.input as any) : tool.name
   const toolMessage = tool.renderToolUseMessage(param.input as never, {
     verbose,
   })
@@ -122,12 +122,7 @@ export function AssistantToolUseMessage({
         <Cost costUSD={costUSD} durationMs={durationMs} debug={debug} />
       </Box>
       {isBashTool && bashCommandPreview ? (
-        <Box
-          marginLeft={2}
-          borderStyle="round"
-          borderColor={theme.bashBorder}
-          paddingX={1}
-        >
+        <Box marginLeft={2}>
           <Text color={theme.secondaryText} wrap="truncate-end">
             {bashCommandPreview}
           </Text>

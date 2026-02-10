@@ -3,9 +3,7 @@ import { useInput } from 'ink'
 import { existsSync, statSync, readdirSync } from 'fs'
 import { join, dirname, basename, resolve } from 'path'
 import { getCwd } from '@utils/state'
-import { getCommand } from '@commands'
 import { getActiveAgents } from '@utils/agentLoader'
-import { glob } from 'glob'
 import { matchCommands } from '@utils/fuzzyMatcher'
 import { 
   getCommonSystemCommands, 
@@ -33,13 +31,6 @@ interface CompletionContext {
   prefix: string
   startPos: number
   endPos: number
-}
-
-// Terminal behavior state for preview and cycling
-interface TerminalState {
-  originalWord: string
-  wordContext: { start: number; end: number } | null
-  isPreviewMode: boolean
 }
 
 interface Props {
@@ -121,27 +112,6 @@ export function useUnifiedCompletion({
 
   // Direct state access - no legacy wrappers needed
   const { suggestions, selectedIndex, isActive, emptyDirMessage } = state
-
-  // Find common prefix among suggestions (terminal behavior)
-  const findCommonPrefix = useCallback((suggestions: UnifiedSuggestion[]): string => {
-    if (suggestions.length === 0) return ''
-    if (suggestions.length === 1) return suggestions[0].value
-    
-    let prefix = suggestions[0].value
-    
-    for (let i = 1; i < suggestions.length; i++) {
-      const str = suggestions[i].value
-      let j = 0
-      while (j < prefix.length && j < str.length && prefix[j] === str[j]) {
-        j++
-      }
-      prefix = prefix.slice(0, j)
-      
-      if (prefix.length === 0) return ''
-    }
-    
-    return prefix
-  }, [])
 
   // Clean word detection - Linus approved simplicity
   const getWordAtCursor = useCallback((): CompletionContext | null => {
@@ -256,67 +226,6 @@ export function useUnifiedCompletion({
   const [systemCommands, setSystemCommands] = useState<string[]>([])
   const [isLoadingCommands, setIsLoadingCommands] = useState(false)
   
-  // Dynamic command classification based on intrinsic features
-  const classifyCommand = useCallback((cmd: string): 'core' | 'common' | 'dev' | 'system' => {
-    const lowerCmd = cmd.toLowerCase()
-    let score = 0
-    
-    // === FEATURE 1: Name Length & Complexity ===
-    // Short, simple names are usually core commands
-    if (cmd.length <= 4) score += 40
-    else if (cmd.length <= 6) score += 20
-    else if (cmd.length <= 8) score += 10
-    else if (cmd.length > 15) score -= 30 // Very long names are specialized
-    
-    // === FEATURE 2: Character Patterns ===
-    // Simple alphabetic names are more likely core
-    if (/^[a-z]+$/.test(lowerCmd)) score += 30
-    
-    // Mixed case, numbers, dots suggest specialized tools
-    if (/[A-Z]/.test(cmd)) score -= 15
-    if (/\d/.test(cmd)) score -= 20
-    if (cmd.includes('.')) score -= 25
-    if (cmd.includes('-')) score -= 10
-    if (cmd.includes('_')) score -= 15
-    
-    // === FEATURE 3: Linguistic Patterns ===
-    // Single, common English words
-    const commonWords = ['list', 'copy', 'move', 'find', 'print', 'show', 'edit', 'view']
-    if (commonWords.some(word => lowerCmd.includes(word.slice(0, 3)))) score += 25
-    
-    // Domain-specific prefixes/suffixes
-    const devPrefixes = ['git', 'npm', 'node', 'py', 'docker', 'kubectl']
-    if (devPrefixes.some(prefix => lowerCmd.startsWith(prefix))) score += 15
-    
-    // System/daemon indicators  
-    const systemIndicators = ['daemon', 'helper', 'responder', 'service', 'd$', 'ctl$']
-    if (systemIndicators.some(indicator => 
-      indicator.endsWith('$') ? lowerCmd.endsWith(indicator.slice(0, -1)) : lowerCmd.includes(indicator)
-    )) score -= 40
-    
-    // === FEATURE 4: File Extension Indicators ===
-    // Commands with extensions are usually scripts/specialized tools
-    if (/\.(pl|py|sh|rb|js)$/.test(lowerCmd)) score -= 35
-    
-    // === FEATURE 5: Path Location Heuristics ===
-    // Note: We don't have path info here, but can infer from name patterns
-    // Commands that look like they belong in /usr/local/bin or specialized dirs
-    const buildToolPatterns = ['bindep', 'render', 'mako', 'webpack', 'babel', 'eslint']
-    if (buildToolPatterns.some(pattern => lowerCmd.includes(pattern))) score -= 25
-    
-    // === FEATURE 6: Vowel/Consonant Patterns ===
-    // Unix commands often have abbreviated names with few vowels
-    const vowelRatio = (lowerCmd.match(/[aeiou]/g) || []).length / lowerCmd.length
-    if (vowelRatio < 0.2) score += 15 // Very few vowels (like 'ls', 'cp', 'mv')
-    if (vowelRatio > 0.5) score -= 10  // Too many vowels (usually full words)
-    
-    // === CLASSIFICATION BASED ON SCORE ===
-    if (score >= 50) return 'core'      // 50+: Core unix commands
-    if (score >= 20) return 'common'    // 20-49: Common dev tools  
-    if (score >= -10) return 'dev'      // -10-19: Specialized dev tools
-    return 'system'                     // <-10: System/edge commands
-  }, [])
-
   // Load system commands from PATH (like real terminal)
   const loadSystemCommands = useCallback(async () => {
     if (systemCommands.length > 0 || isLoadingCommands) return // Already loaded or loading
@@ -398,12 +307,6 @@ export function useUnifiedCompletion({
         score: 100 - prefix.length + (cmd.userFacingName().startsWith(prefix) ? 10 : 0),
       }))
   }, [commands])
-
-  // Clean Unix command scoring using fuzzy matcher
-  const calculateUnixCommandScore = useCallback((cmd: string, prefix: string): number => {
-    const result = matchCommands([cmd], prefix)
-    return result.length > 0 ? result[0].score : 0
-  }, [])
 
   // Clean Unix command suggestions using fuzzy matcher with common commands boost
   const generateUnixCommandSuggestions = useCallback((prefix: string): UnifiedSuggestion[] => {
@@ -734,32 +637,6 @@ export function useUnifiedCompletion({
     return score
   }, [])
 
-  // Generate smart mention suggestions without data pollution
-  const generateSmartMentionSuggestions = useCallback((prefix: string, sourceContext: 'file' | 'agent' = 'file'): UnifiedSuggestion[] => {
-    if (!prefix || prefix.length < 2) return []
-    
-    const allSuggestions = agentSuggestions
-    
-    return allSuggestions
-      .map(suggestion => {
-        const matchScore = calculateMatchScore(suggestion, prefix)
-        if (matchScore === 0) return null
-        
-        // Clean transformation without data pollution
-        return {
-          ...suggestion,
-          score: matchScore,
-          isSmartMatch: true,
-          originalContext: sourceContext,
-          // Only modify display for clarity, keep value clean
-	          displayValue: `[match] ${suggestion.displayValue}`
-	        }
-	      })
-      .filter(Boolean)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 5)
-  }, [agentSuggestions, calculateMatchScore])
-
   // Generate all suggestions based on context
   const generateSuggestions = useCallback((context: CompletionContext): UnifiedSuggestion[] => {
     switch (context.type) {
@@ -846,7 +723,7 @@ export function useUnifiedCompletion({
       default:
         return []
     }
-  }, [generateCommandSuggestions, generateMentionSuggestions, generateFileSuggestions, generateUnixCommandSuggestions, generateSmartMentionSuggestions])
+  }, [generateCommandSuggestions, generateMentionSuggestions, generateFileSuggestions, generateUnixCommandSuggestions])
 
 
   // Complete with a suggestion - 支持万能@引用 + slash命令自动执行
@@ -903,18 +780,6 @@ export function useUnifiedCompletion({
     
     // Completion applied
   }, [input, onInputChange, setCursorOffset, onSubmit, commands])
-
-  // Partial complete to common prefix
-  const partialComplete = useCallback((prefix: string, context: CompletionContext) => {
-    const completion = context.type === 'command' ? `/${prefix}` :
-                      context.type === 'agent' ? `@${prefix}` :
-                      prefix
-    
-    const newInput = input.slice(0, context.startPos) + completion + input.slice(context.endPos)
-    onInputChange(newInput)
-    setCursorOffset(context.startPos + completion.length)
-  }, [input, onInputChange, setCursorOffset])
-
 
   // Handle Tab key - simplified and unified
   useInput((input_str, key) => {

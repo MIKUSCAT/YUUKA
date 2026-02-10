@@ -2,6 +2,7 @@ import { Box, Text } from 'ink'
 import * as React from 'react'
 import { TodoItem } from '@utils/todoStorage'
 import { getTheme } from '@utils/theme'
+import { TREE_BRANCH_MID, TREE_END } from '@constants/figures'
 
 const MAX_VISIBLE_TODOS = 12
 
@@ -44,14 +45,7 @@ export function TodoPanel({ todos }: { todos: TodoItem[] }) {
   const remaining = Math.max(0, sortedTodos.length - visibleTodos.length)
 
   return (
-    <Box
-      flexDirection="column"
-      borderStyle="round"
-      borderColor={theme.secondaryBorder}
-      paddingX={1}
-      paddingY={0}
-      marginTop={1}
-    >
+    <Box flexDirection="column" marginTop={1}>
       <Box flexDirection="row" justifyContent="space-between">
         <Box flexDirection="row">
           <Text color={theme.secondaryText} bold>
@@ -69,13 +63,13 @@ export function TodoPanel({ todos }: { todos: TodoItem[] }) {
       </Box>
 
       {visibleTodos.length === 0 ? (
-        <Box flexDirection="row">
-          <Text color={theme.secondaryText}>  </Text>
-          <Text color={theme.secondaryText}>(空)</Text>
-        </Box>
+        <Text color={theme.secondaryText}>{TREE_END} (空)</Text>
       ) : (
         <Box flexDirection="column">
-          {visibleTodos.map(todo => {
+          {visibleTodos.map((todo, i) => {
+            const isLast = i === visibleTodos.length - 1 && remaining === 0
+            const prefix = isLast ? TREE_END : TREE_BRANCH_MID
+
             let statusIcon: string
             let textColor: string
             let isBold = false
@@ -96,7 +90,7 @@ export function TodoPanel({ todos }: { todos: TodoItem[] }) {
 
             return (
               <Box key={todo.id} flexDirection="row">
-                <Text>{'  '}</Text>
+                <Text color={theme.secondaryText}>{prefix} </Text>
                 <Text color={getPriorityColor(todo.priority, theme)}>
                   {statusIcon}{' '}
                 </Text>
@@ -112,12 +106,9 @@ export function TodoPanel({ todos }: { todos: TodoItem[] }) {
           })}
 
           {remaining > 0 && (
-            <Box flexDirection="row">
-              <Text color={theme.secondaryText}>  </Text>
-              <Text color={theme.secondaryText} dimColor>
-                ... (+{remaining} more)
-              </Text>
-            </Box>
+            <Text color={theme.secondaryText} dimColor>
+              {TREE_END} ... (+{remaining} more)
+            </Text>
           )}
         </Box>
       )}

@@ -116,11 +116,6 @@ function PromptInput({
   // Permission context for mode management
   const { cycleMode } = usePermissionContext()
 
-  // useEffect(() => {
-  //   getExampleCommands().then(commands => {
-  //     setPlaceholder(`Try "${sample(commands)}"`)
-  //   })
-  // }, [])
   // Unified completion system - one hook to rule them all (now with terminal behavior)
   const {
     suggestions,

@@ -78,6 +78,7 @@ const MESSAGES = [
 const NETWORK_ERROR_PATTERN =
   /(网络波动|network|timeout|timed out|连接|connect|ECONN|ENOTFOUND|EAI_AGAIN)/i
 const COLOR_TRANSITION_STEP = 0.12
+const MESSAGE_SWITCH_TICKS = 22 // ~2640ms at 120ms interval
 
 function clamp(value: number): number {
   return Math.max(0, Math.min(1, value))
@@ -139,10 +140,22 @@ export function Spinner(): React.ReactNode {
     isNetworkIssueMessage(getSessionState('currentError')) ? 1 : 0,
   )
   const startTime = useRef(Date.now())
+  const tickRef = useRef(0)
 
+  // 合并为单一主循环，减少重渲染次数
   useEffect(() => {
     const timer = setInterval(() => {
+      tickRef.current++
+
+      // 动画帧：每120ms
       setFrame(f => (f + 1) % frames.length)
+
+      // 秒数：整秒更新
+      setElapsedTime(
+        Math.floor((Date.now() - startTime.current) / 1000),
+      )
+
+      // 网络警告色彩过渡
       setNetworkWarningTone(prev => {
         const target = isNetworkIssueMessage(getSessionState('currentError'))
           ? 1
@@ -152,26 +165,15 @@ export function Spinner(): React.ReactNode {
           ? prev + COLOR_TRANSITION_STEP
           : prev - COLOR_TRANSITION_STEP
       })
+
+      // 消息切换：约每2640ms
+      if (tickRef.current % MESSAGE_SWITCH_TICKS === 0) {
+        setMessage(prev => pickNextMessage(prev))
+      }
     }, 120)
 
     return () => clearInterval(timer)
   }, [frames.length])
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setElapsedTime(Math.floor((Date.now() - startTime.current) / 1000))
-    }, 1000)
-
-    return () => clearInterval(timer)
-  }, [])
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setMessage(prev => pickNextMessage(prev))
-    }, 2600)
-
-    return () => clearInterval(timer)
-  }, [])
 
   const currentError = getSessionState('currentError')
   const isNetworkIssue = isNetworkIssueMessage(currentError)

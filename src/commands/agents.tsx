@@ -1,23 +1,17 @@
+import { useListNavigation } from '@hooks/useListNavigation'
 import React, { useState, useEffect, useMemo, useCallback, useReducer, Fragment } from 'react'
 import { Box, Text, useInput } from 'ink'
 import InkTextInput from 'ink-text-input'
 import { getActiveAgents, clearAgentCache } from '@utils/agentLoader'
 import { AgentConfig } from '@utils/agentLoader'
 import { writeFileSync, unlinkSync, mkdirSync, existsSync, readFileSync, renameSync } from 'fs'
-import { join } from 'path'
-import * as path from 'path'
+import { join, resolve, relative, isAbsolute } from 'path'
 import { homedir } from 'os'
-import * as os from 'os'
 import { getTheme } from '@utils/theme'
-import matter from 'gray-matter'
-import { exec, spawn } from 'child_process'
-import { promisify } from 'util'
-import { watch, FSWatcher } from 'fs'
+import { spawn } from 'child_process'
 import { getMCPTools } from '@services/mcpClient'
 import { getModelManager } from '@utils/model'
 import { randomUUID } from 'crypto'
-
-const execAsync = promisify(exec)
 
 // Core constants aligned with the Claude Code agent architecture
 const AGENT_LOCATIONS = {
@@ -454,20 +448,19 @@ async function deleteAgent(agent: AgentConfig): Promise<void> {
 // Open file in system editor - 安全版本，防止命令注入
 async function openInEditor(filePath: string): Promise<void> {
   // 安全验证：确保路径在允许的目录内
-  const resolvedPath = path.resolve(filePath)
+  const resolvedPath = resolve(filePath)
   const projectDir = process.cwd()
-  const homeDir = os.homedir()
-  
+  const homeAgentDir = homedir()
+
   const isSub = (base: string, target: string) => {
-    const path = require('path')
-    const rel = path.relative(path.resolve(base), path.resolve(target))
+    const rel = relative(resolve(base), resolve(target))
     if (!rel || rel === '') return true
     if (rel.startsWith('..')) return false
-    if (path.isAbsolute(rel)) return false
+    if (isAbsolute(rel)) return false
     return true
   }
 
-  if (!isSub(projectDir, resolvedPath) && !isSub(homeDir, resolvedPath)) {
+  if (!isSub(projectDir, resolvedPath) && !isSub(homeAgentDir, resolvedPath)) {
     throw new Error('Access denied: File path outside allowed directories')
   }
   
@@ -539,6 +532,35 @@ async function updateAgent(
   const filePath = getAgentFilePath(agent)
   
   writeFileSync(filePath, content, { encoding: 'utf-8', flag: 'w' })
+}
+
+/**
+ * Shared save-and-refresh pattern for all Edit*Step components.
+ * Calls updateAgent, clears cache, reloads fresh agents, and navigates back.
+ */
+async function saveAndRefreshAgent(
+  agent: AgentConfig,
+  updateFn: () => Promise<void>,
+  fieldName: string,
+  onAgentUpdated: (message: string, updated: AgentConfig) => void,
+  setModeState: (state: ModeState) => void,
+  setIsUpdating: (v: boolean) => void,
+  buildFallback: (base: AgentConfig) => AgentConfig,
+): Promise<void> {
+  setIsUpdating(true)
+  try {
+    await updateFn()
+    clearAgentCache()
+    const freshAgents = await getActiveAgents()
+    const updatedAgent = freshAgents.find(a => a.agentType === agent.agentType)
+    const result = updatedAgent ?? buildFallback(agent)
+    onAgentUpdated(`Updated ${fieldName} for agent: ${agent.agentType}`, result)
+    setModeState({ mode: 'edit-agent', selectedAgent: result })
+  } catch (error) {
+    console.error(`Failed to update agent ${fieldName}:`, error)
+  } finally {
+    setIsUpdating(false)
+  }
 }
 
 // Enhanced UI components retained for Claude Code parity
@@ -686,8 +708,7 @@ function MultilineTextInput({
   }
   
   const displayLines = formatLines(internalValue)
-  const visibleLines = displayLines.slice(Math.max(0, displayLines.length - rows))
-  
+
   // Handle submit
   const handleSubmit = () => {
     if (internalValue.trim() && onSubmit) {
@@ -1852,22 +1873,34 @@ function DescriptionStep({ createState, setCreateState, setModeState }: StepProp
   )
 }
 
-// Step 6: Tools selection
-interface ToolsStepProps extends StepProps {
+// ── Shared ToolSelector ──────────────────────────────────────
+
+interface ToolSelectorProps {
   tools: Tool[]
+  initialSelected: Set<string>
+  headerTitle: string
+  headerStep?: number
+  headerTotalSteps?: number
+  onConfirm: (selected: string[] | '*') => void
+  onEscape?: () => void
+  isUpdating?: boolean
+  updatingText?: string
 }
 
-function ToolsStep({ createState, setCreateState, setModeState, tools }: ToolsStepProps) {
-  const [selectedIndex, setSelectedIndex] = useState(0)
-  // Default to all tools selected initially
-  const initialSelection = createState.selectedTools.length > 0 ? 
-    new Set(createState.selectedTools) : 
-    new Set(tools.map(t => t.name))  // Select all tools by default
-  const [selectedTools, setSelectedTools] = useState<Set<string>>(initialSelection)
+function ToolSelector({
+  tools,
+  initialSelected,
+  headerTitle,
+  headerStep,
+  headerTotalSteps,
+  onConfirm,
+  onEscape,
+  isUpdating = false,
+  updatingText = 'Updating...',
+}: ToolSelectorProps) {
+  const [selectedTools, setSelectedTools] = useState<Set<string>>(initialSelected)
   const [showAdvanced, setShowAdvanced] = useState(false)
-  const [selectedCategory, setSelectedCategory] = useState<keyof typeof TOOL_CATEGORIES | 'mcp' | 'all'>('all')
-  
-  // Categorize tools
+
   const categorizedTools = useMemo(() => {
     const categories: Record<string, Tool[]> = {
       read: [],
@@ -1875,69 +1908,32 @@ function ToolsStep({ createState, setCreateState, setModeState, tools }: ToolsSt
       execution: [],
       web: [],
       mcp: [],
-      other: []
+      other: [],
     }
-    
     tools.forEach(tool => {
-      let categorized = false
-      
-      // Check MCP tools first
       if (tool.name.startsWith('mcp__')) {
         categories.mcp.push(tool)
-        categorized = true
       } else {
-        // Check built-in categories
+        let categorized = false
         for (const [category, toolNames] of Object.entries(TOOL_CATEGORIES)) {
           if (Array.isArray(toolNames) && toolNames.includes(tool.name)) {
-            categories[category as keyof typeof categories]?.push(tool)
+            categories[category]?.push(tool)
             categorized = true
             break
           }
         }
-      }
-      
-      if (!categorized) {
-        categories.other.push(tool)
+        if (!categorized) categories.other.push(tool)
       }
     })
-    
     return categories
   }, [tools])
-  
-  const displayTools = useMemo(() => {
-    if (selectedCategory === 'all') {
-      return tools
-    }
-    return categorizedTools[selectedCategory] || []
-  }, [selectedCategory, tools, categorizedTools])
-  
+
   const allSelected = selectedTools.size === tools.length && tools.length > 0
-  const categoryOptions = [
-    { id: 'all', label: `All (${tools.length})` },
-    { id: 'read', label: `Read (${categorizedTools.read.length})` },
-    { id: 'edit', label: `Edit (${categorizedTools.edit.length})` },
-    { id: 'execution', label: `Execution (${categorizedTools.execution.length})` },
-    { id: 'web', label: `Web (${categorizedTools.web.length})` },
-    { id: 'mcp', label: `MCP (${categorizedTools.mcp.length})` },
-    { id: 'other', label: `Other (${categorizedTools.other.length})` }
-  ].filter(cat => cat.id === 'all' || categorizedTools[cat.id]?.length > 0)
-  
-  // Calculate category selections
-  const readSelected = categorizedTools.read.every(tool => selectedTools.has(tool.name))
-  const editSelected = categorizedTools.edit.every(tool => selectedTools.has(tool.name))
-  const execSelected = categorizedTools.execution.every(tool => selectedTools.has(tool.name))
-  const webSelected = categorizedTools.web.every(tool => selectedTools.has(tool.name))
-  
-  const options: Array<{
-    id: string
-    label: string
-    isContinue?: boolean
-    isAll?: boolean
-    isTool?: boolean
-    isCategory?: boolean
-    isAdvancedToggle?: boolean
-    isSeparator?: boolean
-  }> = [
+  const readSelected = categorizedTools.read.length > 0 && categorizedTools.read.every(t => selectedTools.has(t.name))
+  const editSelected = categorizedTools.edit.length > 0 && categorizedTools.edit.every(t => selectedTools.has(t.name))
+  const execSelected = categorizedTools.execution.length > 0 && categorizedTools.execution.every(t => selectedTools.has(t.name))
+
+  const options = [
     { id: 'continue', label: 'Save', isContinue: true },
     { id: 'separator1', label: '────────────────────────────────────', isSeparator: true },
     { id: 'all', label: `${allSelected ? UI_ICONS.checkboxOn : UI_ICONS.checkboxOff} All tools`, isAll: true },
@@ -1946,102 +1942,84 @@ function ToolsStep({ createState, setCreateState, setModeState, tools }: ToolsSt
     { id: 'execution', label: `${execSelected ? UI_ICONS.checkboxOn : UI_ICONS.checkboxOff} Execution tools`, isCategory: true },
     { id: 'separator2', label: '────────────────────────────────────', isSeparator: true },
     { id: 'advanced', label: `[ ${showAdvanced ? 'Hide' : 'Show'} advanced options ]`, isAdvancedToggle: true },
-    ...(showAdvanced ? displayTools.map(tool => ({
+    ...(showAdvanced ? tools.map(tool => ({
       id: tool.name,
       label: `${selectedTools.has(tool.name) ? UI_ICONS.checkboxOn : UI_ICONS.checkboxOff} ${tool.name}`,
-      isTool: true
-    })) : [])
+      isTool: true,
+    })) : []),
   ]
-  
-  const handleSelect = () => {
-    const option = options[selectedIndex] as any // Type assertion for union type
-    if (!option) return
-    if (option.isSeparator) return
-    
+
+  const separatorIndices = useMemo(
+    () => new Set(options.map((o, i) => ((o as any).isSeparator ? i : -1)).filter(i => i >= 0)),
+    [options.length, showAdvanced, selectedTools.size],
+  )
+
+  const handleSelect = (index: number) => {
+    const option = options[index] as any
+    if (!option || option.isSeparator) return
+
     if (option.isContinue) {
-      const result = allSelected ? ['*'] : Array.from(selectedTools)
-      setCreateState({ type: 'SET_SELECTED_TOOLS', value: result })
-      setModeState({ mode: 'create-model', location: createState.location })
+      onConfirm(allSelected ? '*' : Array.from(selectedTools))
     } else if (option.isAdvancedToggle) {
-      setShowAdvanced(!showAdvanced)
+      setShowAdvanced(s => !s)
     } else if (option.isAll) {
-      if (allSelected) {
-        setSelectedTools(new Set())
-      } else {
-        setSelectedTools(new Set(tools.map(t => t.name)))
-      }
+      setSelectedTools(allSelected ? new Set() : new Set(tools.map(t => t.name)))
     } else if (option.isCategory) {
-      const categoryName = option.id as keyof typeof categorizedTools
-      const categoryTools = categorizedTools[categoryName] || []
+      const categoryTools = categorizedTools[option.id] || []
       const newSelected = new Set(selectedTools)
-      
-      const categorySelected = categoryTools.every(tool => selectedTools.has(tool.name))
-      if (categorySelected) {
-        // Unselect all tools in this category
-        categoryTools.forEach(tool => newSelected.delete(tool.name))
-      } else {
-        // Select all tools in this category
-        categoryTools.forEach(tool => newSelected.add(tool.name))
-      }
+      const catSelected = categoryTools.length > 0 && categoryTools.every((t: Tool) => selectedTools.has(t.name))
+      categoryTools.forEach((t: Tool) => catSelected ? newSelected.delete(t.name) : newSelected.add(t.name))
       setSelectedTools(newSelected)
     } else if (option.isTool) {
       const newSelected = new Set(selectedTools)
-      if (newSelected.has(option.id)) {
-        newSelected.delete(option.id)
-      } else {
-        newSelected.add(option.id)
-      }
+      newSelected.has(option.id) ? newSelected.delete(option.id) : newSelected.add(option.id)
       setSelectedTools(newSelected)
     }
   }
-  
-  useInput((input, key) => {
-    if (key.return) {
-      handleSelect()
-    } else if (key.upArrow) {
-      setSelectedIndex(prev => {
-        let newIndex = prev > 0 ? prev - 1 : options.length - 1
-        // Skip separators when going up
-        while (options[newIndex] && (options[newIndex] as any).isSeparator) {
-          newIndex = newIndex > 0 ? newIndex - 1 : options.length - 1
-        }
-        return newIndex
-      })
-    } else if (key.downArrow) {
-      setSelectedIndex(prev => {
-        let newIndex = prev < options.length - 1 ? prev + 1 : 0
-        // Skip separators when going down
-        while (options[newIndex] && (options[newIndex] as any).isSeparator) {
-          newIndex = newIndex < options.length - 1 ? newIndex + 1 : 0
-        }
-        return newIndex
-      })
-    }
+
+  const { selectedIndex } = useListNavigation({
+    count: options.length,
+    onSelect: handleSelect,
+    onEscape,
+    skipIndices: separatorIndices,
+    disabled: isUpdating,
   })
-  
+
+  if (isUpdating) {
+    return (
+      <Box flexDirection="column">
+        <Header title={headerTitle}>
+          <Box marginTop={1}>
+            <LoadingSpinner text={updatingText} />
+          </Box>
+        </Header>
+        <InstructionBar />
+      </Box>
+    )
+  }
+
   return (
     <Box flexDirection="column">
-      <Header title="Tool Permissions" subtitle="" step={3} totalSteps={5}>
+      <Header title={headerTitle} subtitle="" step={headerStep} totalSteps={headerTotalSteps}>
         <Box flexDirection="column" marginTop={1}>
           {options.map((option, idx) => {
             const isSelected = idx === selectedIndex
-            const isContinue = option.isContinue
-            const isAdvancedToggle = option.isAdvancedToggle
-            const isSeparator = option.isSeparator
-            
+            const isContinue = (option as any).isContinue
+            const isAdvancedToggle = (option as any).isAdvancedToggle
+            const isSeparator = (option as any).isSeparator
+
             return (
               <Box key={option.id}>
-                <Text 
+                <Text
                   color={isSelected && !isSeparator ? 'cyan' : isSeparator ? 'gray' : undefined}
                   bold={isContinue}
                   dimColor={isSeparator}
                 >
-                  {isSeparator ? 
-                    option.label : 
-                    `${isSelected ? `${UI_ICONS.pointer} ` : '  '}${isContinue || isAdvancedToggle ? `${option.label}` : option.label}`
-                  }
+                  {isSeparator
+                    ? option.label
+                    : `${isSelected ? `${UI_ICONS.pointer} ` : '  '}${option.label}`}
                 </Text>
-                {option.isTool && isSelected && tools.find(t => t.name === option.id)?.description && (
+                {(option as any).isTool && isSelected && tools.find(t => t.name === option.id)?.description && (
                   <Box marginLeft={4}>
                     <Text dimColor>{tools.find(t => t.name === option.id)?.description}</Text>
                   </Box>
@@ -2049,16 +2027,13 @@ function ToolsStep({ createState, setCreateState, setModeState, tools }: ToolsSt
               </Box>
             )
           })}
-          
+
           <Box marginTop={1}>
             <Text dimColor>
-              {allSelected ? 
-                'All tools selected' : 
-                `${selectedTools.size} of ${tools.length} tools selected`}
+              {allSelected
+                ? 'All tools selected'
+                : `${selectedTools.size} of ${tools.length} tools selected`}
             </Text>
-            {selectedCategory !== 'all' && (
-              <Text dimColor>Filtering: {selectedCategory} tools</Text>
-            )}
           </Box>
         </Box>
       </Header>
@@ -2067,51 +2042,66 @@ function ToolsStep({ createState, setCreateState, setModeState, tools }: ToolsSt
   )
 }
 
+// Step 6: Tools selection
+interface ToolsStepProps extends StepProps {
+  tools: Tool[]
+}
+
+function ToolsStep({ createState, setCreateState, setModeState, tools }: ToolsStepProps) {
+  const initialSelection = createState.selectedTools.length > 0
+    ? new Set(createState.selectedTools)
+    : new Set(tools.map(t => t.name))
+
+  return (
+    <ToolSelector
+      tools={tools}
+      initialSelected={initialSelection}
+      headerTitle="Tool Permissions"
+      headerStep={3}
+      headerTotalSteps={5}
+      onConfirm={(result) => {
+        const value = result === '*' ? ['*'] : result
+        setCreateState({ type: 'SET_SELECTED_TOOLS', value })
+        setModeState({ mode: 'create-model', location: createState.location })
+      }}
+    />
+  )
+}
+
 // Step 6: Model selection (clean design like /models)
 function ModelStep({ createState, setCreateState, setModeState }: StepProps) {
   const theme = getTheme()
   const manager = getModelManager()
   const profiles = manager.getActiveModelProfiles()
-  
-  // Group models by provider
+
   const groupedModels = profiles.reduce((acc: any, profile: any) => {
     const provider = profile.provider || 'Default'
     if (!acc[provider]) acc[provider] = []
     acc[provider].push(profile)
     return acc
   }, {})
-  
-  // Flatten with inherit option
+
   const modelOptions = [
     { id: null, name: '◈ Inherit from parent', provider: 'System', modelName: 'default' },
-    ...Object.entries(groupedModels).flatMap(([provider, models]: any) => 
+    ...Object.entries(groupedModels).flatMap(([provider, models]: any) =>
       models.map((p: any) => ({
         id: p.modelName,
         name: p.name,
-        provider: provider,
-        modelName: p.modelName
+        provider,
+        modelName: p.modelName,
       }))
-    )
+    ),
   ]
 
-  const [selectedIndex, setSelectedIndex] = useState(() => {
-    const idx = modelOptions.findIndex(m => m.id === createState.selectedModel)
-    return idx >= 0 ? idx : 0
-  })
+  const initialIdx = modelOptions.findIndex(m => m.id === createState.selectedModel)
 
-  const handleSelect = (modelId: string | null) => {
-    setCreateState({ type: 'SET_SELECTED_MODEL', value: modelId })
-    setModeState({ mode: 'create-color', location: createState.location })
-  }
-
-  useInput((input, key) => {
-    if (key.return) {
-      handleSelect(modelOptions[selectedIndex].id)
-    } else if (key.upArrow) {
-      setSelectedIndex(prev => (prev > 0 ? prev - 1 : modelOptions.length - 1))
-    } else if (key.downArrow) {
-      setSelectedIndex(prev => (prev < modelOptions.length - 1 ? prev + 1 : 0))
-    }
+  const { selectedIndex } = useListNavigation({
+    count: modelOptions.length,
+    initial: initialIdx >= 0 ? initialIdx : 0,
+    onSelect: (idx) => {
+      setCreateState({ type: 'SET_SELECTED_MODEL', value: modelOptions[idx].id })
+      setModeState({ mode: 'create-color', location: createState.location })
+    },
   })
 
   return (
@@ -2121,7 +2111,6 @@ function ModelStep({ createState, setCreateState, setModeState }: StepProps) {
           {modelOptions.map((model, index) => {
             const isSelected = index === selectedIndex
             const isInherit = model.id === null
-            
             return (
               <Box key={model.id || 'inherit'} marginBottom={0}>
                 <Box flexDirection="row" gap={1}>
@@ -2130,10 +2119,7 @@ function ModelStep({ createState, setCreateState, setModeState }: StepProps) {
                   </Text>
                   <Box flexDirection="column" flexGrow={1}>
                     <Box flexDirection="row" gap={1}>
-                      <Text 
-                        bold={isInherit}
-                        color={isSelected ? theme.primary : undefined}
-                      >
+                      <Text bold={isInherit} color={isSelected ? theme.primary : undefined}>
                         {model.name}
                       </Text>
                       {!isInherit && (
@@ -2154,69 +2140,117 @@ function ModelStep({ createState, setCreateState, setModeState }: StepProps) {
   )
 }
 
-// Step 7: Color selection (using hex colors for display)
-function ColorStep({ createState, setCreateState, setModeState }: StepProps) {
+// ── Shared ColorSelector ─────────────────────────────────────
+
+const COLOR_OPTIONS = [
+  { label: 'Default', value: null },
+  { label: 'Yellow', value: 'yellow' },
+  { label: 'Blue', value: 'blue' },
+  { label: 'Magenta', value: 'magenta' },
+  { label: 'Cyan', value: 'cyan' },
+  { label: 'Gray', value: 'gray' },
+  { label: 'White', value: 'white' },
+] as const
+
+interface ColorSelectorProps {
+  headerTitle: string
+  headerStep?: number
+  headerTotalSteps?: number
+  previewName: string
+  initialIndex?: number
+  currentValue?: string | null
+  onSelect: (value: string | null) => void
+  onEscape?: () => void
+  isUpdating?: boolean
+  updatingText?: string
+}
+
+function ColorSelector({
+  headerTitle,
+  headerStep,
+  headerTotalSteps,
+  previewName,
+  initialIndex = 0,
+  currentValue,
+  onSelect,
+  onEscape,
+  isUpdating = false,
+  updatingText = 'Updating...',
+}: ColorSelectorProps) {
   const theme = getTheme()
-  const [selectedIndex, setSelectedIndex] = useState(0)
-  
-  // Color options without red/green due to display issues
-  const colors = [
-    { label: 'Default', value: null, displayColor: null },
-    { label: 'Yellow', value: 'yellow', displayColor: 'yellow' },
-    { label: 'Blue', value: 'blue', displayColor: 'blue' },
-    { label: 'Magenta', value: 'magenta', displayColor: 'magenta' },
-    { label: 'Cyan', value: 'cyan', displayColor: 'cyan' },
-    { label: 'Gray', value: 'gray', displayColor: 'gray' },
-    { label: 'White', value: 'white', displayColor: 'white' }
-  ]
-  
-  const handleSelect = (value: string | null) => {
-    setCreateState({ type: 'SET_SELECTED_COLOR', value: value })
-    setModeState({ mode: 'create-confirm', location: createState.location })
-  }
-  
-  useInput((input, key) => {
-    if (key.return) {
-      handleSelect(colors[selectedIndex].value)
-    } else if (key.upArrow) {
-      setSelectedIndex(prev => prev > 0 ? prev - 1 : colors.length - 1)
-    } else if (key.downArrow) {
-      setSelectedIndex(prev => prev < colors.length - 1 ? prev + 1 : 0)
-    }
+
+  const { selectedIndex } = useListNavigation({
+    count: COLOR_OPTIONS.length,
+    initial: initialIndex,
+    onSelect: (idx) => onSelect(COLOR_OPTIONS[idx].value),
+    onEscape,
+    disabled: isUpdating,
   })
-  
+
+  if (isUpdating) {
+    return (
+      <Box flexDirection="column">
+        <Header title={headerTitle}>
+          <Box marginTop={1}>
+            <LoadingSpinner text={updatingText} />
+          </Box>
+        </Header>
+        <InstructionBar />
+      </Box>
+    )
+  }
+
+  const selectedColor = COLOR_OPTIONS[selectedIndex]
+
   return (
     <Box flexDirection="column">
-      <Header title="Color Theme" subtitle="" step={5} totalSteps={5}>
-        <Box marginTop={1} flexDirection="column">
+      <Header title={headerTitle} subtitle="" step={headerStep} totalSteps={headerTotalSteps}>
+        <Box flexDirection="column" marginTop={1}>
           <Box marginBottom={1}>
             <Text dimColor>Choose how your agent appears in the list:</Text>
           </Box>
-          {colors.map((color, idx) => {
+          {COLOR_OPTIONS.map((color, idx) => {
             const isSelected = idx === selectedIndex
+            const isCurrent = currentValue !== undefined && color.value === currentValue
             return (
-              <Box key={idx} flexDirection="row">
+              <Box key={color.value || 'default'} flexDirection="row">
                 <Text color={isSelected ? theme.primary : undefined}>
                   {isSelected ? '❯ ' : '  '}
                 </Text>
-                <Box minWidth={12}>
-                  <Text bold={isSelected} color={color.displayColor || undefined}>
-                    {color.label}
-                  </Text>
-                </Box>
+                <Text color={color.value || undefined}>●</Text>
+                <Text bold={isSelected} color={color.value || undefined}>
+                  {' '}{color.label}
+                </Text>
+                {isCurrent && <Text color="green"> [current]</Text>}
               </Box>
             )
           })}
           <Box marginTop={1} paddingLeft={2}>
             <Text>Preview: </Text>
-            <Text bold color={colors[selectedIndex].displayColor || undefined}>
-              {createState.agentType || 'your-agent'}
+            <Text bold color={selectedColor.value || undefined}>
+              {previewName}
             </Text>
           </Box>
         </Box>
       </Header>
-      <InstructionBar instructions="↑↓ Navigate • Enter Select" />
+      <InstructionBar instructions="↑↓ Navigate • Enter Select • Esc Back" />
     </Box>
+  )
+}
+
+// Step 7: Color selection
+function ColorStep({ createState, setCreateState, setModeState }: StepProps) {
+  return (
+    <ColorSelector
+      headerTitle="Color Theme"
+      headerStep={5}
+      headerTotalSteps={5}
+      previewName={createState.agentType || 'your-agent'}
+      onSelect={(value) => {
+        setCreateState({ type: 'SET_SELECTED_COLOR', value })
+        setModeState({ mode: 'create-confirm', location: createState.location })
+      }}
+    />
   )
 }
 
@@ -2284,8 +2318,8 @@ function ConfirmStep({ createState, setCreateState, setModeState, tools, onAgent
       'No tools'
   
   const handleEditInEditor = async () => {
-    const filePath = path.join(os.homedir(), '.yuuka', 'agents', `${createState.agentType}.md`)
-    
+    const filePath = join(homedir(), '.yuuka', 'agents', `${createState.agentType}.md`)
+
     try {
       // First, save the agent file
       await saveAgent(
@@ -2297,11 +2331,9 @@ function ConfirmStep({ createState, setCreateState, setModeState, tools, onAgent
         createState.selectedModel,
         createState.selectedColor || undefined
       )
-      
-      // Then open it in editor
-      const command = process.platform === 'win32' ? 'start' : 
-                    process.platform === 'darwin' ? 'open' : 'xdg-open'
-      await execAsync(`${command} "${filePath}"`)
+
+      // Then open it in editor using the safe openInEditor function
+      await openInEditor(filePath)
       onAgentCreated(`Created agent: ${createState.agentType}`)
     } catch (error) {
       setCreateState({ type: 'SET_ERROR', value: (error as Error).message })
@@ -2649,218 +2681,31 @@ interface EditToolsStepProps {
 }
 
 function EditToolsStep({ agent, tools, setModeState, onAgentUpdated }: EditToolsStepProps) {
-  const [selectedIndex, setSelectedIndex] = useState(0)
-  
-  // Initialize selected tools based on agent.tools
-  const initialTools = Array.isArray(agent.tools) ? agent.tools : 
-                       agent.tools === '*' ? tools.map(t => t.name) : []
-  const [selectedTools, setSelectedTools] = useState<Set<string>>(new Set(initialTools))
-  const [showAdvanced, setShowAdvanced] = useState(false)
   const [isUpdating, setIsUpdating] = useState(false)
-  
-  // Categorize tools
-  const categorizedTools = useMemo(() => {
-    const categories: Record<string, Tool[]> = {
-      read: [],
-      edit: [],
-      execution: [],
-      web: [],
-      other: []
-    }
-    
-    tools.forEach(tool => {
-      let categorized = false
-      
-      // Check built-in categories
-      for (const [category, toolNames] of Object.entries(TOOL_CATEGORIES)) {
-        if (Array.isArray(toolNames) && toolNames.includes(tool.name)) {
-          categories[category as keyof typeof categories]?.push(tool)
-          categorized = true
-          break
-        }
-      }
-      
-      if (!categorized) {
-        categories.other.push(tool)
-      }
-    })
-    
-    return categories
-  }, [tools])
-  
-  const allSelected = selectedTools.size === tools.length && tools.length > 0
-  const readSelected = categorizedTools.read.every(tool => selectedTools.has(tool.name)) && categorizedTools.read.length > 0
-  const editSelected = categorizedTools.edit.every(tool => selectedTools.has(tool.name)) && categorizedTools.edit.length > 0
-  const execSelected = categorizedTools.execution.every(tool => selectedTools.has(tool.name)) && categorizedTools.execution.length > 0
-  
-  const options = [
-    { id: 'continue', label: 'Save', isContinue: true },
-    { id: 'separator1', label: '────────────────────────────────────', isSeparator: true },
-    { id: 'all', label: `${allSelected ? UI_ICONS.checkboxOn : UI_ICONS.checkboxOff} All tools`, isAll: true },
-    { id: 'read', label: `${readSelected ? UI_ICONS.checkboxOn : UI_ICONS.checkboxOff} Read-only tools`, isCategory: true },
-    { id: 'edit', label: `${editSelected ? UI_ICONS.checkboxOn : UI_ICONS.checkboxOff} Edit tools`, isCategory: true },
-    { id: 'execution', label: `${execSelected ? UI_ICONS.checkboxOn : UI_ICONS.checkboxOff} Execution tools`, isCategory: true },
-    { id: 'separator2', label: '────────────────────────────────────', isSeparator: true },
-    { id: 'advanced', label: `[ ${showAdvanced ? 'Hide' : 'Show'} advanced options ]`, isAdvancedToggle: true },
-    ...(showAdvanced ? tools.map(tool => ({
-      id: tool.name,
-      label: `${selectedTools.has(tool.name) ? UI_ICONS.checkboxOn : UI_ICONS.checkboxOff} ${tool.name}`,
-      isTool: true
-    })) : [])
-  ]
-  
-  const handleSave = async () => {
-    setIsUpdating(true)
-    try {
-      // Type-safe tools conversion for updateAgent
-      const toolsArray: string[] | '*' = allSelected ? '*' : Array.from(selectedTools)
-      await updateAgent(agent, agent.whenToUse, toolsArray, agent.systemPrompt, agent.color, (agent as any).model_name)
-      
-      // Clear cache and reload fresh agent data from file system
-      clearAgentCache()
-      const freshAgents = await getActiveAgents()
-      const updatedAgent = freshAgents.find(a => a.agentType === agent.agentType)
-      
-      if (updatedAgent) {
-        onAgentUpdated(`Updated tools for agent: ${agent.agentType}`, updatedAgent)
-        setModeState({ mode: "edit-agent", selectedAgent: updatedAgent })
-      } else {
-        console.error('Failed to find updated agent after save')
-        // Fallback to manual update
-        const fallbackAgent: AgentConfig = {
-          ...agent,
-          tools: toolsArray.length === 1 && toolsArray[0] === '*' ? '*' : toolsArray,
-        }
-        onAgentUpdated(`Updated tools for agent: ${agent.agentType}`, fallbackAgent)
-        setModeState({ mode: "edit-agent", selectedAgent: fallbackAgent })
-      }
-    } catch (error) {
-      console.error('Failed to update agent tools:', error)
-      // TODO: Show error to user
-    } finally {
-      setIsUpdating(false)
-    }
-  }
-  
-  const handleSelect = () => {
-    const option = options[selectedIndex] as any // Type assertion for union type
-    if (!option) return
-    if (option.isSeparator) return
-    
-    if (option.isContinue) {
-      handleSave()
-    } else if (option.isAdvancedToggle) {
-      setShowAdvanced(!showAdvanced)
-    } else if (option.isAll) {
-      if (allSelected) {
-        setSelectedTools(new Set())
-      } else {
-        setSelectedTools(new Set(tools.map(t => t.name)))
-      }
-    } else if (option.isCategory) {
-      const categoryName = option.id as keyof typeof categorizedTools
-      const categoryTools = categorizedTools[categoryName] || []
-      const newSelected = new Set(selectedTools)
-      
-      const categorySelected = categoryTools.every(tool => selectedTools.has(tool.name))
-      if (categorySelected) {
-        categoryTools.forEach(tool => newSelected.delete(tool.name))
-      } else {
-        categoryTools.forEach(tool => newSelected.add(tool.name))
-      }
-      setSelectedTools(newSelected)
-    } else if (option.isTool) {
-      const newSelected = new Set(selectedTools)
-      if (newSelected.has(option.id)) {
-        newSelected.delete(option.id)
-      } else {
-        newSelected.add(option.id)
-      }
-      setSelectedTools(newSelected)
-    }
-  }
-  
-  useInput((input, key) => {
-    if (key.escape) {
-      setModeState({ mode: "edit-agent", selectedAgent: agent })
-    } else if (key.return && !isUpdating) {
-      handleSelect()
-    } else if (key.upArrow) {
-      setSelectedIndex(prev => {
-        let newIndex = prev > 0 ? prev - 1 : options.length - 1
-        // Skip separators when going up
-        while (options[newIndex] && (options[newIndex] as any).isSeparator) {
-          newIndex = newIndex > 0 ? newIndex - 1 : options.length - 1
-        }
-        return newIndex
-      })
-    } else if (key.downArrow) {
-      setSelectedIndex(prev => {
-        let newIndex = prev < options.length - 1 ? prev + 1 : 0
-        // Skip separators when going down
-        while (options[newIndex] && (options[newIndex] as any).isSeparator) {
-          newIndex = newIndex < options.length - 1 ? newIndex + 1 : 0
-        }
-        return newIndex
-      })
-    }
-  })
-  
-  if (isUpdating) {
-    return (
-      <Box flexDirection="column">
-        <Header title={`Edit agent: ${agent.agentType}`}>
-          <Box marginTop={1}>
-            <LoadingSpinner text="Updating agent tools..." />
-          </Box>
-        </Header>
-        <InstructionBar />
-      </Box>
-    )
-  }
-  
+  const initialTools = Array.isArray(agent.tools) ? agent.tools
+    : agent.tools === '*' ? tools.map(t => t.name) : []
+
   return (
-    <Box flexDirection="column">
-      <Header title={`Edit agent: ${agent.agentType}`}>
-        <Box flexDirection="column" marginTop={1}>
-          {options.map((option, idx) => {
-            const isSelected = idx === selectedIndex
-            const isContinue = 'isContinue' in option && option.isContinue
-            const isAdvancedToggle = (option as any).isAdvancedToggle
-            const isSeparator = (option as any).isSeparator
-            
-            return (
-              <Box key={option.id}>
-                <Text 
-                  color={isSelected && !isSeparator ? 'cyan' : isSeparator ? 'gray' : undefined}
-                  bold={isContinue}
-                  dimColor={isSeparator}
-                >
-                  {isSeparator ? 
-                    option.label : 
-                    `${isSelected ? `${UI_ICONS.pointer} ` : '  '}${isContinue || isAdvancedToggle ? option.label : option.label}`
-                  }
-                </Text>
-                {(option as any).isTool && isSelected && tools.find(t => t.name === option.id)?.description && (
-                  <Box marginLeft={4}>
-                    <Text dimColor>{tools.find(t => t.name === option.id)?.description}</Text>
-                  </Box>
-                )}
-              </Box>
-            )
-          })}
-          
-          <Box marginTop={1}>
-            <Text dimColor>
-              {allSelected ? 
-                'All tools selected' : 
-                `${selectedTools.size} of ${tools.length} tools selected`}
-            </Text>
-          </Box>
-        </Box>
-      </Header>
-      <InstructionBar instructions="Enter toggle selection · ↑↓ navigate · Esc back" />
-    </Box>
+    <ToolSelector
+      tools={tools}
+      initialSelected={new Set(initialTools)}
+      headerTitle={`Edit agent: ${agent.agentType}`}
+      onConfirm={(result) => {
+        const toolsValue: string[] | '*' = result === '*' ? '*' : result as string[]
+        saveAndRefreshAgent(
+          agent,
+          () => updateAgent(agent, agent.whenToUse, toolsValue, agent.systemPrompt, agent.color, (agent as any).model_name),
+          'tools',
+          onAgentUpdated,
+          setModeState,
+          setIsUpdating,
+          (base) => ({ ...base, tools: toolsValue }),
+        )
+      }}
+      onEscape={() => setModeState({ mode: 'edit-agent', selectedAgent: agent })}
+      isUpdating={isUpdating}
+      updatingText="Updating agent tools..."
+    />
   )
 }
 
@@ -2875,61 +2720,37 @@ function EditModelStep({ agent, setModeState, onAgentUpdated }: EditModelStepPro
   const manager = getModelManager()
   const profiles = manager.getActiveModelProfiles()
   const currentModel = (agent as any).model_name || null
-  
-  // Build model options array
+
   const modelOptions = [
     { id: null, name: 'Inherit from parent', description: 'Use the model from task configuration' },
-    ...profiles.map((p: any) => ({ id: p.modelName, name: p.name, description: `${p.provider || 'provider'} · ${p.modelName}` }))
+    ...profiles.map((p: any) => ({ id: p.modelName, name: p.name, description: `${p.provider || 'provider'} · ${p.modelName}` })),
   ]
 
-  // Find the index of current model
   const defaultIndex = modelOptions.findIndex(m => m.id === currentModel)
-  const [selectedIndex, setSelectedIndex] = useState(defaultIndex >= 0 ? defaultIndex : 0)
   const [isUpdating, setIsUpdating] = useState(false)
 
-  const handleSave = async (modelId: string | null) => {
-    setIsUpdating(true)
-    try {
-      const modelValue = modelId === null ? undefined : modelId
-      await updateAgent(agent, agent.whenToUse, agent.tools, agent.systemPrompt, agent.color, modelValue)
-      
-      // Clear cache and reload fresh agent data from file system
-      clearAgentCache()
-      const freshAgents = await getActiveAgents()
-      const updatedAgent = freshAgents.find(a => a.agentType === agent.agentType)
-      
-      if (updatedAgent) {
-        onAgentUpdated(`Updated model for agent: ${agent.agentType}`, updatedAgent)
-        setModeState({ mode: 'edit-agent', selectedAgent: updatedAgent })
-      } else {
-        console.error('Failed to find updated agent after save')
-        // Fallback to manual update
-        const fallbackAgent: AgentConfig = { ...agent }
-        if (modelValue) {
-          ;(fallbackAgent as any).model_name = modelValue
-        } else {
-          delete (fallbackAgent as any).model_name
-        }
-        onAgentUpdated(`Updated model for agent: ${agent.agentType}`, fallbackAgent)
-        setModeState({ mode: 'edit-agent', selectedAgent: fallbackAgent })
-      }
-    } catch (error) {
-      console.error('Failed to update agent model:', error)
-    } finally {
-      setIsUpdating(false)
-    }
-  }
-
-  useInput((input, key) => {
-    if (key.escape) {
-      setModeState({ mode: 'edit-agent', selectedAgent: agent })
-    } else if (key.return && !isUpdating) {
-      handleSave(modelOptions[selectedIndex].id)
-    } else if (key.upArrow) {
-      setSelectedIndex(prev => (prev > 0 ? prev - 1 : modelOptions.length - 1))
-    } else if (key.downArrow) {
-      setSelectedIndex(prev => (prev < modelOptions.length - 1 ? prev + 1 : 0))
-    }
+  const { selectedIndex } = useListNavigation({
+    count: modelOptions.length,
+    initial: defaultIndex >= 0 ? defaultIndex : 0,
+    onSelect: (idx) => {
+      const modelId = modelOptions[idx].id
+      saveAndRefreshAgent(
+        agent,
+        () => updateAgent(agent, agent.whenToUse, agent.tools, agent.systemPrompt, agent.color, modelId ?? undefined),
+        'model',
+        onAgentUpdated,
+        setModeState,
+        setIsUpdating,
+        (base) => {
+          const fb: AgentConfig = { ...base }
+          if (modelId) (fb as any).model_name = modelId
+          else delete (fb as any).model_name
+          return fb
+        },
+      )
+    },
+    onEscape: () => setModeState({ mode: 'edit-agent', selectedAgent: agent }),
+    disabled: isUpdating,
   })
 
   if (isUpdating) {
@@ -2952,7 +2773,26 @@ function EditModelStep({ agent, setModeState, onAgentUpdated }: EditModelStepPro
           <SelectList
             options={modelOptions.map((m, i) => ({ label: `${i + 1}. ${m.name}${m.description ? `\n${m.description}` : ''}`, value: m.id }))}
             selectedIndex={selectedIndex}
-            onChange={(val) => handleSave(val)}
+            onChange={(val) => {
+              const idx = modelOptions.findIndex(m => m.id === val)
+              if (idx >= 0) {
+                const modelId = modelOptions[idx].id
+                saveAndRefreshAgent(
+                  agent,
+                  () => updateAgent(agent, agent.whenToUse, agent.tools, agent.systemPrompt, agent.color, modelId ?? undefined),
+                  'model',
+                  onAgentUpdated,
+                  setModeState,
+                  setIsUpdating,
+                  (base) => {
+                    const fb: AgentConfig = { ...base }
+                    if (modelId) (fb as any).model_name = modelId
+                    else delete (fb as any).model_name
+                    return fb
+                  },
+                )
+              }
+            }}
             numbered={false}
           />
         </Box>
@@ -2970,113 +2810,31 @@ interface EditColorStepProps {
 }
 
 function EditColorStep({ agent, setModeState, onAgentUpdated }: EditColorStepProps) {
-  const currentColor = agent.color || null
-  
-  // Define color options (removed red/green due to display issues)
-  const colors = [
-    { label: 'Automatic color', value: null },
-    { label: 'Yellow', value: 'yellow' },
-    { label: 'Blue', value: 'blue' },
-    { label: 'Magenta', value: 'magenta' },
-    { label: 'Cyan', value: 'cyan' },
-    { label: 'Gray', value: 'gray' },
-    { label: 'White', value: 'white' }
-  ]
-  
-  // Find current color index
-  const defaultIndex = colors.findIndex(color => color.value === currentColor)
-  const [selectedIndex, setSelectedIndex] = useState(defaultIndex >= 0 ? defaultIndex : 0)
   const [isUpdating, setIsUpdating] = useState(false)
-  
-  const handleSave = async (color: string | null) => {
-    setIsUpdating(true)
-    try {
-      const colorValue = color === null ? undefined : color
-      await updateAgent(agent, agent.whenToUse, agent.tools, agent.systemPrompt, colorValue, (agent as any).model_name)
-      
-      // Clear cache and reload fresh agent data from file system
-      clearAgentCache()
-      const freshAgents = await getActiveAgents()
-      const updatedAgent = freshAgents.find(a => a.agentType === agent.agentType)
-      
-      if (updatedAgent) {
-        onAgentUpdated(`Updated color for agent: ${agent.agentType}`, updatedAgent)
-        setModeState({ mode: "edit-agent", selectedAgent: updatedAgent })
-      } else {
-        console.error('Failed to find updated agent after save')
-        // Fallback to manual update
-        const fallbackAgent: AgentConfig = { ...agent, ...(colorValue ? { color: colorValue } : { color: undefined }) }
-        onAgentUpdated(`Updated color for agent: ${agent.agentType}`, fallbackAgent)
-        setModeState({ mode: "edit-agent", selectedAgent: fallbackAgent })
-      }
-    } catch (error) {
-      console.error('Failed to update agent color:', error)
-      // TODO: Show error to user
-    } finally {
-      setIsUpdating(false)
-    }
-  }
-  
-  useInput((input, key) => {
-    if (key.escape) {
-      setModeState({ mode: "edit-agent", selectedAgent: agent })
-    } else if (key.return && !isUpdating) {
-      handleSave(colors[selectedIndex].value)
-    } else if (key.upArrow) {
-      setSelectedIndex(prev => prev > 0 ? prev - 1 : colors.length - 1)
-    } else if (key.downArrow) {
-      setSelectedIndex(prev => prev < colors.length - 1 ? prev + 1 : 0)
-    }
-  })
-  
-  if (isUpdating) {
-    return (
-      <Box flexDirection="column">
-        <Header title={`Edit agent: ${agent.agentType}`}>
-          <Box marginTop={1}>
-            <LoadingSpinner text="Updating agent color..." />
-          </Box>
-        </Header>
-        <InstructionBar />
-      </Box>
-    )
-  }
-  
-  const selectedColor = colors[selectedIndex]
-  const previewColor = selectedColor.value || undefined
-  
+  const currentColor = agent.color || null
+  const defaultIndex = COLOR_OPTIONS.findIndex(c => c.value === currentColor)
+
   return (
-    <Box flexDirection="column">
-      <Header title={`Edit agent: ${agent.agentType}`} subtitle="Choose background color">
-        <Box flexDirection="column" marginTop={1}>
-          {colors.map((color, index) => {
-            const isSelected = index === selectedIndex
-            const isCurrent = color.value === currentColor
-            
-            return (
-              <Box key={color.value || 'automatic'}>
-                <Text color={isSelected ? 'cyan' : undefined}>
-                  {isSelected ? '❯ ' : '  '}
-                </Text>
-                <Text color={color.value || undefined}>●</Text>
-                <Text>
-                  {' '}{color.label}
-                  {isCurrent && (
-                    <Text color="green"> [current]</Text>
-                  )}
-                </Text>
-              </Box>
-            )
-          })}
-          
-          <Box marginTop={2}>
-            <Text>Preview: </Text>
-            <Text color={previewColor}>{agent.agentType}</Text>
-          </Box>
-        </Box>
-      </Header>
-      <InstructionBar instructions="↑↓ navigate · Enter select · Esc back" />
-    </Box>
+    <ColorSelector
+      headerTitle={`Edit agent: ${agent.agentType}`}
+      previewName={agent.agentType}
+      initialIndex={defaultIndex >= 0 ? defaultIndex : 0}
+      currentValue={currentColor}
+      onSelect={(value) => {
+        saveAndRefreshAgent(
+          agent,
+          () => updateAgent(agent, agent.whenToUse, agent.tools, agent.systemPrompt, value ?? undefined, (agent as any).model_name),
+          'color',
+          onAgentUpdated,
+          setModeState,
+          setIsUpdating,
+          (base) => ({ ...base, color: value ?? undefined }),
+        )
+      }}
+      onEscape={() => setModeState({ mode: 'edit-agent', selectedAgent: agent })}
+      isUpdating={isUpdating}
+      updatingText="Updating agent color..."
+    />
   )
 }
 
@@ -3153,180 +2911,6 @@ function ViewAgent({ agent, tools, setModeState }: ViewAgentProps) {
         </Box>
       </Header>
       <InstructionBar />
-    </Box>
-  )
-}
-
-// Edit agent component
-interface EditAgentProps {
-  agent: AgentConfig
-  tools: Tool[]
-  setModeState: (state: ModeState) => void
-  onAgentUpdated: (message: string) => void
-}
-
-function EditAgent({ agent, tools, setModeState, onAgentUpdated }: EditAgentProps) {
-  const theme = getTheme()
-  const [currentStep, setCurrentStep] = useState<'description' | 'tools' | 'prompt' | 'confirm'>('description')
-  const [isUpdating, setIsUpdating] = useState(false)
-  
-  // 编辑状态
-  const [editedDescription, setEditedDescription] = useState(agent.whenToUse)
-  const [editedTools, setEditedTools] = useState<string[]>(
-    Array.isArray(agent.tools) ? agent.tools : agent.tools === '*' ? ['*'] : []
-  )
-  const [editedPrompt, setEditedPrompt] = useState(agent.systemPrompt)
-  const [error, setError] = useState<string | null>(null)
-  
-  const handleSave = async () => {
-    setIsUpdating(true)
-    try {
-      await updateAgent(agent, editedDescription, editedTools, editedPrompt, agent.color)
-      clearAgentCache()
-      onAgentUpdated(`Updated agent: ${agent.agentType}`)
-    } catch (error) {
-      setError((error as Error).message)
-      setIsUpdating(false)
-    }
-  }
-  
-  const renderStepContent = () => {
-    switch (currentStep) {
-      case 'description':
-        return (
-          <Box flexDirection="column">
-            <Text bold>Edit Description:</Text>
-            <Box marginTop={1}>
-              <MultilineTextInput
-                value={editedDescription}
-                onChange={setEditedDescription}
-                placeholder="Describe when to use this agent..."
-                onSubmit={() => setCurrentStep('tools')}
-                error={error}
-                rows={4}
-              />
-            </Box>
-          </Box>
-        )
-        
-      case 'tools':
-        return (
-          <Box flexDirection="column">
-            <Text bold>Edit Tools:</Text>
-            <Box marginTop={1}>
-              <ToolsStep
-                createState={{
-                  selectedTools: editedTools,
-                } as CreateState}
-                setCreateState={(action) => {
-                  if (action.type === 'SET_SELECTED_TOOLS') {
-                    setEditedTools(action.value)
-                    setCurrentStep('prompt')
-                  }
-                }}
-                setModeState={() => {}}
-                tools={tools}
-              />
-            </Box>
-          </Box>
-        )
-        
-      case 'prompt':
-        return (
-          <Box flexDirection="column">
-            <Text bold>Edit System Prompt:</Text>
-            <Box marginTop={1}>
-              <MultilineTextInput
-                value={editedPrompt}
-                onChange={setEditedPrompt}
-                placeholder="System prompt for the agent..."
-                onSubmit={() => setCurrentStep('confirm')}
-                error={error}
-                rows={5}
-              />
-            </Box>
-          </Box>
-        )
-        
-      case 'confirm':
-        const validation = validateAgentConfig({
-          agentType: agent.agentType,
-          whenToUse: editedDescription,
-          systemPrompt: editedPrompt,
-          selectedTools: editedTools
-        })
-        
-        return (
-          <Box flexDirection="column">
-            <Text bold>Confirm Changes:</Text>
-            <Box flexDirection="column" marginTop={1}>
-              <Text><Text bold>Agent:</Text> {agent.agentType}</Text>
-              <Text><Text bold>Description:</Text> {editedDescription}</Text>
-              <Text><Text bold>Tools:</Text> {editedTools.includes('*') ? 'All tools' : editedTools.join(', ')}</Text>
-              <Text><Text bold>System Prompt:</Text> {editedPrompt.slice(0, 100)}{editedPrompt.length > 100 ? '...' : ''}</Text>
-              
-              {validation.warnings.length > 0 && (
-                <Box marginTop={1}>
-                  {validation.warnings.map((warning, idx) => (
-                    <Fragment key={idx}>
-                      <Text color={theme.warning}>Warning: {warning}</Text>
-                    </Fragment>
-                  ))}
-                </Box>
-              )}
-              
-              {error && (
-                <Box marginTop={1}>
-                  <Text color={theme.error}>✗ {error}</Text>
-                </Box>
-              )}
-              
-              <Box marginTop={2}>
-                {isUpdating ? (
-                  <LoadingSpinner text="Updating agent..." />
-                ) : (
-                  <Text>Press Enter to save changes</Text>
-                )}
-              </Box>
-            </Box>
-          </Box>
-        )
-    }
-  }
-  
-  useInput((input, key) => {
-    if (key.escape) {
-      if (currentStep === 'description') {
-        setModeState({ mode: "agent-menu", selectedAgent: agent })
-      } else {
-        // 返回上一步
-        const steps: Array<typeof currentStep> = ['description', 'tools', 'prompt', 'confirm']
-        const currentIndex = steps.indexOf(currentStep)
-        if (currentIndex > 0) {
-          setCurrentStep(steps[currentIndex - 1])
-        }
-      }
-      return
-    }
-    
-    if (key.return && currentStep === 'confirm' && !isUpdating) {
-      handleSave()
-    }
-  })
-  
-  return (
-    <Box flexDirection="column">
-      <Header title={`Edit Agent: ${agent.agentType}`} subtitle={`Step ${['description', 'tools', 'prompt', 'confirm'].indexOf(currentStep) + 1}/4`}>
-        <Box marginTop={1}>
-          {renderStepContent()}
-        </Box>
-      </Header>
-      <InstructionBar 
-        instructions={currentStep === 'confirm' ? 
-          "Press Enter to save · Esc to go back" :
-          "Enter to continue · Esc to go back"
-        }
-      />
     </Box>
   )
 }

@@ -10,6 +10,7 @@ import { Command } from '@commands'
 import { Logo } from '@components/Logo'
 import { Message } from '@components/Message'
 import { MessageResponse } from '@components/MessageResponse'
+import { TASK_PROGRESS_PREFIX } from '@components/messages/TaskProgressMessage'
 import { MessageSelector } from '@components/MessageSelector'
 import {
   PermissionRequest,
@@ -42,7 +43,6 @@ import {
 import type { Tool } from '@tool'
 // Auto-updater removed; only show a new version banner passed from CLI
 import { getGlobalConfig, saveGlobalConfig } from '@utils/config'
-import { MACRO } from '@constants/macros'
 import { getNextAvailableLogForkNumber } from '@utils/log'
 import {
   getErroredToolUseMessages,
@@ -60,11 +60,10 @@ import {
   extractTag,
   createAssistantMessage,
 } from '@utils/messages'
-import { clearTerminal, updateTerminalTitle } from '@utils/terminal'
+import { clearTerminal } from '@utils/terminal'
 import { BinaryFeedback } from '@components/binary-feedback/BinaryFeedback'
 import { getMaxThinkingTokens } from '@utils/thinking'
 import { getOriginalCwd } from '@utils/state'
-import { debug as debugLogger } from '@utils/debugLogger'
 import { logError } from '@utils/log'
 
 type Props = {
@@ -404,8 +403,6 @@ export function REPL({
         getMaxThinkingTokens([...messages, lastMessage]),
       ])
 
-    let lastAssistantMessage: MessageType | null = null
-
     // query the API
     try {
       for await (const message of query(
@@ -431,11 +428,6 @@ export function REPL({
       getBinaryFeedbackResponse,
     )) {
       setMessages(oldMessages => [...oldMessages, message])
-
-      // Keep track of the last assistant message for Koding mode
-      if (message.type === 'assistant') {
-        lastAssistantMessage = message
-      }
     }
     } catch (e) {
       logError(e)
@@ -518,9 +510,8 @@ export function REPL({
         const message =
           _.type === 'progress' ? (
             _.content?.message?.content?.[0]?.type === 'text' &&
-            // TaskTool interrupts use Progress messages without extra tree prefix
-            // since <Message /> component already adds the margin
-            _.content?.message?.content?.[0]?.text === INTERRUPT_MESSAGE ? (
+            (_.content?.message?.content?.[0]?.text === INTERRUPT_MESSAGE ||
+             _.content?.message?.content?.[0]?.text?.startsWith(TASK_PROGRESS_PREFIX)) ? (
               <Message
                 message={_.content}
                 messages={_.normalizedMessages}

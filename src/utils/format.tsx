@@ -18,12 +18,12 @@ export function wrapText(text: string, width: number): string[] {
 
 export function formatDuration(ms: number): string {
   if (ms < 60000) {
-    return `${(ms / 1000).toFixed(1)}s`
+    return `${Math.round(ms / 1000)}s`
   }
 
   const hours = Math.floor(ms / 3600000)
   const minutes = Math.floor((ms % 3600000) / 60000)
-  const seconds = ((ms % 60000) / 1000).toFixed(1)
+  const seconds = Math.round((ms % 60000) / 1000)
 
   if (hours > 0) {
     return `${hours}h ${minutes}m ${seconds}s`

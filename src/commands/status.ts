@@ -1,9 +1,8 @@
 import type { Command } from '@commands'
-import Table from 'cli-table3'
+import chalk from 'chalk'
 import modelsCatalog from '@constants/models'
 import { getTotalCost } from '@costTracker'
 import { getMessagesGetter } from '@messages'
-import type { Message } from '@query'
 import { getGlobalConfig } from '@utils/config'
 import {
   ensureGlobalGeminiSettings,
@@ -11,41 +10,24 @@ import {
   normalizeGeminiModelName,
   readGeminiSettingsFile,
 } from '@utils/geminiSettings'
-import {
-  getEffectiveThinkingSetting,
-  getThinkingGemini3Level,
-  getThinkingNonGemini3Budget,
-} from '@utils/thinkingConfig'
+import { getEffectiveThinkingSetting } from '@utils/thinkingConfig'
 import { countCachedTokens, countTokens } from '@utils/tokens'
+import { getSystemPrompt } from '@constants/prompts'
 
-type UsageTotals = {
-  input: number
-  output: number
-  cacheCreate: number
-  cacheRead: number
-  total: number
+const L = 10 // label width
+
+function fmt(n: number): string {
+  return n.toLocaleString('en-US')
 }
 
-function formatNumber(value: number): string {
-  return value.toLocaleString('en-US')
+function cost(v: number): string {
+  if (!Number.isFinite(v) || v <= 0) return '$0.00'
+  if (v >= 1) return `$${v.toFixed(2)}`
+  return `$${v.toFixed(4)}`
 }
 
-function formatCost(value: number): string {
-  if (!Number.isFinite(value) || value <= 0) return '$0.0000'
-  if (value >= 1) return `$${value.toFixed(2)}`
-  return `$${value.toFixed(4)}`
-}
-
-function renderSectionTable(rows: Array<[string, string]>): string {
-  const table = new Table({
-    head: ['项', '值'],
-    style: { head: ['bold'] },
-    wordWrap: true,
-  })
-  for (const row of rows) {
-    table.push(row)
-  }
-  return table.toString()
+function label(s: string): string {
+  return chalk.dim(s.padEnd(L))
 }
 
 function getCurrentModelName(): string {
@@ -72,39 +54,14 @@ function getContextWindowFromCatalog(modelName: string): number | null {
   return typeof limit === 'number' && limit > 0 ? limit : null
 }
 
-function collectUsageTotals(messages: Message[]): UsageTotals {
-  const totals: UsageTotals = {
-    input: 0,
-    output: 0,
-    cacheCreate: 0,
-    cacheRead: 0,
-    total: 0,
-  }
-
-  for (const message of messages) {
-    if (message.type !== 'assistant') continue
-    const usage = (message.message as any)?.usage
-    if (!usage || typeof usage !== 'object') continue
-
-    const input = Number(usage.input_tokens ?? 0)
-    const output = Number(usage.output_tokens ?? 0)
-    const cacheCreate = Number(usage.cache_creation_input_tokens ?? 0)
-    const cacheRead = Number(usage.cache_read_input_tokens ?? 0)
-
-    totals.input += Number.isFinite(input) ? input : 0
-    totals.output += Number.isFinite(output) ? output : 0
-    totals.cacheCreate += Number.isFinite(cacheCreate) ? cacheCreate : 0
-    totals.cacheRead += Number.isFinite(cacheRead) ? cacheRead : 0
-  }
-
-  totals.total = totals.input + totals.output + totals.cacheCreate + totals.cacheRead
-  return totals
+function estimateTokenCount(text: string): number {
+  return Math.ceil(text.length * 0.25) + 8
 }
 
 const status = {
   type: 'local',
   name: 'status',
-  description: '显示当前会话状态（tokens/窗口/thinking/memory）',
+  description: '显示当前会话状态（tokens/窗口/thinking）',
   isEnabled: true,
   isHidden: false,
   userFacingName() {
@@ -114,106 +71,68 @@ const status = {
     const messages = getMessagesGetter()()
     const globalConfig = getGlobalConfig()
     const modelName = getCurrentModelName()
-    const modelLabel = modelName ? modelName.replace(/^models\//, '') : '(未设置)'
+    const modelLabel = modelName ? modelName.replace(/^models\//, '') : '(unset)'
 
-    const userMessages = messages.filter(_ => _.type === 'user').length
-    const assistantMessages = messages.filter(_ => _.type === 'assistant').length
+    const userMsgs = messages.filter(_ => _.type === 'user').length
+    const asstMsgs = messages.filter(_ => _.type === 'assistant').length
     const tokenUsage = countTokens(messages)
     const cachedTokens = countCachedTokens(messages)
-    const usageTotals = collectUsageTotals(messages)
-    const cost = getTotalCost()
+    const totalCost = getTotalCost()
 
     const contextWindow = getContextWindowFromCatalog(modelName)
-    const rawRemaining =
-      contextWindow != null ? Math.max(contextWindow - tokenUsage, 0) : null
-    const reservedWindow =
-      contextWindow != null ? Math.floor(contextWindow * 0.8) : null
-    const reservedRemaining =
-      reservedWindow != null ? Math.max(reservedWindow - tokenUsage, 0) : null
     const usagePct =
       contextWindow != null && contextWindow > 0
         ? (tokenUsage / contextWindow) * 100
         : null
+    const remain =
+      contextWindow != null
+        ? Math.max(Math.floor(contextWindow * 0.8) - tokenUsage, 0)
+        : null
 
-    const thinkingGemini3Level = getThinkingGemini3Level(globalConfig)
-    const thinkingNonGemini3Budget = getThinkingNonGemini3Budget(globalConfig)
     const effectiveThinking = getEffectiveThinkingSetting(modelName, globalConfig)
 
-    const sections: string[] = []
+    let sysTokens = 0
+    try {
+      const promptParts = await getSystemPrompt()
+      const promptText = Array.isArray(promptParts) ? promptParts.join('\n') : String(promptParts)
+      sysTokens = estimateTokenCount(promptText)
+    } catch { /* ignore */ }
+    const convTokens = Math.max(0, tokenUsage - sysTokens)
 
-    sections.push('会话状态')
-    sections.push(
-      renderSectionTable([
-        ['模型', modelLabel],
-        [
-          '消息',
-          `用户 ${formatNumber(userMessages)} / 助手 ${formatNumber(assistantMessages)} / 总计 ${formatNumber(messages.length)}`,
-        ],
-      ]),
+    const lines: string[] = []
+
+    // model + msgs + cost
+    lines.push(`${label('model')}${modelLabel}`)
+    lines.push(`${label('msgs')}${fmt(userMsgs)}↑ ${fmt(asstMsgs)}↓ ${chalk.dim(`(${fmt(messages.length)} total)`)}`)
+    lines.push(`${label('cost')}${cost(totalCost)}`)
+
+    // tokens
+    lines.push('')
+    if (contextWindow != null) {
+      lines.push(`${label('tokens')}${fmt(tokenUsage)} / ${fmt(contextWindow)} ${chalk.dim(`(${(usagePct ?? 0).toFixed(1)}%)`)}`)
+      if (sysTokens > 0 || convTokens > 0) {
+        lines.push(chalk.dim(`${''.padEnd(L)}  system ~${fmt(sysTokens)} · conversation ~${fmt(convTokens)}`))
+      }
+      lines.push(`${label('remain')}${fmt(remain ?? 0)} ${chalk.dim('(80% reserve)')}`)
+    } else {
+      lines.push(`${label('tokens')}${fmt(tokenUsage)}`)
+      lines.push(chalk.dim(`${''.padEnd(L)}context window unknown`))
+    }
+    if (cachedTokens > 0) {
+      lines.push(`${label('cached')}${fmt(cachedTokens)}`)
+    }
+
+    // thinking
+    lines.push('')
+    lines.push(
+      `${label('think')}${
+        effectiveThinking.mode === 'level'
+          ? `thinkingLevel=${effectiveThinking.level}`
+          : `thinkingBudget=${fmt(effectiveThinking.budget)}`
+      }`,
     )
 
-    sections.push('')
-    sections.push('Tokens')
-    sections.push(
-      renderSectionTable([
-        ['上下文已用(估算)', formatNumber(tokenUsage)],
-        ['缓存 tokens(最近一次)', formatNumber(cachedTokens)],
-        [
-          '累计 usage (in/out/cache)',
-          `${formatNumber(usageTotals.input)} / ${formatNumber(usageTotals.output)} / ${formatNumber(usageTotals.cacheCreate + usageTotals.cacheRead)}`,
-        ],
-        ['累计 usage 总计', formatNumber(usageTotals.total)],
-      ]),
-    )
-
-    sections.push('')
-    sections.push('窗口')
-    sections.push(
-      renderSectionTable(
-        contextWindow == null
-          ? [['上下文窗口', '未知（当前模型不在内置模型表）']]
-          : [
-              [
-                '上下文窗口',
-                `${formatNumber(contextWindow)} (${(usagePct ?? 0).toFixed(1)}% 已用)`,
-              ],
-              ['窗口剩余(原始)', formatNumber(rawRemaining ?? 0)],
-              ['窗口剩余(建议80%)', formatNumber(reservedRemaining ?? 0)],
-            ],
-      ),
-    )
-
-    sections.push('')
-    sections.push('Thinking')
-    sections.push(
-      renderSectionTable([
-        ['Gemini-3 档位配置', thinkingGemini3Level],
-        ['非 Gemini-3 thinking budget', formatNumber(thinkingNonGemini3Budget)],
-        [
-          '当前模型生效',
-          effectiveThinking.mode === 'level'
-            ? `thinkingLevel=${effectiveThinking.level}`
-            : `thinkingBudget=${formatNumber(effectiveThinking.budget)}`,
-        ],
-      ]),
-    )
-
-    sections.push('')
-    sections.push('Memory')
-    sections.push(
-      renderSectionTable([
-        ['MemoryRead', (globalConfig.memoryReadEnabled ?? true) ? '开' : '关'],
-        ['MemoryWrite', (globalConfig.memoryWriteEnabled ?? true) ? '开' : '关'],
-      ]),
-    )
-
-    sections.push('')
-    sections.push('费用')
-    sections.push(
-      renderSectionTable([['当前会话累计', formatCost(cost)]]),
-    )
-
-    return sections.join('\n')
+    return lines.join('\n')
   },
 } satisfies Command
 

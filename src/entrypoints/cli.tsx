@@ -64,8 +64,6 @@ import {
   getCurrentProjectConfig,
   saveGlobalConfig,
   saveCurrentProjectConfig,
-  getCustomApiKeyStatus,
-  normalizeApiKeyForConfig,
   setConfigForCLI,
   deleteConfigForCLI,
   getConfigForCLI,
@@ -82,7 +80,6 @@ import { checkHasTrustDialogAccepted, McpServerConfig } from '@utils/config'
 import { LogList } from '@screens/LogList'
 import { ResumeConversation } from '@screens/ResumeConversation'
 import { startMCPServer } from './mcp'
-import { env } from '@utils/env'
 import { getCwd, setCwd, setOriginalCwd } from '@utils/state'
 import { omit } from 'lodash-es'
 import { getCommands } from '@commands'
@@ -104,10 +101,9 @@ import {
 import { handleMcprcServerApprovals } from '@services/mcpServerApproval'
  
 import { cursorShow } from 'ansi-escapes'
-import { getLatestVersion, assertMinVersion, getUpdateCommandSuggestions } from '@utils/autoUpdater'
+import { getLatestVersion, assertMinVersion } from '@utils/autoUpdater'
 import { gt } from 'semver'
 import { CACHE_PATHS } from '@utils/log'
-// import { checkAndNotifyUpdate } from '@utils/autoUpdater'
 import { PersistentShell } from '@utils/PersistentShell'
 import { clearTerminal } from '@utils/terminal'
 import { showInvalidConfigDialog } from '@components/InvalidConfigDialog'
@@ -145,7 +141,7 @@ function isValidSkillName(name: string): boolean {
 function parseSkillImportScope(rawScope: string): SkillImportScope {
   const normalized = String(rawScope ?? 'user').trim().toLowerCase()
   if (normalized === 'project' || normalized === 'local') {
-    return 'user'
+    return 'project'
   }
   if (
     normalized === 'user' ||
@@ -312,14 +308,6 @@ async function showSetupScreens(
       await handleMcprcServerApprovals()
     }
   }
-}
-
-function logStartup(): void {
-  const config = getGlobalConfig()
-  saveGlobalConfig({
-    ...config,
-    numStartups: (config.numStartups ?? 0) + 1,
-  })
 }
 
 function migrateLegacyProjectGeminiSettingsToGlobal(projectRoot: string): void {
@@ -819,22 +807,6 @@ ${commandList}`,
       },
     )
     .version(MACRO.VERSION, '-v, --version')
-
-  // Enable melon mode for ants if --melon is passed
-  // if (process.env.USER_TYPE === 'ant') {
-  //   program
-  //     .option('--melon', 'Enable melon mode')
-  //     .hook('preAction', async () => {
-  //       if ((program.opts() as { melon?: boolean }).melon) {
-  //         const { runMelonWrapper } = await import('../utils/melonWrapper')
-  //         const melonArgs = process.argv.slice(
-  //           process.argv.indexOf('--melon') + 1,
-  //         )
-  //         const exitCode = runMelonWrapper(melonArgs)
-  //         process.exit(exitCode)
-  //       }
-  //     })
-  // }
 
   // claude config
   const config = program
@@ -1890,10 +1862,6 @@ process.on('SIGINT', () => gracefulExit(0))
 process.on('SIGTERM', () => gracefulExit(0))
 // Windows CTRL+BREAK
 process.on('SIGBREAK', () => gracefulExit(0))
-process.on('unhandledRejection', err => {
-  console.error('Unhandled rejection:', err)
-  gracefulExit(1)
-})
 process.on('uncaughtException', err => {
   console.error('Uncaught exception:', err)
   gracefulExit(1)

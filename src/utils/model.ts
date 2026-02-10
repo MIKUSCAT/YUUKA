@@ -8,9 +8,6 @@ import {
   saveGlobalConfig,
 } from './config'
 
-export const USE_BEDROCK = false
-export const USE_VERTEX = false
-
 export interface ModelConfig {
   firstParty: string
 }
@@ -41,13 +38,6 @@ export const getSlowAndCapableModel = memoize(async (): Promise<string> => {
   const modelConfig = await getModelConfig()
   return modelConfig.firstParty
 })
-
-export async function isDefaultSlowAndCapableModel(): Promise<boolean> {
-  return (
-    !process.env.GEMINI_MODEL ||
-    process.env.GEMINI_MODEL === (await getSlowAndCapableModel())
-  )
-}
 
 /**
  * Comprehensive ModelManager class for centralized model selection and management.
@@ -703,7 +693,7 @@ export class ModelManager {
         // pointerId 可能是内部ID或真实模型名称，尝试两种查找方式
         let profile = this.findModelProfile(pointerId) // 按内部ID查找
         if (!profile) {
-          profile = this.findModelProfileByModelName(pointerId) // 按真实模型名查找
+          profile = this.findModelProfile(pointerId) // 按真实模型名查找
         }
         if (profile && profile.isActive) {
           return profile
@@ -721,7 +711,7 @@ export class ModelManager {
     }
 
     // 2. 尝试按真实模型名称查找
-    profile = this.findModelProfileByModelName(modelParam)
+    profile = this.findModelProfile(modelParam)
     if (profile && profile.isActive) {
       return profile
     }
@@ -762,7 +752,7 @@ export class ModelManager {
       // pointerId 可能是内部ID或真实模型名称
       let profile = this.findModelProfile(pointerId)
       if (!profile) {
-        profile = this.findModelProfileByModelName(pointerId)
+        profile = this.findModelProfile(pointerId)
       }
 
       if (!profile) {
@@ -789,7 +779,7 @@ export class ModelManager {
       // 直接的 model ID 或模型名称，尝试多种查找方式
       let profile = this.findModelProfile(modelParam)
       if (!profile) {
-        profile = this.findModelProfileByModelName(modelParam)
+        profile = this.findModelProfile(modelParam)
       }
       if (!profile) {
         profile = this.findModelProfileByName(modelParam)
@@ -820,10 +810,6 @@ export class ModelManager {
 
   // Private helper methods
   private findModelProfile(modelName: string): ModelProfile | null {
-    return this.modelProfiles.find(p => p.modelName === modelName) || null
-  }
-
-  private findModelProfileByModelName(modelName: string): ModelProfile | null {
     return this.modelProfiles.find(p => p.modelName === modelName) || null
   }
 

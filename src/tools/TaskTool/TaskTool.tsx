@@ -15,7 +15,7 @@ import { getOriginalCwd } from '@utils/state'
 import { getPrompt } from './prompt'
 import { TOOL_NAME } from './constants'
 import { getAvailableAgentTypes } from '@utils/agentLoader'
-import { TREE_END } from '@constants/figures'
+import { TASK_DASH } from '@constants/figures'
 import { encodeTaskProgress } from '@components/messages/TaskProgressMessage'
 import {
   createTeamTask,
@@ -396,10 +396,8 @@ export const TaskTool = {
   async isEnabled() {
     return true
   },
-  userFacingName(input?: any) {
-    // Return agent name with proper prefix
-    const agentType = input?.subagent_type || 'general-purpose'
-    return `agent-${agentType}`
+  userFacingName() {
+    return 'Task'
   },
   needsPermissions() {
     return false
@@ -407,41 +405,9 @@ export const TaskTool = {
   renderResultForAssistant(data: TextBlock[]) {
     return textBlocksToString(data)
   },
-  renderToolUseMessage({ description, prompt, model_name, subagent_type, team_name, name }, { verbose }) {
-    if (!description || !prompt) return null
-
-    const modelManager = getModelManager()
-    const defaultTaskModel = modelManager.getModelName('task')
-    const actualModel = model_name || defaultTaskModel
-    const agentType = subagent_type || 'general-purpose'
-    const promptPreview =
-      prompt.length > 80 ? prompt.substring(0, 80) + '...' : prompt
-    const teammateSuffix =
-      team_name || name
-        ? ` · team=${team_name || 'auto'} · name=${name || 'auto'}`
-        : ''
-
-    const theme = getTheme()
-    
-    if (verbose) {
-      return (
-        <Box flexDirection="column">
-          <Text>
-            [{agentType}] {actualModel}: {description}{teammateSuffix}
-          </Text>
-          <Box
-            paddingLeft={2}
-            borderLeftStyle="single"
-            borderLeftColor={theme.secondaryBorder}
-          >
-            <Text color={theme.secondaryText}>{promptPreview}</Text>
-          </Box>
-        </Box>
-      )
-    }
-
-    // Simple display: agent type, model and description
-    return `[${agentType}] ${actualModel}: ${description}${teammateSuffix}`
+  renderToolUseMessage({ description }, { verbose }) {
+    if (!description) return null
+    return `${description}`
   },
   renderToolUseRejectedMessage() {
     return <FallbackToolUseRejectedMessage />
@@ -465,7 +431,7 @@ export const TaskTool = {
         // CRITICAL FIX: Match original system interrupt rendering exactly
         return (
           <Box flexDirection="row">
-            <Text color={theme.secondaryText}>{TREE_END} </Text>
+            <Text color={theme.yuuka}>{TASK_DASH} </Text>
             <Text color={theme.error}>Interrupted by user</Text>
           </Box>
         )
@@ -475,7 +441,7 @@ export const TaskTool = {
         <Box flexDirection="column">
           <Box justifyContent="space-between" width="100%">
             <Box flexDirection="row">
-              <Text color={theme.secondaryText}>{TREE_END} </Text>
+              <Text color={theme.yuuka}>{TASK_DASH} </Text>
               <Text color={theme.success}>Task completed</Text>
               {textBlocks.length > 0 && (
                 <Text color={theme.secondaryText}>
@@ -491,7 +457,7 @@ export const TaskTool = {
 
     return (
       <Box flexDirection="row">
-        <Text color={theme.secondaryText}>{TREE_END} </Text>
+        <Text color={theme.yuuka}>{TASK_DASH} </Text>
         <Text color={theme.secondaryText}>Task completed</Text>
       </Box>
     )
