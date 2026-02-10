@@ -40,6 +40,7 @@ import { BashTool } from '@tools/BashTool/BashTool'
 import { getCwd } from './utils/state'
 import { checkAutoCompact } from './utils/autoCompactCore'
 import { setSessionState } from '@utils/sessionState'
+import { TOOL_NAME as SKILL_TOOL_NAME } from '@tools/SkillTool/constants'
 
 // Extended ToolUseContext for query functions
 interface ExtendedToolUseContext extends ToolUseContext {
@@ -226,6 +227,78 @@ function applyToolUseSerialGate(
   }
 }
 
+type ActiveSkillConstraint = {
+  skillName: string
+  allowedTools: string[]
+}
+
+function getLatestActiveSkillConstraint(
+  messages: Message[],
+): ActiveSkillConstraint | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i]
+    if (!message || message.type !== 'user' || !message.toolUseResult) {
+      continue
+    }
+
+    const resultData = message.toolUseResult.data as any
+    if (!resultData || typeof resultData !== 'object') {
+      continue
+    }
+    if (resultData.toolName !== SKILL_TOOL_NAME) {
+      continue
+    }
+    if (resultData.error) {
+      return null
+    }
+
+    const allowedTools =
+      Array.isArray(resultData.allowedTools) &&
+      resultData.allowedTools.every((item: unknown) => typeof item === 'string')
+        ? (resultData.allowedTools as string[]).map(item => item.trim()).filter(Boolean)
+        : []
+
+    return {
+      skillName: String(resultData.skillName ?? 'unknown-skill'),
+      allowedTools,
+    }
+  }
+  return null
+}
+
+function applyActiveSkillConstraintToTools(
+  tools: Tool[],
+  constraint: ActiveSkillConstraint | null,
+): {
+  tools: Tool[]
+  prompt: string | null
+} {
+  if (!constraint || constraint.allowedTools.length === 0) {
+    return { tools, prompt: null }
+  }
+
+  if (constraint.allowedTools.includes('*')) {
+    return { tools, prompt: null }
+  }
+
+  const allowedToolNameSet = new Set(constraint.allowedTools)
+  const filteredTools = tools.filter(
+    tool => allowedToolNameSet.has(tool.name) || tool.name === SKILL_TOOL_NAME,
+  )
+  const effectiveTools =
+    filteredTools.length > 0
+      ? filteredTools
+      : tools.filter(tool => tool.name === SKILL_TOOL_NAME)
+
+  return {
+    tools: effectiveTools,
+    prompt: `\n# Active Skill Constraint
+当前生效 skill：${constraint.skillName}
+你现在只能使用这些工具：${constraint.allowedTools.join(', ')}
+必须严格遵守该工具白名单；如需更换白名单，请先调用 ${SKILL_TOOL_NAME}。`,
+  }
+}
+
 // Returns a message if we got one, or `null` if the user cancelled
 async function queryWithBinaryFeedback(
   toolUseContext: ExtendedToolUseContext,
@@ -304,16 +377,39 @@ export async function* query(
     messages = processedMessages
   }
 
+  const activeSkillConstraint = getLatestActiveSkillConstraint(messages)
+  const { tools: effectiveTools, prompt: skillConstraintPrompt } =
+    applyActiveSkillConstraintToTools(
+      toolUseContext.options.tools,
+      activeSkillConstraint,
+    )
+  const effectiveToolUseContext: ExtendedToolUseContext = {
+    ...toolUseContext,
+    options: {
+      ...toolUseContext.options,
+      tools: effectiveTools,
+    },
+  }
+
   markPhase('SYSTEM_PROMPT_BUILD')
 
   // Collect tool prompts (especially SkillTool which lists available skills)
-  const toolPrompts = await collectToolPrompts(toolUseContext.options.tools)
-  const systemPromptWithToolInstructions = toolPrompts.length > 0
-    ? [...systemPrompt, '\n# Tool Instructions\n', ...toolPrompts]
-    : systemPrompt
+  const toolPrompts = await collectToolPrompts(effectiveTools)
+  const extraPromptSections = [
+    ...(toolPrompts.length > 0 ? ['\n# Tool Instructions\n', ...toolPrompts] : []),
+    ...(skillConstraintPrompt ? [skillConstraintPrompt] : []),
+  ]
+  const systemPromptWithToolInstructions =
+    extraPromptSections.length > 0
+      ? [...systemPrompt, ...extraPromptSections]
+      : systemPrompt
 
   const { systemPrompt: fullSystemPrompt, reminders } =
-    formatSystemPromptWithContext(systemPromptWithToolInstructions, context, toolUseContext.agentId)
+    formatSystemPromptWithContext(
+      systemPromptWithToolInstructions,
+      context,
+      toolUseContext.agentId,
+    )
 
   // Emit session startup event
   emitReminderEvent('session:startup', {
@@ -363,13 +459,13 @@ export async function* query(
       normalizeMessagesForAPI(messages),
       fullSystemPrompt,
       toolUseContext.options.maxThinkingTokens,
-      toolUseContext.options.tools,
+      effectiveTools,
       toolUseContext.abortController.signal,
       {
         safeMode: toolUseContext.options.safeMode ?? false,
         model: toolUseContext.options.model || 'main',
         prependCLISysprompt: true,
-        toolUseContext: toolUseContext,
+        toolUseContext: effectiveToolUseContext,
       },
     )
   }
@@ -439,7 +535,7 @@ export async function* query(
   // 并丢弃它之后的所有 tool_use，迫使模型等 tool_result 再决定下一步。
   assistantMessage = applyToolUseSerialGate(
     assistantMessage,
-    toolUseContext.options.tools,
+    effectiveTools,
   )
 
   yield assistantMessage
@@ -457,7 +553,7 @@ export async function* query(
 
   const toolResults: UserMessage[] = []
 
-  const toolByName = new Map(toolUseContext.options.tools.map(tool => [tool.name, tool]))
+  const toolByName = new Map(effectiveTools.map(tool => [tool.name, tool]))
   const executionGroups: Array<{ concurrent: boolean; toolUses: ToolUseBlock[] }> = []
   let pendingConcurrent: ToolUseBlock[] = []
 
@@ -488,7 +584,7 @@ export async function* query(
       group.toolUses,
       assistantMessage,
       canUseTool,
-      toolUseContext,
+      effectiveToolUseContext,
       shouldSkipPermissionCheck,
     )) {
       yield message

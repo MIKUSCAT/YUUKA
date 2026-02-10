@@ -1,13 +1,13 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
-import { dirname, join, resolve } from 'path'
-import { getOriginalCwd } from '@utils/state'
+import { dirname, join } from 'path'
+import { homedir } from 'os'
 import { logError } from '@utils/log'
 
 const MAX_HISTORY_ITEMS = 100
-const HISTORY_FILE_RELATIVE_PATH = join('.gemini', 'yuuka', 'history.json')
+const HISTORY_FILE_PATH = join(homedir(), '.yuuka', 'data', 'history.json')
 
 function getHistoryFilePath(): string {
-  return resolve(getOriginalCwd(), HISTORY_FILE_RELATIVE_PATH)
+  return HISTORY_FILE_PATH
 }
 
 function readHistoryFile(filePath: string): string[] {

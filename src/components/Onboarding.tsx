@@ -8,7 +8,6 @@ import {
 } from '@utils/config'
 import { OrderedList } from '@inkjs/ui'
 import { useExitOnCtrlCD } from '@hooks/useExitOnCtrlCD'
-import { MIN_LOGO_WIDTH } from './Logo'
 import { Select } from './CustomSelect/select'
 import { StructuredDiff } from './StructuredDiff'
 import { getTheme, type ThemeNames } from '@utils/theme'
@@ -174,14 +173,14 @@ export function Onboarding({ onDone }: Props): React.ReactNode {
           <Text color={theme.secondaryText}>
             现在只支持 Gemini 原生 API（Bearer + 可配 baseUrl）。
             <Newline />
-            配置只放在全局 ~/.gemini/settings.json。
+            配置只放在全局 ~/.yuuka/settings.json。
           </Text>
         </Text>
         <Box marginTop={1}>
           <Text>
             你需要做两步：
             <Newline />
-            1) 在 ~/.gemini/settings.json 填写 security.auth.geminiApi.apiKey
+            1) 在 ~/.yuuka/settings.json 填写 security.auth.geminiApi.apiKey
             <Newline />
             2) 运行 /model &lt;name&gt; 设置 model.name（写入全局 settings）
           </Text>
@@ -218,23 +217,6 @@ export function Onboarding({ onDone }: Props): React.ReactNode {
           {steps[currentStepIndex]?.component}
         </Box>
       </>
-    </Box>
-  )
-}
-
-export function WelcomeBox(): React.ReactNode {
-  const theme = getTheme()
-  return (
-    <Box
-      borderColor={theme.yuuka}
-      borderStyle="round"
-      paddingX={1}
-      width={MIN_LOGO_WIDTH}
-    >
-      <Text>
-        <Text color={theme.yuuka}>✻</Text> Welcome to{' '}
-        <Text bold>{PRODUCT_NAME}</Text> research preview!
-      </Text>
     </Box>
   )
 }

@@ -62,6 +62,8 @@ const DEFAULT_PROJECT_CONFIG: ProjectConfig = {
   hasTrustDialogAccepted: false,
 }
 
+const GLOBAL_PROJECT_SCOPE_KEY = '__global__'
+
 function defaultConfigForProject(projectPath: string): ProjectConfig {
   const config = { ...DEFAULT_PROJECT_CONFIG }
   if (projectPath === homedir()) {
@@ -134,6 +136,7 @@ export type GlobalConfig = {
   mcpServers?: Record<string, McpServerConfig>
   preferredNotifChannel: NotificationChannel
   verbose: boolean
+  agentExecutionMode?: 'inline' | 'process'
   customApiKeyResponses?: {
     approved?: string[]
     rejected?: string[]
@@ -145,6 +148,8 @@ export type GlobalConfig = {
   iterm2KeyBindingInstalled?: boolean // Legacy - keeping for backward compatibility
   shiftEnterKeyBindingInstalled?: boolean
   proxy?: string
+  proxyEnabled?: boolean
+  proxyPort?: number
   stream?: boolean
   thinkingGemini3Level?: 'low' | 'high'
   thinkingNonGemini3Budget?: number
@@ -165,6 +170,9 @@ export const DEFAULT_GLOBAL_CONFIG: GlobalConfig = {
   theme: 'dark' as ThemeNames,
   preferredNotifChannel: 'iterm2',
   verbose: false,
+  agentExecutionMode: 'inline',
+  proxyEnabled: true,
+  proxyPort: 7890,
   primaryProvider: 'gemini' as ProviderType,
   customApiKeyResponses: {
     approved: [],
@@ -194,6 +202,9 @@ export const GLOBAL_CONFIG_KEYS = [
   'lastOnboardingVersion',
   'lastReleaseNotesSeen',
   'verbose',
+  'agentExecutionMode',
+  'proxyEnabled',
+  'proxyPort',
   'proxy',
   'customApiKeyResponses',
   'primaryProvider',
@@ -258,6 +269,18 @@ function extractGlobalConfigFromSettings(settings: GeminiSettings): GlobalConfig
     ...(yuuka as any),
   }
 
+  const rawProxyEnabled = (mergedConfig as any).proxyEnabled
+  mergedConfig.proxyEnabled =
+    typeof rawProxyEnabled === 'boolean' ? rawProxyEnabled : true
+
+  const rawProxyPort = Number((mergedConfig as any).proxyPort)
+  mergedConfig.proxyPort =
+    Number.isFinite(rawProxyPort) &&
+    rawProxyPort >= 1 &&
+    rawProxyPort <= 65535
+      ? Math.floor(rawProxyPort)
+      : 7890
+
   // 兼容 Gemini CLI 的字段：ui/theme、mcpServers 放在顶层
   if (settings.ui?.theme) {
     mergedConfig.theme = settings.ui.theme as ThemeNames
@@ -283,7 +306,19 @@ function applyGlobalConfigToSettings(
   next.ui = next.ui ?? {}
   next.ui.theme = config.theme
 
-  if (config.proxy) {
+  const proxyEnabled = config.proxyEnabled ?? true
+  const rawProxyPort = Number(config.proxyPort)
+  const proxyPort =
+    Number.isFinite(rawProxyPort) &&
+    rawProxyPort >= 1 &&
+    rawProxyPort <= 65535
+      ? Math.floor(rawProxyPort)
+      : 7890
+  const autoLocalProxy = `http://127.0.0.1:${proxyPort}`
+
+  if (proxyEnabled) {
+    next.proxy = autoLocalProxy
+  } else if (config.proxy) {
     next.proxy = config.proxy
   } else {
     delete (next as any).proxy
@@ -300,9 +335,13 @@ function applyGlobalConfigToSettings(
 export function checkHasTrustDialogAccepted(): boolean {
   let currentPath = getCwd()
   const globalConfig = getGlobalConfig()
+  const globalScopedConfig = globalConfig.projects?.[GLOBAL_PROJECT_SCOPE_KEY]
+  if (globalScopedConfig?.hasTrustDialogAccepted) {
+    return true
+  }
 
   while (true) {
-    // 先看项目 settings（.gemini/settings.json）
+    // 先看项目 settings（.yuuka/settings.json）
     const projectSettingsPath = getProjectGeminiSettingsPath(currentPath)
     if (existsSync(projectSettingsPath)) {
       const projectSettings = readGeminiSettingsFile(projectSettingsPath)
@@ -421,7 +460,7 @@ export function enableConfigs(): void {
   // Any reads to configuration before this flag is set show an console warning
   // to prevent us from adding config reading during module initialization
   configReadingAllowed = true
-  // 校验项目 .gemini/settings.json 是否可解析
+  // 校验项目 .yuuka/settings.json 是否可解析
   getGlobalSettings(true /* throwOnInvalid */)
 }
 
@@ -529,14 +568,28 @@ export function getCurrentProjectConfig(): ProjectConfig {
     return projectConfig
   }
 
-  // 1) 全局 settings 里按项目路径存储（推荐）
+  // 1) 优先读取统一全局项目槽位（跨目录共享）
   const globalConfig = getGlobalConfig()
+  const fromGlobalScoped = globalConfig.projects?.[GLOBAL_PROJECT_SCOPE_KEY]
+  if (fromGlobalScoped) {
+    return normalizeProjectConfig(fromGlobalScoped)
+  }
+
+  // 2) 兼容历史：按 cwd 存储的项目配置，迁移到统一全局槽位
   const fromGlobal = globalConfig.projects?.[projectRoot]
   if (fromGlobal) {
+    const nextGlobalConfig: GlobalConfig = {
+      ...globalConfig,
+      projects: {
+        ...(globalConfig.projects ?? {}),
+        [GLOBAL_PROJECT_SCOPE_KEY]: fromGlobal,
+      },
+    }
+    saveGlobalConfig(nextGlobalConfig)
     return normalizeProjectConfig(fromGlobal)
   }
 
-  // 2) 兼容旧版：项目 .gemini/settings.json 里存了 yuuka.project
+  // 3) 兼容更旧版：项目 .yuuka/settings.json 里存了 yuuka.project
   const projectSettingsPath = getProjectSettingsPath(projectRoot)
   if (existsSync(projectSettingsPath)) {
     try {
@@ -548,7 +601,7 @@ export function getCurrentProjectConfig(): ProjectConfig {
           ...globalConfig,
           projects: {
             ...(globalConfig.projects ?? {}),
-            [projectRoot]: fromProjectSettings,
+            [GLOBAL_PROJECT_SCOPE_KEY]: fromProjectSettings,
           },
         }
         saveGlobalConfig(nextGlobalConfig)
@@ -572,13 +625,12 @@ export function saveCurrentProjectConfig(projectConfig: ProjectConfig): void {
     return
   }
 
-  const projectRoot = resolve(getCwd())
   const globalConfig = getGlobalConfig()
   const next: GlobalConfig = {
     ...globalConfig,
     projects: {
       ...(globalConfig.projects ?? {}),
-      [projectRoot]: projectConfig,
+      [GLOBAL_PROJECT_SCOPE_KEY]: projectConfig,
     },
   }
   saveGlobalConfig(next)
@@ -731,6 +783,22 @@ export function setConfigForCLI(
         process.exit(1)
       }
       value = normalized === 'true'
+    }
+    if (key === 'proxyEnabled') {
+      const normalized = String(value).trim().toLowerCase()
+      if (normalized !== 'true' && normalized !== 'false') {
+        console.error(`Error: proxyEnabled must be true or false`)
+        process.exit(1)
+      }
+      value = normalized === 'true'
+    }
+    if (key === 'proxyPort') {
+      const parsed = Number.parseInt(String(value), 10)
+      if (!Number.isFinite(parsed) || parsed < 1 || parsed > 65535) {
+        console.error(`Error: proxyPort must be an integer between 1 and 65535`)
+        process.exit(1)
+      }
+      value = Math.floor(parsed)
     }
 
     const currentConfig = getGlobalConfig()

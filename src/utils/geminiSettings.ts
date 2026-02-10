@@ -31,7 +31,7 @@ export type GeminiSettings = {
 }
 
 export function getProjectGeminiDir(projectRoot: string): string {
-  return join(projectRoot, '.gemini')
+  return join(projectRoot, '.yuuka')
 }
 
 export function getProjectGeminiSettingsPath(projectRoot: string): string {
@@ -46,7 +46,7 @@ export function getWorkspaceGeminiSettingsPath(projectRoot?: string): string {
 export function normalizeGeminiApiRoot(baseUrl: string): string {
   const trimmed = baseUrl.trim().replace(/\/+$/, '')
   if (!trimmed) {
-    throw new Error('baseUrl 不能为空（来自 ~/.gemini/settings.json）')
+    throw new Error('baseUrl 不能为空（来自 ~/.yuuka/settings.json）')
   }
   if (trimmed.endsWith('/v1') || trimmed.endsWith('/v1beta')) {
     return trimmed
@@ -57,7 +57,7 @@ export function normalizeGeminiApiRoot(baseUrl: string): string {
 export function normalizeGeminiModelName(model: string): string {
   const trimmed = model?.trim()
   if (!trimmed) {
-    throw new Error('model.name 不能为空（来自 ~/.gemini/settings.json）')
+    throw new Error('model.name 不能为空（来自 ~/.yuuka/settings.json）')
   }
   if (trimmed.includes('..') || trimmed.includes('?') || trimmed.includes('&')) {
     throw new Error('model.name 参数不合法')
@@ -107,7 +107,7 @@ export type EnsureGeminiSettingsResult = {
 }
 
 export function getGlobalGeminiSettingsPath(): string {
-  return join(homedir(), '.gemini', 'settings.json')
+  return join(homedir(), '.yuuka', 'settings.json')
 }
 
 export function ensureGeminiSettings({

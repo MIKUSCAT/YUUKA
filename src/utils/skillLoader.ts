@@ -1,17 +1,16 @@
 /**
  * Skill configuration loader
  * Loads skill configurations from SKILL.md files with YAML frontmatter.
- * Uses Gemini CLI-style `.gemini/skills` directory structure.
+ * Uses `.yuuka/skills` directory structure.
  *
  * Skills are directory-based: each skill is a folder containing SKILL.md
- * Example: ~/.gemini/skills/pdf/SKILL.md
+ * Example: ~/.yuuka/skills/pdf/SKILL.md
  */
 
 import { existsSync, readFileSync, readdirSync, statSync, watch, FSWatcher } from 'fs'
 import { basename, join } from 'path'
 import { homedir } from 'os'
 import matter from 'gray-matter'
-import { getCwd } from './state'
 import { memoize } from 'lodash-es'
 import { emitReloadStatus } from './reloadStatus'
 import { getSessionEnabledSkillNames } from './skillSession'
@@ -21,6 +20,7 @@ export interface SkillConfig {
   description: string       // When to use this skill (for model discovery)
   instructions: string      // Skill instructions (markdown body)
   allowedTools?: string[]   // Optional: restrict available tools
+  chain?: string[]          // Optional: compose multiple skills
   location: 'user' | 'project'
   dirPath: string          // Full path to skill directory
 }
@@ -45,6 +45,25 @@ function parseAllowedTools(tools: any): string[] | undefined {
   if (typeof tools === 'string') {
     // Support comma-separated string: "Read, Grep, Glob"
     return tools.split(',').map(t => t.trim()).filter(Boolean)
+  }
+  return undefined
+}
+
+function parseSkillChain(chain: any): string[] | undefined {
+  if (!chain) return undefined
+  if (Array.isArray(chain)) {
+    const filtered = chain
+      .filter((item): item is string => typeof item === 'string')
+      .map(item => item.trim())
+      .filter(Boolean)
+    return filtered.length > 0 ? filtered : undefined
+  }
+  if (typeof chain === 'string') {
+    const normalized = chain
+      .split(',')
+      .map(item => item.trim())
+      .filter(Boolean)
+    return normalized.length > 0 ? normalized : undefined
   }
   return undefined
 }
@@ -152,6 +171,7 @@ async function scanSkillDirectory(basePath: string, location: 'user' | 'project'
           description: frontmatter.description,
           instructions: body.trim(),
           allowedTools: parseAllowedTools(frontmatter['allowed-tools']),
+          chain: parseSkillChain(frontmatter['chain']),
           location,
           dirPath: skillDirPath,
         }
@@ -176,33 +196,12 @@ async function loadAllSkills(): Promise<{
   allSkills: SkillConfig[]
 }> {
   try {
-    // Gemini-only：只读取 .gemini/skills（全局 + 项目）
-    const userGeminiDir = join(homedir(), '.gemini', 'skills')
-    const projectGeminiDir = join(getCwd(), '.gemini', 'skills')
+    // 全局模式：只读取 ~/.yuuka/skills
+    const userGeminiDir = join(homedir(), '.yuuka', 'skills')
 
-    const [
-      userGeminiSkills,
-      projectGeminiSkills,
-    ] = await Promise.all([
-      scanSkillDirectory(userGeminiDir, 'user'),
-      scanSkillDirectory(projectGeminiDir, 'project'),
-    ])
-
-    // Apply priority override: project < user (user overrides project)
-    const skillMap = new Map<string, SkillConfig>()
-
-    for (const skill of projectGeminiSkills) {
-      skillMap.set(skill.name, skill)
-    }
-    for (const skill of userGeminiSkills) {
-      skillMap.set(skill.name, skill)
-    }
-
-    const activeSkills = Array.from(skillMap.values())
-    const allSkills = [
-      ...projectGeminiSkills,
-      ...userGeminiSkills,
-    ]
+    const userGeminiSkills = await scanSkillDirectory(userGeminiDir, 'user')
+    const activeSkills = [...userGeminiSkills]
+    const allSkills = [...userGeminiSkills]
 
     return { activeSkills, allSkills }
   } catch (error) {
@@ -321,8 +320,7 @@ let watchers: FSWatcher[] = []
 export async function startSkillWatcher(onChange?: () => void): Promise<void> {
   await stopSkillWatcher() // Clean up any existing watchers
 
-  const userGeminiDir = join(homedir(), '.gemini', 'skills')
-  const projectGeminiDir = join(getCwd(), '.gemini', 'skills')
+  const userGeminiDir = join(homedir(), '.yuuka', 'skills')
 
   const watchDirectory = (dirPath: string) => {
     if (existsSync(dirPath)) {
@@ -340,7 +338,6 @@ export async function startSkillWatcher(onChange?: () => void): Promise<void> {
   }
 
   watchDirectory(userGeminiDir)
-  watchDirectory(projectGeminiDir)
 }
 
 /**

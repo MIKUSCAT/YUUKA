@@ -2,7 +2,6 @@ import { Box, Text } from 'ink'
 import * as React from 'react'
 import { TodoItem } from '@utils/todoStorage'
 import { getTheme } from '@utils/theme'
-import { TREE_END } from '@constants/figures'
 
 const MAX_VISIBLE_TODOS = 12
 
@@ -55,7 +54,6 @@ export function TodoPanel({ todos }: { todos: TodoItem[] }) {
     >
       <Box flexDirection="row" justifyContent="space-between">
         <Box flexDirection="row">
-          <Text color={theme.secondaryText}>{TREE_END} </Text>
           <Text color={theme.secondaryText} bold>
             Todo
           </Text>
@@ -72,7 +70,7 @@ export function TodoPanel({ todos }: { todos: TodoItem[] }) {
 
       {visibleTodos.length === 0 ? (
         <Box flexDirection="row">
-          <Text color={theme.secondaryText}>{TREE_END} </Text>
+          <Text color={theme.secondaryText}>  </Text>
           <Text color={theme.secondaryText}>(空)</Text>
         </Box>
       ) : (
@@ -98,7 +96,7 @@ export function TodoPanel({ todos }: { todos: TodoItem[] }) {
 
             return (
               <Box key={todo.id} flexDirection="row">
-                <Text color={theme.secondaryText}>{TREE_END} </Text>
+                <Text>{'  '}</Text>
                 <Text color={getPriorityColor(todo.priority, theme)}>
                   {statusIcon}{' '}
                 </Text>
@@ -115,7 +113,7 @@ export function TodoPanel({ todos }: { todos: TodoItem[] }) {
 
           {remaining > 0 && (
             <Box flexDirection="row">
-              <Text color={theme.secondaryText}>{TREE_END} </Text>
+              <Text color={theme.secondaryText}>  </Text>
               <Text color={theme.secondaryText} dimColor>
                 ... (+{remaining} more)
               </Text>

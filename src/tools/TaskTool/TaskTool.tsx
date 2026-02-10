@@ -1,39 +1,33 @@
 import { TextBlock } from '@anthropic-ai/sdk/resources/index.mjs'
-import chalk from 'chalk'
-import { last, memoize } from 'lodash-es'
-import { EOL } from 'os'
-import React, { useState, useEffect } from 'react'
+import React from 'react'
 import { Box, Text } from 'ink'
 import { z } from 'zod'
-import { Tool, ValidationResult } from '@tool'
+import { Tool } from '@tool'
 import { FallbackToolUseRejectedMessage } from '@components/FallbackToolUseRejectedMessage'
-import { getAgentPrompt } from '@constants/prompts'
-import { getContext } from '@context'
-import { hasPermissionsToUseTool } from '@permissions'
-import { AssistantMessage, Message as MessageType, query } from '@query'
-import { formatDuration, formatNumber } from '@utils/format'
-import {
-  getMessagesPath,
-  getNextAvailableLogSidechainNumber,
-  overwriteLog,
-} from '@utils/log'
-import { applyMarkdown } from '@utils/markdown'
 import {
   createAssistantMessage,
-  createUserMessage,
-  getLastAssistantMessageId,
   INTERRUPT_MESSAGE,
-  normalizeMessages,
 } from '@utils/messages'
 import { getModelManager } from '@utils/model'
-import { getMaxThinkingTokens } from '@utils/thinking'
 import { getTheme } from '@utils/theme'
-import { generateAgentId } from '@utils/agentStorage'
-import { debug as debugLogger } from '@utils/debugLogger'
-import { getTaskTools, getPrompt } from './prompt'
+import { getGlobalConfig } from '@utils/config'
+import { getOriginalCwd } from '@utils/state'
+import { getPrompt } from './prompt'
 import { TOOL_NAME } from './constants'
-import { getActiveAgents, getAgentByType, getAvailableAgentTypes } from '@utils/agentLoader'
+import { getAvailableAgentTypes } from '@utils/agentLoader'
 import { TREE_END } from '@constants/figures'
+import { encodeTaskProgress } from '@components/messages/TaskProgressMessage'
+import {
+  createTeamTask,
+  readTeamTask,
+  spawnTeammateProcess,
+  updateTeamTask,
+} from '@services/teamManager'
+import { normalizeAgentName, normalizeTeamName } from '@services/teamPaths'
+import {
+  runAgentTaskExecutionStream,
+  TaskExecutionProgress,
+} from './runAgentTaskExecution'
 
 const inputSchema = z.object({
   description: z
@@ -52,22 +46,34 @@ const inputSchema = z.object({
     .describe(
       'The type of specialized agent to use for this task',
     ),
+  team_name: z
+    .string()
+    .optional()
+    .describe('Optional team workspace name (process mode)'),
+  name: z
+    .string()
+    .optional()
+    .describe('Optional teammate instance name (process mode)'),
 })
+
+function textBlocksToString(data: TextBlock[]): string {
+  return data.map(block => (block.type === 'text' ? block.text : '')).join('\n')
+}
 
 export const TaskTool = {
   async prompt({ safeMode }) {
-    // Ensure agent prompts remain compatible with Claude Code `.claude` agent packs
+    // Keep prompts aligned with current `.yuuka/agents` definitions
     return await getPrompt(safeMode)
   },
   name: TOOL_NAME,
   async description() {
-    // Ensure metadata stays compatible with Claude Code `.claude` agent packs
+    // Keep metadata aligned with current `.yuuka/agents` definitions
     return "Launch a new task"
   },
   inputSchema,
   
   async *call(
-    { description, prompt, model_name, subagent_type },
+    { description, prompt, model_name, subagent_type, team_name, name },
     toolUseContext,
   ): AsyncGenerator<
     | { type: 'result'; data: TextBlock[]; resultForAssistant?: string }
@@ -77,262 +83,247 @@ export const TaskTool = {
   > {
     const {
       abortController,
-      options: { safeMode = false, forkNumber, messageLogName, verbose },
+      options: {
+        safeMode = false,
+        forkNumber = 0,
+        messageLogName = 'task',
+        verbose = false,
+      },
       readFileTimestamps,
     } = toolUseContext as any
 
-    const startTime = Date.now()
-    
-    // Default to general-purpose if no subagent_type specified
+    const executionMode = getGlobalConfig().agentExecutionMode ?? 'inline'
     const agentType = subagent_type || 'general-purpose'
-    
-    // Apply subagent configuration
-    let effectivePrompt = prompt
-    let effectiveModel = model_name || 'task'
-    let toolFilter = null
-    let temperature = undefined
-    
-    // Load agent configuration dynamically
-    if (agentType) {
-      const agentConfig = await getAgentByType(agentType)
-      
-      if (!agentConfig) {
-        // If agent type not found, return helpful message instead of throwing
-        const availableTypes = await getAvailableAgentTypes()
-        const helpMessage = `Agent type '${agentType}' not found.\n\nAvailable agents:\n${availableTypes.map(t => `  • ${t}`).join('\n')}\n\nUse /agents command to manage agent configurations.`
-        
+    const timelineItems: string[] = []
+    const pushTimeline = (value?: string) => {
+      if (!value || typeof value !== 'string') return
+      const normalized = value.replace(/\s+/g, ' ').trim()
+      if (!normalized) return
+      if (timelineItems[timelineItems.length - 1] === normalized) return
+      timelineItems.push(normalized)
+      if (timelineItems.length > 24) {
+        timelineItems.shift()
+      }
+    }
+    const getTimelineSnapshot = () => timelineItems.slice(-4)
+
+    const createProgressOutput = (progress: TaskExecutionProgress) => {
+      pushTimeline(progress.lastAction)
+      return {
+        type: 'progress' as const,
+        content: createAssistantMessage(
+          encodeTaskProgress({
+            agentType: progress.agentType,
+            status: progress.status,
+            model: progress.model,
+            toolCount: progress.toolCount,
+            tokenCount: progress.tokenCount,
+            elapsedMs: progress.elapsedMs,
+            lastAction: progress.lastAction,
+            timeline: getTimelineSnapshot(),
+          }),
+        ),
+      }
+    }
+
+    const createResultOutput = (text: string) => {
+      const data: TextBlock[] = [{ type: 'text', text }] as TextBlock[]
+      return {
+        type: 'result' as const,
+        data,
+        resultForAssistant: textBlocksToString(data),
+      }
+    }
+
+    if (executionMode === 'process') {
+      try {
+        const resolvedTeamName = normalizeTeamName(team_name || messageLogName)
+        const teammateName = normalizeAgentName(
+          name || `${agentType}-${Date.now().toString(36).slice(-5)}`,
+        )
+
+        const { taskPath } = createTeamTask({
+          teamName: resolvedTeamName,
+          agentName: teammateName,
+          description,
+          prompt,
+          subagent_type,
+          model_name,
+          safeMode,
+          verbose,
+          forkNumber,
+          messageLogName,
+        })
+
+        yield createProgressOutput({
+          agentType,
+          status: '排队中',
+          model: model_name || 'task',
+          toolCount: 0,
+          elapsedMs: 0,
+          lastAction: `team=${resolvedTeamName} · worker=${teammateName}`,
+        })
+
+        const child = spawnTeammateProcess({
+          taskPath,
+          cwd: getOriginalCwd(),
+          safeMode,
+        })
+        let childExitedAt: number | null = null
+        child.on('exit', () => {
+          if (childExitedAt === null) {
+            childExitedAt = Date.now()
+          }
+        })
+
+        let lastProgressIndex = 0
+        const startTime = Date.now()
+        const sleep = (ms: number) =>
+          new Promise(resolve => setTimeout(resolve, ms))
+
+        while (true) {
+          if (abortController.signal.aborted) {
+            child.kill('SIGTERM')
+            setTimeout(() => {
+              if (child.exitCode === null) {
+                child.kill('SIGKILL')
+              }
+            }, 1000)
+            updateTeamTask(taskPath, current => {
+              if (
+                current.status === 'completed' ||
+                current.status === 'failed' ||
+                current.status === 'cancelled'
+              ) {
+                return current
+              }
+              return {
+                ...current,
+                status: 'cancelled',
+                endedAt: Date.now(),
+                error: 'Cancelled by lead agent',
+              }
+            })
+            const interruptedData: TextBlock[] = [
+              { type: 'text', text: INTERRUPT_MESSAGE },
+            ] as TextBlock[]
+            yield {
+              type: 'result',
+              data: interruptedData,
+              resultForAssistant: textBlocksToString(interruptedData),
+            }
+            return
+          }
+
+          const taskState = readTeamTask(taskPath)
+          if (taskState) {
+            const newProgress = taskState.progress.slice(lastProgressIndex)
+            for (const progress of newProgress) {
+              yield createProgressOutput({
+                agentType,
+                status: progress.status,
+                model: progress.model || model_name || 'task',
+                toolCount: progress.toolCount ?? 0,
+                tokenCount: progress.tokenCount,
+                elapsedMs: progress.elapsedMs ?? Date.now() - startTime,
+                lastAction: progress.lastAction,
+              })
+            }
+            lastProgressIndex += newProgress.length
+
+            if (
+              taskState.status === 'completed' ||
+              taskState.status === 'failed' ||
+              taskState.status === 'cancelled'
+            ) {
+              const text =
+                taskState.status === 'completed'
+                  ? taskState.resultText || ''
+                  : taskState.error || `Task ended with status: ${taskState.status}`
+              yield createResultOutput(text)
+              return
+            }
+          }
+
+          if (child.exitCode !== null && !taskState) {
+            yield createResultOutput(
+              `Teammate process exited early (code ${child.exitCode}).`,
+            )
+            return
+          }
+
+          if (
+            child.exitCode !== null &&
+            taskState &&
+            (taskState.status === 'pending' || taskState.status === 'running')
+          ) {
+            if (childExitedAt === null) {
+              childExitedAt = Date.now()
+            }
+            if (Date.now() - childExitedAt > 1200) {
+              const failedState = updateTeamTask(taskPath, current => {
+                if (
+                  current.status === 'completed' ||
+                  current.status === 'failed' ||
+                  current.status === 'cancelled'
+                ) {
+                  return current
+                }
+                return {
+                  ...current,
+                  status: 'failed',
+                  endedAt: Date.now(),
+                  error: `Teammate process exited unexpectedly (code ${child.exitCode}).`,
+                }
+              })
+              yield createResultOutput(
+                failedState.error ||
+                  `Teammate process exited unexpectedly (code ${child.exitCode}).`,
+              )
+              return
+            }
+          }
+
+          await sleep(250)
+        }
+      } catch (error) {
+        const errorText = error instanceof Error ? error.message : String(error)
+        yield createResultOutput(errorText)
+        return
+      }
+    }
+
+    try {
+      for await (const event of runAgentTaskExecutionStream({
+        description,
+        prompt,
+        model_name,
+        subagent_type,
+        safeMode,
+        forkNumber,
+        messageLogName,
+        verbose,
+        abortController,
+        readFileTimestamps,
+        canUseTool: (toolUseContext as any)?.canUseTool,
+      })) {
+        if (event.type === 'progress') {
+          yield createProgressOutput(event.progress)
+          continue
+        }
         yield {
           type: 'result',
-          data: [{ type: 'text', text: helpMessage }] as TextBlock[],
-          resultForAssistant: helpMessage,
+          data: event.result.data,
+          resultForAssistant: event.result.resultForAssistant,
         }
         return
       }
-      
-      // Apply system prompt if configured
-      if (agentConfig.systemPrompt) {
-        effectivePrompt = `${agentConfig.systemPrompt}\n\n${prompt}`
-      }
-      
-      // Apply model if not overridden by model_name parameter
-      if (!model_name && agentConfig.model_name) {
-        // Support inherit: keep pointer-based default
-        if (agentConfig.model_name !== 'inherit') {
-          effectiveModel = agentConfig.model_name as string
-        }
-      }
-      
-      // Store tool filter for later application
-      toolFilter = agentConfig.tools
-      
-      // Note: temperature is not currently in our agent configs
-      // but could be added in the future
-    }
-    
-    const messages: MessageType[] = [createUserMessage(effectivePrompt)]
-    let tools = await getTaskTools(safeMode)
-    
-    // Apply tool filtering if specified by subagent config
-    if (toolFilter) {
-      // Back-compat: ['*'] means all tools
-      const isAllArray = Array.isArray(toolFilter) && toolFilter.length === 1 && toolFilter[0] === '*'
-      if (toolFilter === '*' || isAllArray) {
-        // no-op, keep all tools
-      } else if (Array.isArray(toolFilter)) {
-        tools = tools.filter(tool => toolFilter.includes(tool.name))
-      }
-    }
-
-    // Model already resolved in effectiveModel variable above
-    const modelToUse = effectiveModel
-
-    // 关键：优先复用主 REPL 的交互式授权回调（能弹确认框）。
-    // 非交互模式（或未提供）才退回到纯判断的 hasPermissionsToUseTool。
-    const canUseTool =
-      typeof (toolUseContext as any)?.canUseTool === 'function'
-        ? ((toolUseContext as any).canUseTool as any)
-        : hasPermissionsToUseTool
-
-    // Display initial task information with separate progress lines
-    yield {
-      type: 'progress',
-      content: createAssistantMessage(`Starting agent: ${agentType}`),
-      normalizedMessages: normalizeMessages(messages),
-      tools,
-    }
-    
-    yield {
-      type: 'progress', 
-      content: createAssistantMessage(`Using model: ${modelToUse}`),
-      normalizedMessages: normalizeMessages(messages),
-      tools,
-    }
-    
-    yield {
-      type: 'progress',
-      content: createAssistantMessage(`Task: ${description}`),
-      normalizedMessages: normalizeMessages(messages),
-      tools,
-    }
-    
-    yield {
-      type: 'progress',
-      content: createAssistantMessage(`Prompt: ${prompt.length > 150 ? prompt.substring(0, 150) + '...' : prompt}`),
-      normalizedMessages: normalizeMessages(messages),
-      tools,
-    }
-
-    const [taskPrompt, context, maxThinkingTokens] = await Promise.all([
-      getAgentPrompt(),
-      getContext(),
-      getMaxThinkingTokens(messages),
-    ])
-    
-    let toolUseCount = 0
-
-    const getSidechainNumber = memoize(() =>
-      getNextAvailableLogSidechainNumber(messageLogName, forkNumber),
-    )
-
-    // Generate unique Task ID for this task execution
-    const taskId = generateAgentId()
-
-    // ULTRA SIMPLIFIED: Exact original AgentTool pattern
-    // Build query options, adding temperature if specified
-    const queryOptions = {
-      safeMode,
-      forkNumber,
-      messageLogName,
-      tools,
-      commands: [],
-      verbose,
-      maxThinkingTokens,
-      model: modelToUse,
-    }
-    
-    // Add temperature if specified by subagent config
-    if (temperature !== undefined) {
-      queryOptions['temperature'] = temperature
-    }
-    
-    for await (const message of query(
-      messages,
-      taskPrompt,
-      context,
-      canUseTool,
-      {
-        abortController,
-        options: queryOptions,
-        messageId: getLastAssistantMessageId(messages),
-        agentId: taskId,
-        readFileTimestamps,
-        setToolJSX: () => {}, // No-op implementation for TaskTool
-      },
-    )) {
-      messages.push(message)
-
-      overwriteLog(
-        getMessagesPath(messageLogName, forkNumber, getSidechainNumber()),
-        messages.filter(_ => _.type !== 'progress'),
-      )
-
-      if (message.type !== 'assistant') {
-        continue
-      }
-
-      const normalizedMessages = normalizeMessages(messages)
-      
-      // Process tool uses and text content for better visibility
-      for (const content of message.message.content) {
-        if (content.type === 'text' && content.text && content.text !== INTERRUPT_MESSAGE) {
-          // Show agent's reasoning/responses
-          const preview = content.text.length > 200 ? content.text.substring(0, 200) + '...' : content.text
-          yield {
-            type: 'progress',
-            content: createAssistantMessage(`${preview}`),
-            normalizedMessages,
-            tools,
-          }
-        } else if (content.type === 'tool_use') {
-          toolUseCount++
-          
-          // Show which tool is being used with agent context
-          const toolMessage = normalizedMessages.find(
-            _ =>
-              _.type === 'assistant' &&
-              _.message.content[0]?.type === 'tool_use' &&
-              _.message.content[0].id === content.id,
-          ) as AssistantMessage
-          
-          if (toolMessage) {
-            // Clone and modify the message to show agent context
-            const modifiedMessage = {
-              ...toolMessage,
-              message: {
-                ...toolMessage.message,
-                content: toolMessage.message.content.map(c => {
-                  if (c.type === 'tool_use' && c.id === content.id) {
-                    // Add agent context to tool name display
-                    return {
-                      ...c,
-                      name: c.name // Keep original name, UI will handle display
-                    }
-                  }
-                  return c
-                })
-              }
-            }
-            
-            yield {
-              type: 'progress',
-              content: modifiedMessage,
-              normalizedMessages,
-              tools,
-            }
-          }
-        }
-      }
-    }
-
-    const normalizedMessages = normalizeMessages(messages)
-    const lastMessage = last(messages)
-    if (lastMessage?.type !== 'assistant') {
-      throw new Error('Last message was not an assistant message')
-    }
-
-    // CRITICAL FIX: Match original AgentTool interrupt handling pattern exactly
-    if (
-      lastMessage.message.content.some(
-        _ => _.type === 'text' && _.text === INTERRUPT_MESSAGE,
-      )
-    ) {
-      // Skip progress yield - only yield final result
-    } else {
-      const result = [
-        toolUseCount === 1 ? '1 tool use' : `${toolUseCount} tool uses`,
-        formatNumber(
-          (lastMessage.message.usage.cache_creation_input_tokens ?? 0) +
-            (lastMessage.message.usage.cache_read_input_tokens ?? 0) +
-            lastMessage.message.usage.input_tokens +
-            lastMessage.message.usage.output_tokens,
-        ) + ' tokens',
-        formatDuration(Date.now() - startTime),
-      ]
-      yield {
-        type: 'progress',
-        content: createAssistantMessage(`Task completed (${result.join(' · ')})`),
-        normalizedMessages,
-        tools,
-      }
-    }
-
-    // Output is an AssistantMessage, but since TaskTool is a tool, it needs
-    // to serialize its response to UserMessage-compatible content.
-    const data = lastMessage.message.content.filter(_ => _.type === 'text')
-    yield {
-      type: 'result',
-      data,
-      resultForAssistant: this.renderResultForAssistant(data),
+      yield createResultOutput('Task execution ended unexpectedly without result.')
+      return
+    } catch (error) {
+      const errorText = error instanceof Error ? error.message : String(error)
+      yield createResultOutput(errorText)
+      return
     }
   },
 
@@ -353,6 +344,18 @@ export const TaskTool = {
       return {
         result: false,
         message: 'Prompt is required and must be a string',
+      }
+    }
+    if (input.team_name && typeof input.team_name !== 'string') {
+      return {
+        result: false,
+        message: 'team_name must be a string',
+      }
+    }
+    if (input.name && typeof input.name !== 'string') {
+      return {
+        result: false,
+        message: 'name must be a string',
       }
     }
 
@@ -402,9 +405,9 @@ export const TaskTool = {
     return false
   },
   renderResultForAssistant(data: TextBlock[]) {
-    return data.map(block => block.type === 'text' ? block.text : '').join('\n')
+    return textBlocksToString(data)
   },
-  renderToolUseMessage({ description, prompt, model_name, subagent_type }, { verbose }) {
+  renderToolUseMessage({ description, prompt, model_name, subagent_type, team_name, name }, { verbose }) {
     if (!description || !prompt) return null
 
     const modelManager = getModelManager()
@@ -413,6 +416,10 @@ export const TaskTool = {
     const agentType = subagent_type || 'general-purpose'
     const promptPreview =
       prompt.length > 80 ? prompt.substring(0, 80) + '...' : prompt
+    const teammateSuffix =
+      team_name || name
+        ? ` · team=${team_name || 'auto'} · name=${name || 'auto'}`
+        : ''
 
     const theme = getTheme()
     
@@ -420,7 +427,7 @@ export const TaskTool = {
       return (
         <Box flexDirection="column">
           <Text>
-            [{agentType}] {actualModel}: {description}
+            [{agentType}] {actualModel}: {description}{teammateSuffix}
           </Text>
           <Box
             paddingLeft={2}
@@ -434,7 +441,7 @@ export const TaskTool = {
     }
 
     // Simple display: agent type, model and description
-    return `[${agentType}] ${actualModel}: ${description}`
+    return `[${agentType}] ${actualModel}: ${description}${teammateSuffix}`
   },
   renderToolUseRejectedMessage() {
     return <FallbackToolUseRejectedMessage />

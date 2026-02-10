@@ -17,9 +17,9 @@ import { SimpleSpinner } from '@components/Spinner'
 import { getValidGeminiCliAccessToken } from '@services/gemini/codeAssistAuth'
 
 export const help =
-  '选择/设置 Gemini 模型（写入全局 ~/.gemini/settings.json）；Enter 确认，Esc 退出'
+  '选择/设置 Gemini 模型（写入全局 ~/.yuuka/settings.json）；Enter 确认，Esc 退出'
 export const description =
-  '选择/设置 Gemini 模型（写入全局 ~/.gemini/settings.json）'
+  '选择/设置 Gemini 模型（写入全局 ~/.yuuka/settings.json）'
 export const isEnabled = true
 export const isHidden = false
 export const name = 'model'

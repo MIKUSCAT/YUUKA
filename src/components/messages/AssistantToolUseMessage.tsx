@@ -63,6 +63,9 @@ export function AssistantToolUseMessage({
     typeof toolMessage === 'string' && toolMessage.trim()
       ? toolMessage.trim()
       : ''
+  const isBashTool = tool.name === 'Bash'
+  const bashCommandPreview =
+    summary.length > 180 ? `${summary.slice(0, 180)}…` : summary
   const prefixWidth = 2
   // 简洁显示格式: ToolName summary
   const labelText = `${userFacingToolName}`
@@ -81,46 +84,55 @@ export function AssistantToolUseMessage({
   })()
 
   return (
-    <Box
-      flexDirection="row"
-      justifyContent="space-between"
-      marginTop={addMargin ? 1 : 0}
-      width="100%"
-    >
-      <Box flexDirection="row" flexGrow={1} minWidth={0}>
-        <Box minWidth={prefixWidth}>
-          {shouldShowDot ? (
-            <Text color={theme.yuuka}>{ASSISTANT_PREFIX}</Text>
-          ) : (
-            <Text>{'  '}</Text>
-          )}
-        </Box>
+    <Box flexDirection="column" marginTop={addMargin ? 1 : 0} width="100%">
+      <Box flexDirection="row" justifyContent="space-between" width="100%">
         <Box flexDirection="row" flexGrow={1} minWidth={0}>
-          {tool.name === 'Task' && param.input ? (
-            <TaskToolMessage
-              agentType={String((param.input as any).subagent_type || 'general-purpose')}
-              bold={Boolean(!isQueued)}
-              children={labelText}
-            />
-          ) : (
-            <Text color={color} bold={!isQueued} wrap="truncate-end">
-              {labelText}
-            </Text>
-          )}
-          {summary ? (
-            <Text color={theme.secondaryText} wrap="truncate-end">
-              {' '}
-              {summary}
-            </Text>
-          ) : null}
-          {indicator ? (
-            <Box marginLeft={1} width={2}>
-              {indicator}
-            </Box>
-          ) : null}
+          <Box minWidth={prefixWidth}>
+            {shouldShowDot ? (
+              <Text color={theme.yuuka}>{ASSISTANT_PREFIX}</Text>
+            ) : (
+              <Text>{'  '}</Text>
+            )}
+          </Box>
+          <Box flexDirection="row" flexGrow={1} minWidth={0}>
+            {tool.name === 'Task' && param.input ? (
+              <TaskToolMessage
+                agentType={String((param.input as any).subagent_type || 'general-purpose')}
+                bold={Boolean(!isQueued)}
+                children={labelText}
+              />
+            ) : (
+              <Text color={color} bold={!isQueued} wrap="truncate-end">
+                {labelText}
+              </Text>
+            )}
+            {summary && !isBashTool ? (
+              <Text color={theme.secondaryText} wrap="truncate-end">
+                {' '}
+                {summary}
+              </Text>
+            ) : null}
+            {indicator ? (
+              <Box marginLeft={1} width={2}>
+                {indicator}
+              </Box>
+            ) : null}
+          </Box>
         </Box>
+        <Cost costUSD={costUSD} durationMs={durationMs} debug={debug} />
       </Box>
-      <Cost costUSD={costUSD} durationMs={durationMs} debug={debug} />
+      {isBashTool && bashCommandPreview ? (
+        <Box
+          marginLeft={2}
+          borderStyle="round"
+          borderColor={theme.bashBorder}
+          paddingX={1}
+        >
+          <Text color={theme.secondaryText} wrap="truncate-end">
+            {bashCommandPreview}
+          </Text>
+        </Box>
+      ) : null}
     </Box>
   )
 }

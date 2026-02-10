@@ -1,14 +1,13 @@
 /**
  * Agent configuration loader
  * Loads agent configurations from markdown files with YAML frontmatter.
- * Maintains compatibility with Claude Code `.claude` agent directories.
+ * Uses `.yuuka/agents` directories.
  */
 
 import { existsSync, readFileSync, readdirSync, statSync, watch, FSWatcher } from 'fs'
-import { join, resolve } from 'path'
+import { join } from 'path'
 import { homedir } from 'os'
 import matter from 'gray-matter'
-import { getCwd } from './state'
 import { memoize } from 'lodash-es'
 import { emitReloadStatus } from './reloadStatus'
 
@@ -125,22 +124,14 @@ async function loadAllAgents(): Promise<{
   allAgents: AgentConfig[]
 }> {
   try {
-    // Gemini-only：只读取 .gemini/agents（全局 + 项目），并保留内置 agents
-    const userGeminiDir = join(homedir(), '.gemini', 'agents')
-    const projectGeminiDir = join(getCwd(), '.gemini', 'agents')
-    
-    const [
-      userGeminiAgents,
-      projectGeminiAgents,
-    ] = await Promise.all([
-      scanAgentDirectory(userGeminiDir, 'user'),
-      scanAgentDirectory(projectGeminiDir, 'project'),
-    ])
+    // 全局模式：只读取 ~/.yuuka/agents，并保留内置 agents
+    const userGeminiDir = join(homedir(), '.yuuka', 'agents')
+    const userGeminiAgents = await scanAgentDirectory(userGeminiDir, 'user')
     
     // Built-in agents (currently just general-purpose)
     const builtinAgents = [BUILTIN_GENERAL_PURPOSE]
     
-    // Apply priority override: built-in < .gemini (user) < .gemini (project)
+    // Apply priority override: built-in < .yuuka (user)
     const agentMap = new Map<string, AgentConfig>()
     
     // Add in priority order (later entries override earlier ones)
@@ -150,15 +141,11 @@ async function loadAllAgents(): Promise<{
     for (const agent of userGeminiAgents) {
       agentMap.set(agent.agentType, agent)
     }
-    for (const agent of projectGeminiAgents) {
-      agentMap.set(agent.agentType, agent)
-    }
     
     const activeAgents = Array.from(agentMap.values())
     const allAgents = [
       ...builtinAgents,
       ...userGeminiAgents,
-      ...projectGeminiAgents,
     ]
     
     return { activeAgents, allAgents }
@@ -220,9 +207,8 @@ let watchers: FSWatcher[] = []
 export async function startAgentWatcher(onChange?: () => void): Promise<void> {
   await stopAgentWatcher() // Clean up any existing watchers
   
-  // Gemini-only：只 watch .gemini/agents
-  const userGeminiDir = join(homedir(), '.gemini', 'agents')
-  const projectGeminiDir = join(getCwd(), '.gemini', 'agents')
+  // 全局模式：只 watch ~/.yuuka/agents
+  const userGeminiDir = join(homedir(), '.yuuka', 'agents')
   
   const watchDirectory = (dirPath: string) => {
     if (existsSync(dirPath)) {
@@ -241,7 +227,6 @@ export async function startAgentWatcher(onChange?: () => void): Promise<void> {
   }
   
   watchDirectory(userGeminiDir)
-  watchDirectory(projectGeminiDir)
 }
 
 /**

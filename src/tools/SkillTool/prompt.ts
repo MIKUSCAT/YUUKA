@@ -8,10 +8,9 @@ export async function getPrompt(): Promise<string> {
 
 <skills_instructions>
 No skills are currently available. Skills can be added by creating directories with SKILL.md files in:
-- ~/.gemini/skills/ (personal skills)
-- ./.gemini/skills/ (project skills)
+- ~/.yuuka/skills/ (personal skills)
 
-Any subdirectory containing SKILL.md will be discovered (e.g., ~/.gemini/skills/category/skill-name/SKILL.md).
+Any subdirectory containing SKILL.md will be discovered (e.g., ~/.yuuka/skills/category/skill-name/SKILL.md).
 
 Each SKILL.md should have YAML frontmatter with 'name' and 'description' fields.
 </skills_instructions>`
@@ -32,9 +31,10 @@ Explicit invocation (slash):
 - If the user provided additional text after the skill name, treat that remaining text as the actual task/request after loading the skill.
 
 How to invoke:
-- Use this tool with the skill name only (no arguments)
+- Use this tool with \`skill\` and optional \`args\` key-value parameters
 - Examples:
   - \`skill: "pdf"\` - invoke the pdf skill
+  - \`skill: "translator", args: {"target_language":"zh-CN"}\`
   - \`skill: "xlsx"\` - invoke the xlsx skill
   - \`skill: "ms-office-suite:pdf"\` - invoke using fully qualified name
 

@@ -1,0 +1,23 @@
+{
+  "security": {
+    "auth": {
+      "geminiApi": {
+        "baseUrl": "https://generativelanguage.googleapis.com",
+        "apiKey": "",
+        "apiKeyAuthMode": "bearer"
+      },
+      "selectedType": "gemini-api-key"
+    }
+  },
+  "model": {
+    "name": "models/gemini-3-flash-preview"
+  },
+  "yuuka": {
+    "project": {
+      "lastCost": 0,
+      "lastAPIDuration": 0,
+      "lastDuration": 91968,
+      "lastSessionId": "b01769ef-c92a-4795-8afc-29471e6350cc"
+    }
+  }
+}

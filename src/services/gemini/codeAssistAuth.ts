@@ -46,7 +46,7 @@ export type GeminiCliOAuthCreds = {
 }
 
 export function getGlobalGeminiOauthCredsPath(): string {
-  return join(homedir(), '.gemini', 'oauth_creds.json')
+  return join(homedir(), '.yuuka', 'oauth_creds.json')
 }
 
 async function readJsonFile<T>(filePath: string): Promise<T | null> {

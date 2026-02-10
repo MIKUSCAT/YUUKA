@@ -6,7 +6,7 @@ const auth = {
   type: 'local-jsx',
   name: 'auth',
   description:
-    '配置 Gemini API Key / Google OAuth（写入 ~/.gemini/settings.json 和 ~/.gemini/oauth_creds.json）',
+    '配置 Gemini API Key / Google OAuth（写入 ~/.yuuka/settings.json 和 ~/.yuuka/oauth_creds.json）',
   isEnabled: true,
   isHidden: false,
   async call(onDone) {

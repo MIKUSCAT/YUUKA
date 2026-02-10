@@ -1,10 +1,11 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { dirname, join, resolve } from 'path'
+import { homedir } from 'os'
 import { getOriginalCwd } from '@utils/state'
 import { logError } from '@utils/log'
 
 const MAX_HISTORY_ITEMS = 100
-const HISTORY_FILE_RELATIVE_PATH = join('.gemini', 'yuuka', 'history.json')
+const GLOBAL_HISTORY_FILE_PATH = join(homedir(), '.yuuka', 'data', 'history.json')
 
 function readJsonFile(filePath: string): any | null {
   if (!existsSync(filePath)) return null
@@ -47,8 +48,8 @@ function mergeHistory(existing: string[], incoming: string[]): string[] {
   return merged
 }
 
-function migrateHistoryFromSettings(settings: any, projectRoot: string): boolean {
-  const historyFilePath = resolve(projectRoot, HISTORY_FILE_RELATIVE_PATH)
+function migrateHistoryFromSettings(settings: any): boolean {
+  const historyFilePath = GLOBAL_HISTORY_FILE_PATH
   const existingHistory = coerceHistory(readJsonFile(historyFilePath))
 
   const yuukaLegacy = coerceHistory(settings?.yuuka?.project?.history)
@@ -111,7 +112,7 @@ export function runProjectMigrations(): void {
   if (process.env.NODE_ENV === 'test') return
 
   const projectRoot = resolve(getOriginalCwd())
-  const settingsPath = resolve(projectRoot, '.gemini', 'settings.json')
+  const settingsPath = resolve(projectRoot, '.yuuka', 'settings.json')
   if (!existsSync(settingsPath)) return
 
   try {
@@ -119,7 +120,7 @@ export function runProjectMigrations(): void {
     if (!settings || typeof settings !== 'object') return
 
     const changed =
-      migrateHistoryFromSettings(settings, projectRoot) ||
+      migrateHistoryFromSettings(settings) ||
       migrateToolNamesInAllowedTools(settings)
 
     if (!changed) return

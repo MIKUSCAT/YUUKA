@@ -36,6 +36,7 @@ export function Auth({ onClose }: Props): React.ReactNode {
   const selectedType =
     (settings.security?.auth?.selectedType as AuthMode | undefined) ??
     'gemini-api-key'
+  const [modeFocus, setModeFocus] = useState<AuthMode>(selectedType)
 
   const [screen, setScreen] = useState<Screen>('choose-mode')
 
@@ -63,6 +64,10 @@ export function Auth({ onClose }: Props): React.ReactNode {
       mounted = false
     }
   }, [])
+
+  useEffect(() => {
+    setModeFocus(selectedType)
+  }, [selectedType])
 
   const theme = getTheme()
 
@@ -205,6 +210,10 @@ export function Auth({ onClose }: Props): React.ReactNode {
 
   useInput((input, key) => {
     if (screen === 'choose-mode') {
+      if (key.return) {
+        enterMode(modeFocus)
+        return
+      }
       if (key.escape) onClose()
       return
     }
@@ -315,7 +324,8 @@ export function Auth({ onClose }: Props): React.ReactNode {
               <Select
                 options={[...modeOptions]}
                 defaultValue={selectedType}
-                onChange={value => enterMode(value as AuthMode)}
+                onFocus={value => setModeFocus(value as AuthMode)}
+                onChange={value => setModeFocus(value as AuthMode)}
               />
             </Box>
 

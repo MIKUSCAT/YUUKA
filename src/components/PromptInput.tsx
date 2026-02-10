@@ -18,6 +18,8 @@ import { setTerminalTitle } from '@utils/terminal'
 import { launchExternalEditor } from '@utils/externalEditor'
 import { usePermissionContext } from '@context/PermissionContext'
 import { getGlobalGeminiSettingsPath, readGeminiSettingsFile } from '@utils/geminiSettings'
+import { getTotalCost } from '@costTracker'
+import { formatNumber } from '@utils/format'
 import figures from 'figures'
 import { getTodos } from '@utils/todoStorage'
 import { TodoPanel } from './TodoPanel'
@@ -146,6 +148,11 @@ function PromptInput({
 
   useEffect(() => {
     if (hasUserStartedConversation) {
+      setSkillsLoadedNotice(null)
+      if (skillsNoticeTimerRef.current) {
+        clearTimeout(skillsNoticeTimerRef.current)
+        skillsNoticeTimerRef.current = null
+      }
       return
     }
 
@@ -482,6 +489,26 @@ function PromptInput({
 
   const textInputColumns = useTerminalSize().columns - 4
   const tokenUsage = useMemo(() => countTokens(messages), [messages])
+  const modelDisplayName = useMemo(() => {
+    try {
+      const settingsPath = getGlobalGeminiSettingsPath()
+      const settings = readGeminiSettingsFile(settingsPath)
+      const modelName = settings.model?.name
+      if (modelName) {
+        return modelName.replace(/^models\//, '')
+      }
+    } catch {
+      // ignore
+    }
+    return '未设置模型'
+  }, [messages, isLoading])
+  const totalCostLabel = useMemo(() => {
+    const totalCost = getTotalCost()
+    return `$${totalCost > 0.5 ? totalCost.toFixed(2) : totalCost.toFixed(4)}`
+  }, [messages, isLoading])
+  const tokenUsageLabel = useMemo(() => `${formatNumber(tokenUsage)} tokens`, [
+    tokenUsage,
+  ])
   const showTokenWarning = tokenUsage >= 600000
   const todos = getTodos()
   const todoStats = useMemo(() => {
@@ -601,19 +628,7 @@ function PromptInput({
           {isLoading ? '  Esc 取消' : messages.length > 0 ? '  Esc 历史' : ''}
         </Text>
         <Text dimColor>
-          {(() => {
-            try {
-              const settingsPath = getGlobalGeminiSettingsPath()
-              const settings = readGeminiSettingsFile(settingsPath)
-              const modelName = settings.model?.name
-              if (modelName) {
-                return modelName.replace(/^models\//, '')
-              }
-            } catch {
-              // ignore
-            }
-            return ''
-          })()}
+          {modelDisplayName} · {totalCostLabel} · {tokenUsageLabel}
         </Text>
       </Box>
     </Box>

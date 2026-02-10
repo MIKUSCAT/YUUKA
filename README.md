@@ -28,7 +28,7 @@
 ### Full Compatibility with Multiple Standards
 
 - **AGENTS.md** - Native support for the OpenAI-initiated standard format
-- **CLAUDE.md** - Full backward compatibility with Claude Code `.claude` configurations  
+- **CLAUDE.md** - Full backward compatibility with Claude Code `.claude` configurations
 - **Subagent System** - Advanced agent delegation and task orchestration
 - **Gemini-only** - Uses Gemini native API (Bearer + configurable baseUrl)
 
@@ -42,7 +42,7 @@ YUUKA is a personal computer agent that lives in your terminal. It can understan
 > 
 > **Model Performance**: For optimal performance, we recommend using newer, more capable models designed for autonomous task completion. Avoid older Q&A-focused models like GPT-4o or Gemini 2.5 Pro, which are optimized for answering questions rather than sustained independent task execution. Choose models specifically trained for agentic workflows and extended reasoning capabilities.
 >
-> **Gemini-only notice**: This version uses Gemini native API only (`Authorization: Bearer <apiKey>`). Configuration lives in the project file `./.gemini/settings.json` (no global merge).
+> **Gemini-only notice**: This version uses Gemini native API only (`Authorization: Bearer <apiKey>`). Configuration lives in the project file `./.yuuka/settings.json` (no global merge).
 
 <img width="600" height="577" alt="image" src="https://github.com/user-attachments/assets/8b46a39d-1ab6-4669-9391-14ccc6c5234c" />
 
@@ -50,9 +50,9 @@ YUUKA is a personal computer agent that lives in your terminal. It can understan
 
 - UI entry: `src/entrypoints/cli.tsx` → `src/screens/REPL.tsx`
 - Input flow: `processUserInput` routes `/command` or plain text → `query` → `services/gemini/query.ts`
-- Config: project-only `./.gemini/settings.json` (auth/model/mcp); data in `~/.gemini/yuuka/`
+- Config: project-only `./.yuuka/settings.json` (auth/model/mcp); data in `~/.yuuka/data/`
 - Tools: `src/tools/*` with permission gating; Bash tool is agent-only (no manual bash mode)
-- Extensibility: agents in `./.gemini/agents/` and `~/.gemini/agents/`, MCP via `mcpServers`
+- Extensibility: agents in `./.yuuka/agents/` and `~/.yuuka/agents/`, MCP via `mcpServers`
 
 ## Features
 
@@ -158,12 +158,12 @@ Use `/memory` to append today's summary + your preferences into `AGENTS.md`.
 
 ### Configuration
 
-- Config file: `./.gemini/settings.json` (project-only)
-- Data dir: `~/.gemini/yuuka/`
+- Config file: `./.yuuka/settings.json` (project-only)
+- Data dir: `~/.yuuka/data/`
 - Set `baseUrl/apiKey/model` in `/config`; `/model <name>` writes to the project settings
 - Default model: `models/gemini-3-flash-preview` (optional `models/gemini-3-pro-preview`)
 
-Minimal `./.gemini/settings.json` example:
+Minimal `./.yuuka/settings.json` example:
 ```json
 {
   "security": {
@@ -288,7 +288,7 @@ Local MCP works on your machine, but GitHub-hosted runners cannot access your lo
 ### GitHub Publish Hygiene Checklist
 
 Before pushing:
-- Do not commit secrets: `.gemini/settings.json`, OAuth creds, tokens, local history.
+- Do not commit secrets: `.yuuka/settings.json`, OAuth creds, tokens, local history.
 - Do not commit local caches/build junk: `node_modules/`, `dist/` (unless intentionally required), `.npm-cache-local/`.
 - Do not commit local-only binaries (for this repo: `mcp-servers/windows-mcp/bin/`).
 - Run:

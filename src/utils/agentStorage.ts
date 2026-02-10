@@ -14,7 +14,7 @@ import { CONFIG_BASE_DIR } from '@constants/product'
  * Get the config directory
  */
 function getConfigDirectory(): string {
-  // 数据目录：~/.gemini/yuuka
+  // 数据目录：~/.yuuka/data
   return join(homedir(), CONFIG_BASE_DIR)
 }
 
@@ -28,7 +28,7 @@ function getSessionId(): string {
 /**
  * Generate agent-specific file path
  * Pattern: ${sessionId}-agent-${agentId}.json
- * Stored in ~/.gemini/yuuka directory
+ * Stored in ~/.yuuka/data directory
  */
 export function getAgentFilePath(agentId: string): string {
   const sessionId = getSessionId()

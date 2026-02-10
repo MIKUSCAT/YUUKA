@@ -108,6 +108,48 @@ export function Config({ onClose }: Props): React.ReactNode {
       type: 'boolean',
     },
     {
+      id: 'proxyEnabled',
+      label: 'Local Proxy Enabled',
+      value: globalConfig.proxyEnabled ?? true,
+      onChange(proxyEnabled: boolean) {
+        const config = { ...getGlobalConfig(), proxyEnabled }
+        saveGlobalConfig(config)
+        setGlobalConfig(config)
+      },
+      type: 'boolean',
+    },
+    {
+      id: 'proxyPort',
+      label: 'Local Proxy Port',
+      value: globalConfig.proxyPort ?? 7890,
+      disabled: !(globalConfig.proxyEnabled ?? true),
+      onChange(proxyPort: number) {
+        const normalized = Math.floor(proxyPort)
+        if (!Number.isFinite(normalized) || normalized < 1 || normalized > 65535) {
+          throw new Error('Please enter an integer between 1 and 65535')
+        }
+        const config = { ...getGlobalConfig(), proxyPort: normalized }
+        saveGlobalConfig(config)
+        setGlobalConfig(config)
+      },
+      type: 'number',
+    },
+    {
+      id: 'agentExecutionMode',
+      label: 'Agent execution mode',
+      value: globalConfig.agentExecutionMode ?? 'inline',
+      options: ['inline', 'process'],
+      onChange(agentExecutionMode: string) {
+        const config = {
+          ...getGlobalConfig(),
+          agentExecutionMode: agentExecutionMode as 'inline' | 'process',
+        }
+        saveGlobalConfig(config)
+        setGlobalConfig(config)
+      },
+      type: 'enum',
+    },
+    {
       id: 'stream',
       label: 'Stream responses',
       value: globalConfig.stream ?? true,
@@ -174,7 +216,7 @@ export function Config({ onClose }: Props): React.ReactNode {
       type: 'boolean',
     },
 
-    // Gemini settings (global ~/.gemini/settings.json)
+    // Gemini settings (global ~/.yuuka/settings.json)
     {
       id: 'geminiBaseUrl',
       label: 'Gemini Base URL',

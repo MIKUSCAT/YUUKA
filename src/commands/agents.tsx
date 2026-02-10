@@ -8,7 +8,6 @@ import { join } from 'path'
 import * as path from 'path'
 import { homedir } from 'os'
 import * as os from 'os'
-import { getCwd } from '@utils/state'
 import { getTheme } from '@utils/theme'
 import matter from 'gray-matter'
 import { exec, spawn } from 'child_process'
@@ -38,7 +37,7 @@ const UI_ICONS = {
 } as const
 
 const FOLDER_CONFIG = {
-  FOLDER_NAME: ".claude",
+  FOLDER_NAME: ".yuuka",
   AGENTS_DIR: "agents"
 } as const
 
@@ -329,12 +328,9 @@ function getAgentDirectory(location: AgentLocation): string {
   if (location === AGENT_LOCATIONS.BUILT_IN || location === AGENT_LOCATIONS.ALL) {
     throw new Error(`Cannot get directory path for ${location} agents`)
   }
-  
-  if (location === AGENT_LOCATIONS.USER) {
-    return join(homedir(), FOLDER_CONFIG.FOLDER_NAME, FOLDER_CONFIG.AGENTS_DIR)
-  } else {
-    return join(getCwd(), FOLDER_CONFIG.FOLDER_NAME, FOLDER_CONFIG.AGENTS_DIR)
-  }
+
+  // 全局模式：project/user 都统一写到 ~/.yuuka/agents
+  return join(homedir(), FOLDER_CONFIG.FOLDER_NAME, FOLDER_CONFIG.AGENTS_DIR)
 }
 
 function getAgentFilePath(agent: AgentConfig): string {
@@ -383,7 +379,7 @@ function generateAgentFileContent(
   }
   
   if (model) {
-    lines.push(`model: ${model}`)
+    lines.push(`model_name: ${model}`)
   }
   
   if (color) {
@@ -1332,8 +1328,7 @@ function AgentListView({
   
   const locationTabs = [
     { label: "All", value: "all" as AgentLocation },
-    { label: "Personal", value: "user" as AgentLocation },
-    { label: "Project", value: "project" as AgentLocation }
+    { label: "Global", value: "user" as AgentLocation }
   ]
 
   const activeMap = useMemo(() => {
@@ -1371,7 +1366,7 @@ function AgentListView({
     const color = !isBuiltIn && isSelected ? theme.primary : undefined
     
     // Extract model from agent metadata
-    const agentModel = (agent as any).model || null
+    const agentModel = (agent as any).model_name || null
     const modelDisplay = getDisplayModelName(agentModel)
 
     return (
@@ -1576,7 +1571,7 @@ function AgentListView({
             <Box marginBottom={1}>
               <Text bold color={theme.primary}>What are agents?</Text>
             </Box>
-            <Text>Specialized AI assistants that YUUKA can delegate to for specific tasks, compatible with Claude Code `.claude` agent packs.</Text>
+            <Text>Specialized AI assistants that YUUKA can delegate to for specific tasks, using unified `.yuuka/agents` storage.</Text>
             <Text>Each agent has its own context, prompt, and tools.</Text>
             
             <Box marginTop={1} marginBottom={1}>
@@ -1639,8 +1634,8 @@ function AgentListView({
           <Box marginTop={0}>
             <Text dimColor>
               {currentLocation === 'all' ? 'Showing all agents' : 
-               currentLocation === 'user' ? 'Personal agents (~/.gemini/agents)' : 
-               'Project agents (.gemini/agents)'}
+               currentLocation === 'user' ? 'Global agents (~/.yuuka/agents)' :
+               'Global agents (~/.yuuka/agents)'}
             </Text>
           </Box>
         </Box>
@@ -2289,9 +2284,7 @@ function ConfirmStep({ createState, setCreateState, setModeState, tools, onAgent
       'No tools'
   
   const handleEditInEditor = async () => {
-    const filePath = createState.location === 'project' 
-      ? path.join(process.cwd(), '.claude', 'agents', `${createState.agentType}.md`)
-      : path.join(os.homedir(), '.claude', 'agents', `${createState.agentType}.md`)
+    const filePath = path.join(os.homedir(), '.yuuka', 'agents', `${createState.agentType}.md`)
     
     try {
       // First, save the agent file
@@ -2337,7 +2330,7 @@ function ConfirmStep({ createState, setCreateState, setModeState, tools, onAgent
           
           <Box flexDirection="column" gap={0}>
             <Text>• <Text bold>Agent ID:</Text> {createState.agentType}</Text>
-            <Text>• <Text bold>Location:</Text> {createState.location === 'project' ? 'Project' : 'Personal'}</Text>
+            <Text>• <Text bold>Location:</Text> Global</Text>
             <Text>• <Text bold>Tools:</Text> {toolNames.length > 50 ? toolNames.slice(0, 50) + '...' : toolNames}</Text>
             <Text>• <Text bold>Model:</Text> {getDisplayModelName(createState.selectedModel)}</Text>
             {createState.selectedColor && (
@@ -2393,8 +2386,7 @@ function LocationSelect({ createState, setCreateState, setModeState }: LocationS
   const [selectedIndex, setSelectedIndex] = useState(0)
   
   const options = [
-    { label: "Project", value: "project", desc: ".gemini/agents/" },
-    { label: "Personal", value: "user", desc: "~/.gemini/agents/" }
+    { label: "Global", value: "user", desc: "~/.yuuka/agents/" }
   ]
 
   const handleChange = (value: string) => {
@@ -2722,7 +2714,7 @@ function EditToolsStep({ agent, tools, setModeState, onAgentUpdated }: EditTools
     try {
       // Type-safe tools conversion for updateAgent
       const toolsArray: string[] | '*' = allSelected ? '*' : Array.from(selectedTools)
-      await updateAgent(agent, agent.whenToUse, toolsArray, agent.systemPrompt, agent.color, (agent as any).model)
+      await updateAgent(agent, agent.whenToUse, toolsArray, agent.systemPrompt, agent.color, (agent as any).model_name)
       
       // Clear cache and reload fresh agent data from file system
       clearAgentCache()
@@ -2882,7 +2874,7 @@ interface EditModelStepProps {
 function EditModelStep({ agent, setModeState, onAgentUpdated }: EditModelStepProps) {
   const manager = getModelManager()
   const profiles = manager.getActiveModelProfiles()
-  const currentModel = (agent as any).model || null
+  const currentModel = (agent as any).model_name || null
   
   // Build model options array
   const modelOptions = [
@@ -2914,9 +2906,9 @@ function EditModelStep({ agent, setModeState, onAgentUpdated }: EditModelStepPro
         // Fallback to manual update
         const fallbackAgent: AgentConfig = { ...agent }
         if (modelValue) {
-          (fallbackAgent as any).model = modelValue
+          ;(fallbackAgent as any).model_name = modelValue
         } else {
-          delete (fallbackAgent as any).model
+          delete (fallbackAgent as any).model_name
         }
         onAgentUpdated(`Updated model for agent: ${agent.agentType}`, fallbackAgent)
         setModeState({ mode: 'edit-agent', selectedAgent: fallbackAgent })
@@ -3000,7 +2992,7 @@ function EditColorStep({ agent, setModeState, onAgentUpdated }: EditColorStepPro
     setIsUpdating(true)
     try {
       const colorValue = color === null ? undefined : color
-      await updateAgent(agent, agent.whenToUse, agent.tools, agent.systemPrompt, colorValue, (agent as any).model)
+      await updateAgent(agent, agent.whenToUse, agent.tools, agent.systemPrompt, colorValue, (agent as any).model_name)
       
       // Clear cache and reload fresh agent data from file system
       clearAgentCache()
@@ -3100,11 +3092,11 @@ function ViewAgent({ agent, tools, setModeState }: ViewAgentProps) {
   const agentTools = Array.isArray(agent.tools) ? agent.tools : []
   const hasAllTools = agent.tools === "*" || agentTools.includes("*")
   const locationPath = agent.location === 'user'
-    ? `~/.gemini/agents/${agent.agentType}.md`
+    ? `~/.yuuka/agents/${agent.agentType}.md`
     : agent.location === 'project'
-      ? `.gemini/agents/${agent.agentType}.md`
+      ? `~/.yuuka/agents/${agent.agentType}.md`
       : '(built-in)'
-  const displayModel = getDisplayModelName((agent as any).model || null)
+  const displayModel = getDisplayModelName((agent as any).model_name || null)
 
   // 明确处理ESC键返回
   useInput((input, key) => {

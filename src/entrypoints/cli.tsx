@@ -143,9 +143,9 @@ function isValidSkillName(name: string): boolean {
 }
 
 function parseSkillImportScope(rawScope: string): SkillImportScope {
-  const normalized = String(rawScope ?? 'project').trim().toLowerCase()
+  const normalized = String(rawScope ?? 'user').trim().toLowerCase()
   if (normalized === 'project' || normalized === 'local') {
-    return 'project'
+    return 'user'
   }
   if (
     normalized === 'user' ||
@@ -154,14 +154,11 @@ function parseSkillImportScope(rawScope: string): SkillImportScope {
   ) {
     return 'user'
   }
-  throw new Error('scope 只支持: project | user')
+  throw new Error('scope 只支持: user（project/local 仅作兼容并会映射到 user）')
 }
 
 function getSkillImportBaseDir(scope: SkillImportScope): string {
-  if (scope === 'user') {
-    return join(homedir(), '.gemini', 'skills')
-  }
-  return join(getCwd(), '.gemini', 'skills')
+  return join(homedir(), '.yuuka', 'skills')
 }
 
 function importSkillFromPath(params: {
@@ -335,7 +332,7 @@ function migrateLegacyProjectGeminiSettingsToGlobal(projectRoot: string): void {
     const globalAuth = globalSettings.security?.auth?.geminiApi
     const hasGlobalKey = !!globalAuth?.apiKey?.trim()
 
-    const projectPath = join(projectRoot, '.gemini', 'settings.json')
+    const projectPath = join(projectRoot, '.yuuka', 'settings.json')
     if (!existsSync(projectPath)) return
 
     const projectSettings = readGeminiSettingsFile(projectPath)
@@ -498,6 +495,19 @@ async function applyGlobalProxyFromConfig(): Promise<void> {
     const configuredProxy =
       typeof globalConfig.proxy === 'string' ? globalConfig.proxy.trim() : ''
 
+    const proxyEnabled =
+      typeof globalConfig.proxyEnabled === 'boolean'
+        ? globalConfig.proxyEnabled
+        : true
+    const rawProxyPort = Number(globalConfig.proxyPort)
+    const proxyPort =
+      Number.isFinite(rawProxyPort) &&
+      rawProxyPort >= 1 &&
+      rawProxyPort <= 65535
+        ? Math.floor(rawProxyPort)
+        : 7890
+    const autoLocalProxy = `http://127.0.0.1:${proxyPort}`
+
     const envProxy = String(
       process.env['YUUKA_PROXY'] ||
         process.env['HTTPS_PROXY'] ||
@@ -505,7 +515,7 @@ async function applyGlobalProxyFromConfig(): Promise<void> {
         '',
     ).trim()
 
-    const proxy = configuredProxy || envProxy
+    const proxy = proxyEnabled ? autoLocalProxy : configuredProxy || envProxy
     if (!proxy) return
 
     // 给其他 HTTP 库兜底（node-fetch 等）
@@ -546,7 +556,7 @@ async function setup(cwd: string, safeMode?: boolean): Promise<void> {
   // Always grant read permissions for original working dir
   grantReadPermissionForOriginalDir()
 
-  // 迁移：如果之前把 key/baseUrl 写在项目 settings 里，这里帮你搬到全局 ~/.gemini/settings.json
+  // 迁移：如果之前把 key/baseUrl 写在项目 settings 里，这里帮你搬到全局 ~/.yuuka/settings.json
   migrateLegacyProjectGeminiSettingsToGlobal(resolve(cwd))
 
   // Ensure project config exists (legacy config migrations may create settings.json)
@@ -720,8 +730,32 @@ ${commandList}`,
       'Enable strict permission checking mode (default is permissive in interactive mode)',
       () => true,
     )
+    .option(
+      '--teammate',
+      'Internal: run as teammate worker process',
+      () => true,
+    )
+    .option(
+      '--teammate-task-file <path>',
+      'Internal: teammate task file path',
+      String,
+    )
     .action(
-      async (prompt, { cwd, debug, verbose, print, safe }) => {
+      async (
+        prompt,
+        { cwd, debug, verbose, print, safe, teammate, teammateTaskFile },
+      ) => {
+        if (teammate) {
+          await setup(cwd, safe)
+          if (!teammateTaskFile) {
+            console.error('Missing required --teammate-task-file for teammate mode')
+            process.exit(1)
+          }
+          const { runTeammateTask } = await import('./teammate')
+          const exitCode = await runTeammateTask(resolve(teammateTaskFile))
+          process.exit(exitCode)
+        }
+
         await showSetupScreens(safe, print)
         
         await setup(cwd, safe)
@@ -864,13 +898,13 @@ ${commandList}`,
   skills
     .command('import <source> [name]')
     .description(
-      'Import a skill directory (or SKILL.md file) into .gemini/skills',
+      'Import a skill directory (or SKILL.md file) into ~/.yuuka/skills',
     )
     .option('-c, --cwd <cwd>', 'The current working directory', String, cwd())
     .option(
       '-s, --scope <scope>',
       'Import scope: project or user',
-      'project',
+      'user',
     )
     .action(async (source, name, { cwd, scope }) => {
       try {

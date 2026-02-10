@@ -4,7 +4,6 @@ import InkTextInput from 'ink-text-input'
 import { writeFileSync, unlinkSync, mkdirSync, existsSync, readFileSync, rmSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
-import { getCwd } from '@utils/state'
 import { getTheme } from '@utils/theme'
 import {
   getActiveSkills,
@@ -171,11 +170,8 @@ function validateSkillDescription(description: string): string | null {
 }
 
 function getSkillDirectory(location: SkillLocation): string {
-  if (location === 'user') {
-    return join(homedir(), '.gemini', 'skills')
-  } else {
-    return join(getCwd(), '.gemini', 'skills')
-  }
+  // 全局模式：project/user 都统一写到 ~/.yuuka/skills
+  return join(homedir(), '.yuuka', 'skills')
 }
 
 function ensureSkillDirectoryExists(
@@ -725,8 +721,7 @@ function LocationSelect({ createState, setCreateState, setModeState }: LocationS
   const [selectedIndex, setSelectedIndex] = useState(0)
 
   const options = [
-    { label: 'Project', value: 'project' as SkillLocation, desc: '.gemini/skills/' },
-    { label: 'Personal', value: 'user' as SkillLocation, desc: '~/.gemini/skills/' },
+    { label: 'Global', value: 'user' as SkillLocation, desc: '~/.yuuka/skills/' },
   ]
 
   useInput((input, key) => {
@@ -940,7 +935,7 @@ function ConfirmStep({ createState, setCreateState, setModeState, onSkillCreated
             • <Text bold>Name:</Text> {createState.skillName}
           </Text>
           <Text>
-            • <Text bold>Location:</Text> {createState.location === 'project' ? 'Project' : 'Personal'}
+            • <Text bold>Location:</Text> Global
           </Text>
           <Text>
             • <Text bold>Description:</Text> {createState.description.slice(0, 60)}
@@ -1227,8 +1222,7 @@ function LearnConfirmStep({ learnedContent, setModeState, onSkillCreated }: Lear
   const [error, setError] = useState<string | null>(null)
 
   const options = [
-    { label: 'Save to Project', location: 'project' as SkillLocation },
-    { label: 'Save to Personal', location: 'user' as SkillLocation },
+    { label: 'Save to Global', location: 'user' as SkillLocation },
   ]
 
   const handleSave = async () => {

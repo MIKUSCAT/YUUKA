@@ -20,6 +20,9 @@ import { WebSearchTool } from './tools/WebSearchTool/WebSearchTool'
 import { URLFetcherTool } from './tools/URLFetcherTool/URLFetcherTool'
 import { SkillTool } from './tools/SkillTool/SkillTool'
 import { DocWriteTool } from './tools/DocTool/DocWriteTool'
+import { TeamCreateTool } from './tools/TeamTools/TeamCreateTool'
+import { TeamDeleteTool } from './tools/TeamTools/TeamDeleteTool'
+import { SendMessageTool } from './tools/TeamTools/SendMessageTool'
 import { getMCPTools } from './services/mcpClient'
 import { memoize } from 'lodash-es'
 
@@ -47,6 +50,9 @@ export const getAllTools = (): Tool[] => {
     WebSearchTool as unknown as Tool,
     URLFetcherTool as unknown as Tool,
     SkillTool as unknown as Tool,
+    TeamCreateTool as unknown as Tool,
+    TeamDeleteTool as unknown as Tool,
+    SendMessageTool as unknown as Tool,
     ...ANT_ONLY_TOOLS,
   ]
 }

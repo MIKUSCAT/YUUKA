@@ -21,6 +21,10 @@ import {
 import { ASSISTANT_PREFIX, TREE_END } from '@constants/figures'
 import { useTerminalSize } from '@hooks/useTerminalSize'
 import { MarkdownDisplay } from '@components/markdown/MarkdownDisplay'
+import {
+  parseTaskProgressText,
+  TaskProgressMessage,
+} from './TaskProgressMessage'
 
 type Props = {
   param: TextBlockParam
@@ -59,6 +63,11 @@ export function AssistantTextMessage({
     text.startsWith('<local-command-stderr')
   ) {
     return <AssistantLocalCommandOutputMessage content={text} />
+  }
+
+  const taskProgress = parseTaskProgressText(text)
+  if (taskProgress) {
+    return <TaskProgressMessage {...taskProgress} />
   }
 
   if (text.startsWith(API_ERROR_MESSAGE_PREFIX)) {

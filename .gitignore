@@ -178,15 +178,15 @@ dist
 cli.js
 .npmrc
 
-# Gemini settings (may contain secrets)
-.gemini/settings.json
-**/.gemini/settings.json
-.gemini/yuuka/
-**/.gemini/yuuka/
-.gemini/oauth_creds.json
-**/.gemini/oauth_creds.json
-.gemini/oauth_creds*.json
-**/.gemini/oauth_creds*.json
+# YUUKA settings (may contain secrets)
+.yuuka/settings.json
+**/.yuuka/settings.json
+.yuuka/data/
+**/.yuuka/data/
+.yuuka/oauth_creds.json
+**/.yuuka/oauth_creds.json
+.yuuka/oauth_creds*.json
+**/.yuuka/oauth_creds*.json
 
 # Lock files
 bun.lock

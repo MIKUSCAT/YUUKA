@@ -41,7 +41,7 @@ export class GeminiHttpError extends Error {
 function normalizeApiRoot(baseUrl: string): string {
   const trimmed = baseUrl.trim().replace(/\/+$/, '')
   if (!trimmed) {
-    throw new Error('baseUrl 不能为空（来自 ~/.gemini/settings.json）')
+    throw new Error('baseUrl 不能为空（来自 ~/.yuuka/settings.json）')
   }
   if (trimmed.endsWith('/v1') || trimmed.endsWith('/v1beta')) {
     return trimmed

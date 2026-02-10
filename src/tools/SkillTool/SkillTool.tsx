@@ -9,20 +9,86 @@ import {
   getRuntimeSkillByName,
   getRuntimeAvailableSkillNames,
 } from '@utils/skillLoader'
+import type { SkillConfig } from '@utils/skillLoader'
 import { getTheme } from '@utils/theme'
 import { MessageResponse } from '@components/MessageResponse'
 
 const inputSchema = z.object({
-  skill: z.string().describe('The skill name (no arguments). E.g., "pdf" or "xlsx"'),
+  skill: z.string().describe('The skill name. E.g., "pdf" or "xlsx"'),
+  args: z
+    .record(z.string())
+    .optional()
+    .describe('Optional skill template arguments'),
 })
 
 type SkillInput = z.infer<typeof inputSchema>
 
 interface SkillResult {
+  toolName: 'Skill'
   skillName: string
   instructions: string
+  allowedTools?: string[]
+  resolvedSkills?: string[]
   supportingFiles?: string[]
   error?: string
+}
+
+function applyTemplateArgs(
+  text: string,
+  args?: Record<string, string>,
+): string {
+  if (!args || Object.keys(args).length === 0) {
+    return text
+  }
+  return text.replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g, (_match, key) => {
+    const value = args[key]
+    return typeof value === 'string' ? value : _match
+  })
+}
+
+async function resolveSkillChain(root: SkillConfig): Promise<SkillConfig[]> {
+  const ordered: SkillConfig[] = []
+  const visited = new Set<string>()
+
+  const visit = async (skill: SkillConfig): Promise<void> => {
+    if (visited.has(skill.name)) return
+    visited.add(skill.name)
+    ordered.push(skill)
+    if (!skill.chain || skill.chain.length === 0) {
+      return
+    }
+    for (const chainedSkillName of skill.chain) {
+      const chainedSkill = await getRuntimeSkillByName(chainedSkillName)
+      if (!chainedSkill) continue
+      await visit(chainedSkill)
+    }
+  }
+
+  await visit(root)
+  return ordered
+}
+
+function mergeAllowedTools(skills: SkillConfig[]): string[] | undefined {
+  const toolNames = new Set<string>()
+  let hasAnyRestriction = false
+  for (const skill of skills) {
+    if (!skill.allowedTools || skill.allowedTools.length === 0) {
+      continue
+    }
+    hasAnyRestriction = true
+    if (skill.allowedTools.includes('*')) {
+      return ['*']
+    }
+    for (const toolName of skill.allowedTools) {
+      const normalized = String(toolName).trim()
+      if (normalized) {
+        toolNames.add(normalized)
+      }
+    }
+  }
+
+  if (!hasAnyRestriction) return undefined
+  return Array.from(toolNames)
 }
 
 export const SkillTool = {
@@ -47,7 +113,7 @@ export const SkillTool = {
     void,
     unknown
   > {
-    const { skill: skillName } = input
+    const { skill: skillName, args } = input
 
     // Load the skill configuration
     const skill = await getRuntimeSkillByName(skillName)
@@ -56,11 +122,12 @@ export const SkillTool = {
       const availableSkills = await getRuntimeAvailableSkillNames()
       const errorMessage = availableSkills.length > 0
         ? `Skill "${skillName}" not found.\n\nAvailable skills:\n${availableSkills.map(s => `  - ${s}`).join('\n')}`
-        : `Skill "${skillName}" not found. No skills are currently configured.\n\nTo add skills, create directories with SKILL.md files under:\n  - ~/.gemini/skills/\n  - ./.gemini/skills/\n\nAny subdirectory containing SKILL.md will be discovered (e.g., ~/.gemini/skills/category/skill-name/SKILL.md).`
+        : `Skill "${skillName}" not found. No skills are currently configured.\n\nTo add skills, create directories with SKILL.md files under:\n  - ~/.yuuka/skills/\n\nAny subdirectory containing SKILL.md will be discovered (e.g., ~/.yuuka/skills/category/skill-name/SKILL.md).`
 
       yield {
         type: 'result',
         data: {
+          toolName: 'Skill',
           skillName,
           instructions: '',
           error: errorMessage,
@@ -80,22 +147,38 @@ export const SkillTool = {
       supportingFiles = []
     }
 
+    const chainedSkills = await resolveSkillChain(skill)
+    const mergedAllowedTools = mergeAllowedTools(chainedSkills)
+    const renderedInstructions = chainedSkills
+      .map((loadedSkill, index) => {
+        const title =
+          chainedSkills.length > 1
+            ? `## Step ${index + 1}: ${loadedSkill.name}\n\n`
+            : ''
+        const content = applyTemplateArgs(loadedSkill.instructions, args)
+        return `${title}${content}`.trim()
+      })
+      .join('\n\n')
+
     // Build the result with skill instructions
     const result: SkillResult = {
+      toolName: 'Skill',
       skillName: skill.name,
-      instructions: skill.instructions,
+      instructions: renderedInstructions,
+      allowedTools: mergedAllowedTools,
+      resolvedSkills: chainedSkills.map(loadedSkill => loadedSkill.name),
       supportingFiles: supportingFiles.length > 0 ? supportingFiles : undefined,
     }
 
     // Format the output for the assistant
-    let resultForAssistant = `# Skill: ${skill.name}\n\n${skill.instructions}`
+    let resultForAssistant = `# Skill: ${skill.name}\n\n${renderedInstructions}`
 
     if (supportingFiles.length > 0) {
       resultForAssistant += `\n\n## Supporting Files\nThe following files are available in this skill's directory:\n${supportingFiles.map(f => `- ${f}`).join('\n')}`
     }
 
-    if (skill.allowedTools && skill.allowedTools.length > 0) {
-      resultForAssistant += `\n\n## Allowed Tools\nThis skill restricts tool usage to: ${skill.allowedTools.join(', ')}`
+    if (mergedAllowedTools && mergedAllowedTools.length > 0) {
+      resultForAssistant += `\n\n## Allowed Tools\nThis skill restricts tool usage to: ${mergedAllowedTools.join(', ')}`
     }
 
     yield {

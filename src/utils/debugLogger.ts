@@ -61,7 +61,7 @@ const USER_FRIENDLY_LEVELS = new Set([
 const STARTUP_TIMESTAMP = new Date().toISOString().replace(/[:.]/g, '-')
 const REQUEST_START_TIME = Date.now()
 
-// 路径配置 - 统一使用 ~/.gemini/yuuka 目录
+// 路径配置 - 统一使用 ~/.yuuka/data 目录
 const YUUKA_DIR = join(homedir(), CONFIG_BASE_DIR)
 function getProjectDir(cwd: string): string {
   return cwd.replace(/[^a-zA-Z0-9]/g, '-')
@@ -993,7 +993,7 @@ export function diagnoseError(error: any, context?: any): ErrorDiagnosis {
       description: 'API authentication failed - invalid or missing API key',
       suggestions: [
         '在 /config 面板里设置 Gemini API Key',
-        '检查 ~/.gemini/settings.json 中的 security.auth.geminiApi.apiKey',
+        '检查 ~/.yuuka/settings.json 中的 security.auth.geminiApi.apiKey',
         '验证 API 密钥是否已过期或被撤销',
         '确认 baseUrl 配置正确（如使用了自建网关）',
       ],
@@ -1127,7 +1127,7 @@ export function diagnoseError(error: any, context?: any): ErrorDiagnosis {
       debugSteps: [
         '查看 CONFIG_LOAD 和 CONFIG_SAVE 日志',
         '检查配置文件路径和权限',
-        '验证 JSON 格式: cat ~/.gemini/settings.json | jq',
+        '验证 JSON 格式: cat ~/.yuuka/settings.json | jq',
         '查看配置缓存相关的调试信息',
       ],
     }

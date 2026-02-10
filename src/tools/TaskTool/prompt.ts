@@ -16,7 +16,7 @@ export async function getTaskTools(_safeMode: boolean): Promise<Tool[]> {
 }
 
 export async function getPrompt(safeMode: boolean): Promise<string> {
-  // Maintain compatibility with Claude Code `.claude` agent descriptions
+  // Read agent descriptions from `.yuuka/agents`
   const agents = await getActiveAgents()
   
   // Format exactly as in original: (Tools: tool1, tool2)
@@ -27,13 +27,14 @@ export async function getPrompt(safeMode: boolean): Promise<string> {
     return `- ${agent.agentType}: ${agent.whenToUse} (Tools: ${toolsStr})`
   }).join('\n')
   
-  // Keep the wording aligned so shared `.claude` agent packs behave identically
+  // Keep wording stable so agent behavior is predictable across sessions
   return `Launch a new agent to handle complex, multi-step tasks autonomously. 
 
 Available agent types and the tools they have access to:
 ${agentDescriptions}
 
 When using the Task tool, you must specify a subagent_type parameter to select which agent type to use.
+You may optionally pass team_name and name to route the task through process teammates when process mode is enabled.
 
 When to use the Agent tool:
 - When you are instructed to execute custom slash commands. Use the Agent tool with the slash command invocation as the entire prompt. The slash command can take arguments. For example: Task(description="Check the file", prompt="/check-file path/to/file.py")

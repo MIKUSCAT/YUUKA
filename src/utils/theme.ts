@@ -23,7 +23,7 @@ export interface Theme {
 }
 
 const lightTheme: Theme = {
-  bashBorder: '#FF6E57',
+  bashBorder: '#3BA7FF',
   yuuka: '#3BA7FF',
   noting: '#222222',
   permission: '#e9c61aff',
@@ -45,7 +45,7 @@ const lightTheme: Theme = {
 }
 
 const lightDaltonizedTheme: Theme = {
-  bashBorder: '#FF6E57',
+  bashBorder: '#3BA7FF',
   yuuka: '#3BA7FF',
   noting: '#222222',
   permission: '#3366ff',
@@ -67,7 +67,7 @@ const lightDaltonizedTheme: Theme = {
 }
 
 const darkTheme: Theme = {
-  bashBorder: '#FF6E57',
+  bashBorder: '#6EC6FF',
   yuuka: '#6EC6FF',
   noting: '#222222',
   permission: '#b1b9f9',
@@ -89,7 +89,7 @@ const darkTheme: Theme = {
 }
 
 const darkDaltonizedTheme: Theme = {
-  bashBorder: '#FF6E57',
+  bashBorder: '#6EC6FF',
   yuuka: '#6EC6FF',
   noting: '#222222',
   permission: '#99ccff',

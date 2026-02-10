@@ -27,15 +27,15 @@ YUUKA 是一个个人电脑 Agent，运行在你的终端中。它能理解你�
 > 
 > **模型性能建议**：为获得最佳体验，建议使用专为自主任务完成设计的新一代强大模型。避免使用 GPT-4o、Gemini 2.5 Pro 等较老的问答型模型，它们主要针对回答问题进行优化，而非持续的独立任务执行。请选择专门训练用于智能体工作流和扩展推理能力的模型。
 >
-> **本版本说明（Gemini-only）**：只使用 Gemini 原生 API（`Authorization: Bearer <apiKey>`）。配置只放在当前项目 `./.gemini/settings.json`（不再合并全局）。
+> **本版本说明（Gemini-only）**：只使用 Gemini 原生 API（`Authorization: Bearer <apiKey>`）。配置只放在当前项目 `./.yuuka/settings.json`（不再合并全局）。
 
 ## 技术蓝图
 
 - 入口：`src/entrypoints/cli.tsx` → `src/screens/REPL.tsx`
 - 输入流：`processUserInput` 分发 `/command` 或普通输入 → `query` → `services/gemini/query.ts`
-- 配置：仅项目 `./.gemini/settings.json`（auth/model/mcp）；数据目录 `~/.gemini/yuuka/`
+- 配置：仅项目 `./.yuuka/settings.json`（auth/model/mcp）；数据目录 `~/.yuuka/data/`
 - 工具：`src/tools/*` + 权限系统；Bash 仅供模型调用（无手动 Bash 模式）
-- 扩展：`./.gemini/agents/` + `~/.gemini/agents/`，MCP 通过 `mcpServers`
+- 扩展：`./.yuuka/agents/` + `~/.yuuka/agents/`，MCP 通过 `mcpServers`
 
 ## 功能特性
 
@@ -89,8 +89,8 @@ yuuka -p "解释这个函数" 路径/到/文件.js
 
 ### 配置
 
-- 配置文件：`./.gemini/settings.json`（仅项目）
-- 数据目录：`~/.gemini/yuuka/`
+- 配置文件：`./.yuuka/settings.json`（仅项目）
+- 数据目录：`~/.yuuka/data/`
 - `/config` 设置 `baseUrl/apiKey/model`；`/model <name>` 写入项目 settings
 - 默认模型：`models/gemini-3-flash-preview`（可选 `models/gemini-3-pro-preview`）
 
@@ -220,7 +220,7 @@ npm run forum:patrol
 ### GitHub 发布前清单
 
 推送前请检查：
-- 不提交密钥：`.gemini/settings.json`、OAuth 凭据、token、本地历史。
+- 不提交密钥：`.yuuka/settings.json`、OAuth 凭据、token、本地历史。
 - 不提交本地缓存/构建垃圾：`node_modules/`、`dist/`（除非你明确需要）、`.npm-cache-local/`。
 - 不提交本地专用二进制（本仓库：`mcp-servers/windows-mcp/bin/`）。
 - 执行：

@@ -380,7 +380,7 @@ function createCustomCommand(
 
   // Determine scope based on directory location
   // This follows the same pattern as Claude Desktop's command system
-  const userGeminiDir = join(homedir(), '.gemini', 'commands')
+  const userGeminiDir = join(homedir(), '.yuuka', 'commands')
   const scope: 'user' | 'project' =
     baseDir === userGeminiDir ? 'user' : 'project'
   const prefix = scope === 'user' ? 'user' : 'project'
@@ -484,16 +484,13 @@ function createCustomCommand(
 }
 
 /**
- * Load custom commands from .gemini/commands/ directories
+ * Load custom commands from ~/.yuuka/commands/
  *
- * This function scans both user-level and project-level command directories
- * for markdown files and processes them into Command objects. It follows the
- * same discovery pattern as Claude Desktop but with additional performance
- * optimizations and error handling.
+ * This function scans user-level command directories for markdown files
+ * and processes them into Command objects.
  *
  * Directory structure:
- * - User commands: ~/.gemini/commands/
- * - Project commands: {project}/.gemini/commands/
+ * - User commands: ~/.yuuka/commands/
  *
  * The function is memoized for performance but includes cache invalidation
  * based on directory contents and timestamps.
@@ -502,9 +499,8 @@ function createCustomCommand(
  */
 export const loadCustomCommands = memoize(
   async (): Promise<CustomCommandWithScope[]> => {
-    // Gemini-only：只读取 .gemini/commands（全局 + 项目）
-    const userGeminiDir = join(homedir(), '.gemini', 'commands')
-    const projectGeminiDir = join(getCwd(), '.gemini', 'commands')
+    // 全局模式：只读取 ~/.yuuka/commands
+    const userGeminiDir = join(homedir(), '.yuuka', 'commands')
 
     // Set up abort controller for timeout handling
     const abortController = new AbortController()
@@ -513,27 +509,13 @@ export const loadCustomCommands = memoize(
     try {
       const startTime = Date.now()
 
-      // Scan both directories for .md files concurrently
-      // This pattern matches the async loading used elsewhere in the project
-      const [projectFiles, userFiles] = await Promise.all([
-        existsSync(projectGeminiDir)
-          ? scanMarkdownFiles(
-              ['--files', '--hidden', '--glob', '*.md'], // Legacy args for ripgrep compatibility
-              projectGeminiDir,
-              abortController.signal,
-            )
-          : Promise.resolve([]),
-        existsSync(userGeminiDir)
-          ? scanMarkdownFiles(
-              ['--files', '--glob', '*.md'], // Legacy args for ripgrep compatibility
-              userGeminiDir,
-              abortController.signal,
-            )
-          : Promise.resolve([]),
-      ])
-
-      // Combine files with priority: project > user
-      const allFiles = [...projectFiles, ...userFiles]
+      const userFiles = existsSync(userGeminiDir)
+        ? await scanMarkdownFiles(
+            ['--files', '--glob', '*.md'], // Legacy args for ripgrep compatibility
+            userGeminiDir,
+            abortController.signal,
+          )
+        : []
       const duration = Date.now() - startTime
 
       // Log performance metrics for monitoring
@@ -543,28 +525,7 @@ export const loadCustomCommands = memoize(
       // Parse files and create command objects
       const commands: CustomCommandWithScope[] = []
 
-      // Process project files first (higher priority)
-      for (const filePath of projectFiles) {
-        try {
-          const content = readFileSync(filePath, { encoding: 'utf-8' })
-          const { frontmatter, content: commandContent } =
-            parseFrontmatter(content)
-          const command = createCustomCommand(
-            frontmatter,
-            commandContent,
-            filePath,
-            projectGeminiDir,
-          )
-
-          if (command) {
-            commands.push(command)
-          }
-        } catch (error) {
-          console.warn(`Failed to load custom command from ${filePath}:`, error)
-        }
-      }
-
-      // Process user files second (lower priority)
+      // Process user files
       for (const filePath of userFiles) {
         try {
           const content = readFileSync(filePath, { encoding: 'utf-8' })
@@ -602,13 +563,11 @@ export const loadCustomCommands = memoize(
   // Memoization resolver based on current working directory and directory state
   // This ensures cache invalidation when directories change
   () => {
-    const cwd = getCwd()
-    const userGeminiDir = join(homedir(), '.gemini', 'commands')
-    const projectGeminiDir = join(cwd, '.gemini', 'commands')
+    const userGeminiDir = join(homedir(), '.yuuka', 'commands')
 
     // Create cache key that includes directory existence and timestamp
     // This provides reasonable cache invalidation without excessive file system checks
-    return `${cwd}:${existsSync(userGeminiDir)}:${existsSync(projectGeminiDir)}:${Math.floor(Date.now() / 60000)}`
+    return `${existsSync(userGeminiDir)}:${Math.floor(Date.now() / 60000)}`
   },
 )
 
@@ -637,11 +596,9 @@ export const reloadCustomCommands = (): void => {
  */
 export function getCustomCommandDirectories(): {
   userGemini: string
-  projectGemini: string
 } {
   return {
-    userGemini: join(homedir(), '.gemini', 'commands'),
-    projectGemini: join(getCwd(), '.gemini', 'commands'),
+    userGemini: join(homedir(), '.yuuka', 'commands'),
   }
 }
 
@@ -655,6 +612,6 @@ export function getCustomCommandDirectories(): {
  * @returns boolean - True if at least one command directory exists
  */
 export function hasCustomCommands(): boolean {
-  const { userGemini, projectGemini } = getCustomCommandDirectories()
-  return existsSync(userGemini) || existsSync(projectGemini)
+  const { userGemini } = getCustomCommandDirectories()
+  return existsSync(userGemini)
 }

@@ -42,8 +42,8 @@ jobs:
             exit 0
           fi
 
-          mkdir -p .gemini
-          cat > .gemini/settings.json <<JSON
+          mkdir -p .yuuka
+          cat > .yuuka/settings.json <<JSON
           {
             "security": {
               "auth": {
