@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
-import { randomUUID } from 'crypto'
+import { createHash, randomUUID } from 'crypto'
 import { CONFIG_BASE_DIR } from '@constants/product'
 
 /**
@@ -22,7 +22,10 @@ function getConfigDirectory(): string {
  * Get the current session ID
  */
 function getSessionId(): string {
-  return 'default-session'
+  // 基于工作目录生成稳定 session，避免不同项目互相污染
+  const cwd = process.cwd()
+  const hash = createHash('md5').update(cwd).digest('hex').slice(0, 8)
+  return `project-${hash}`
 }
 
 /**
@@ -80,7 +83,7 @@ export function writeAgentData<T = any>(agentId: string, data: T): void {
  * Get default agent ID if none is provided
  */
 export function getDefaultAgentId(): string {
-  return 'default'
+  return 'lead'
 }
 
 /**

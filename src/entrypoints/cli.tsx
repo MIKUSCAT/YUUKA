@@ -26,9 +26,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { homedir } from 'node:os'
-import { initSentry } from '@services/sentry'
 import { PRODUCT_COMMAND, PRODUCT_NAME } from '@constants/product'
-initSentry() // Initialize Sentry as early as possible
 
 // Ensure YOGA_WASM_PATH is set for Ink across run modes (wrapper/dev)
 // Resolve yoga.wasm relative to this file when missing using ESM-friendly APIs

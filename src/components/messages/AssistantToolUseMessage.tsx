@@ -55,7 +55,9 @@ export function AssistantToolUseMessage({
     return null
   }
 
-  const userFacingToolName = tool.userFacingName ? tool.userFacingName(param.input as any) : tool.name
+  const userFacingToolName = tool.userFacingName
+    ? tool.userFacingName()
+    : tool.name
   const toolMessage = tool.renderToolUseMessage(param.input as never, {
     verbose,
   })

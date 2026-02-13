@@ -1,100 +1,139 @@
-# YUUKA - 终端个人电脑 Agent
+<p align="center">
+  <img src="./YUUKA.jpeg" width="200" alt="YUUKA logo" />
+</p>
 
-[![npm version](https://badge.fury.io/js/yuuka.svg)](https://www.npmjs.com/package/yuuka)
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+<h1 align="center">YUUKA</h1>
 
-[English](README.md)
+<p align="center">
+  运行在终端中的个人 AI Agent —— 基于 Gemini 驱动
+</p>
 
-## 重磅消息：我们已切换至 Apache 2.0 开源协议！
+<p align="center">
+  <a href="https://www.npmjs.com/package/yuuka"><img src="https://badge.fury.io/js/yuuka.svg" alt="npm version" /></a>
+  <a href="https://opensource.org/licenses/Apache-2.0"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License" /></a>
+  <img src="https://img.shields.io/node/v/yuuka" alt="node version" />
+</p>
 
-**开发者社区的福音来了！** 为了推动 AI 智能体技术的民主化进程，构建充满活力的创新生态，我们激动地宣布：YUUKA 已正式从 AGPLv3 协议升级为 **Apache 2.0 开源协议**。
+<p align="center">
+  <a href="README.md">English</a>
+</p>
 
-### 这对您意味着什么：
-- **完全自由**：在任何项目中使用 YUUKA - 无论是个人项目、商业产品还是企业方案
-- **无障碍创新**：构建专有解决方案，无需开源您的代码
-- **极简要求**：仅需保留版权声明和许可信息
-- **共创未来**：与全球开发者一起，加速世界向 AI 驱动生产的转型
+<p align="center">
+  <img width="90%" alt="YUUKA 终端截图" src="https://github.com/user-attachments/assets/fdce7017-8095-429d-b74e-07f43a6919e1" />
+</p>
 
-让我们携手共建未来！
+---
 
-## 更新日志
+## 目录
 
-**2025-08-29**：我们添加了 Windows 电脑的运行支持！所有的 Windows 用户现在可以使用你电脑上的 Git Bash、Unix 子系统或 WSL（Windows Subsystem for Linux）来运行 YUUKA。
-
-YUUKA 是一个个人电脑 Agent，运行在你的终端中。它能理解你的代码库、编辑文件、运行命令，并为你处理整个工作流。
-
-> **安全提示**：YUUKA 默认以 YOLO 模式运行（等同于 Claude Code 的 `--dangerously-skip-permissions` 标志），跳过所有权限检查以获得最大生产力。YOLO 模式仅建议在安全可信的环境中处理非重要项目时使用。如果您正在处理重要文件或使用能力存疑的模型，我们强烈建议使用 `yuuka --safe` 启用权限检查和手动审批所有操作。
-> 
-> **模型性能建议**：为获得最佳体验，建议使用专为自主任务完成设计的新一代强大模型。避免使用 GPT-4o、Gemini 2.5 Pro 等较老的问答型模型，它们主要针对回答问题进行优化，而非持续的独立任务执行。请选择专门训练用于智能体工作流和扩展推理能力的模型。
->
-> **本版本说明（Gemini-only）**：只使用 Gemini 原生 API（`Authorization: Bearer <apiKey>`）。配置只放在当前项目 `./.yuuka/settings.json`（不再合并全局）。
-
-## 技术蓝图
-
-- 入口：`src/entrypoints/cli.tsx` → `src/screens/REPL.tsx`
-- 输入流：`processUserInput` 分发 `/command` 或普通输入 → `query` → `services/gemini/query.ts`
-- 配置：仅项目 `./.yuuka/settings.json`（auth/model/mcp）；数据目录 `~/.yuuka/data/`
-- 工具：`src/tools/*` + 权限系统；Bash 仅供模型调用（无手动 Bash 模式）
-- 扩展：`./.yuuka/agents/` + `~/.yuuka/agents/`，MCP 通过 `mcpServers`
+- [功能特性](#功能特性)
+- [快速开始](#快速开始)
+- [使用方法](#使用方法)
+- [配置](#配置)
+- [Windows 说明](#windows-说明)
+- [安全](#安全)
+- [架构](#架构)
+- [开发](#开发)
+- [截图](#截图)
+- [致谢](#致谢)
+- [许可证](#许可证)
+- [支持](#支持)
 
 ## 功能特性
 
-- **AI 驱动的助手** - 使用先进的 AI 模型理解并响应你的请求
-- **Gemini 单模型** - 本版本只使用 Gemini 原生 API
-- **代码编辑** - 直接编辑文件，提供智能建议和改进
-- **代码库理解** - 分析项目结构和代码关系
-- **命令执行** - 实时运行 shell 命令并查看结果
-- **工作流自动化** - 用简单的提示处理复杂的开发任务
-- **交互式界面** - 美观的终端界面，支持语法高亮
-- **工具系统** - 可扩展的架构，为不同任务提供专门的工具
-- **上下文管理** - 智能的上下文处理，保持对话连续性
+### 核心能力
 
-### 创作便捷
-- `Ctrl+G` 将消息打开到外部编辑器（优先 `$EDITOR`/`$VISUAL`，回退 code/nano/vim/notepad），关闭后内容自动回填到终端输入框。
-- `Shift+Enter` 在输入框内换行但不发送，普通 Enter 提交。
+- **Gemini 原生** — 直接使用 Gemini API（`Authorization: Bearer <apiKey>`）
+- **代码编辑** — 读写和重构文件，提供智能建议
+- **代码库理解** — 分析项目结构和代码关系
+- **命令执行** — 实时运行 shell 命令并查看结果
+- **工作流自动化** — 用简单的提示处理复杂开发任务
+- **持久记忆** — `MemoryRead` / `MemoryWrite` 实现跨会话长期上下文
 
-## 安装
+### Agent 系统
+
+- **子 Agent 委托** — 使用 `@run-agent-name` 将任务交给专门的子 Agent
+- **自定义 Agent** — 将 Agent 定义文件放入 `.yuuka/agents/`（项目级或全局）
+- **MCP 集成** — 通过 settings 中的 `mcpServers` 连接外部工具服务器
+
+### 智能补全
+
+- **模糊匹配** — 支持连字符识别和缩写（`dao` → `run-agent-dao-qi-harmony-designer`）
+- **上下文检测** — 自动为 Agent 和文件引用添加 `@` 前缀
+- **500+ Unix 命令** — 精选命令列表与系统 PATH 取交集
+
+### 用户体验
+
+- **交互式终端 UI** — 基于 React/Ink 构建，内置语法高亮
+- **外部编辑器** — `Ctrl+G` 打开 `$EDITOR`；关闭后内容自动回填
+- **多行输入** — `Shift+Enter` 换行，`Enter` 提交
+
+## 快速开始
 
 ```bash
+# 1. 安装
 npm install -g yuuka
+
+# 2. 配置（首次运行时）
+yuuka          # 然后使用 /auth 设置 Gemini API Key
+
+# 3. 启动
+yuuka
 ```
-
-安装后直接运行：
-- `yuuka`
-
-### Windows 提示
-
-- 请安装 Git for Windows（包含 Git Bash 类 Unix 终端）：https://git-scm.com/download/win
-  - YUUKA 会优先使用 Git Bash/MSYS 或 WSL Bash；没有时会回退到默认终端，但在 Bash 下体验更佳。
-- 推荐在 VS Code 的集成终端中运行（而非系统默认的 cmd）：
-  - 字体与图标显示更稳定，UI 体验更好。
-  - 相比 cmd 路径/编码等兼容性问题更少。
-  - 在 VS Code 终端中选择 “Git Bash” 作为默认 Shell。
-- 可选：若通过 npm 全局安装，建议避免将 npm 全局 prefix 设置在含空格的路径，以免生成的可执行 shim 出现路径解析问题。
-  - 示例：`npm config set prefix "C:\\npm"`，然后重新安装全局包。
 
 ## 使用方法
 
 ### 交互模式
-启动交互式会话：
+
 ```bash
 yuuka
 ```
 
 ### 非交互模式
-获取快速响应：
+
 ```bash
-yuuka -p "解释这个函数" 路径/到/文件.js
+yuuka -p "解释这个函数" path/to/file.js
 ```
 
-### 配置
+### @ 提及系统
 
-- 配置文件：`./.yuuka/settings.json`（仅项目）
-- 数据目录：`~/.yuuka/data/`
-- `/config` 设置 `baseUrl/apiKey/model`；`/model <name>` 写入项目 settings
-- 默认模型：`models/gemini-3-flash-preview`（可选 `models/gemini-3-pro-preview`）
+在提示中直接委托给子 Agent 或引用文件：
+
+```bash
+# Agent
+@run-agent-simplicity-auditor 审查这段代码是否过度工程化
+@run-agent-architect 为这个系统设计微服务架构
+
+# 文件
+@src/components/Button.tsx  解释这个组件
+```
+
+### 持久记忆
+
+- `/memory` — 手动刷新用户偏好记忆文件
+- `MemoryRead` / `MemoryWrite` — Agent 侧长期记忆工具
+
+### 命令列表
+
+| 命令       | 说明                     |
+| ---------- | ------------------------ |
+| `/config`  | 打开配置面板             |
+| `/model`   | 选择 / 设置模型（Gemini）|
+| `/auth`    | 设置 Gemini Base URL / API Key |
+| `/agents`  | 管理 Agent               |
+| `/mcp`     | 管理 MCP 服务器          |
+| `/clear`   | 清空对话                 |
+| `/compact` | 压缩上下文并继续         |
+| `/resume`  | 恢复上次会话             |
+| `/memory`  | 更新用户偏好记忆文件     |
+
+## 配置
+
+配置文件：`./.yuuka/settings.json`（仅项目级）
+数据目录：`~/.yuuka/data/`
 
 最小示例：
+
 ```json
 {
   "security": {
@@ -111,129 +150,104 @@ yuuka -p "解释这个函数" 路径/到/文件.js
 }
 ```
 
+使用 `/config` 交互式配置，或 `/model <name>` 切换模型。
+默认模型：`models/gemini-3-flash-preview`（可选 `models/gemini-3-pro-preview`）。
 
-### 常用命令
+## Windows 说明
 
-- `/config` - 打开配置面板
-- `/model` - 选择/设置模型（Gemini）
-- `/auth` - 设置 Gemini Base URL / API Key
-- `/agents` - 管理 agents
-- `/mcp` - 管理 MCP
-- `/clear` - 清空对话
-- `/compact` - 压缩并继续
-- `/resume` - 恢复上次会话
-- `/memory` - 把今日总结写入 AGENTS.md
+- 安装 [Git for Windows](https://git-scm.com/download/win) 获取 Bash 环境。
+  - YUUKA 会自动优先使用 Git Bash / MSYS 或 WSL Bash。
+  - 没有时回退到默认终端，但 Bash 下体验最佳。
+- 推荐：使用 VS Code 集成终端（选择 "Git Bash" 作为 Shell）。
+- 可选：避免将 npm 全局 prefix 设在含空格的路径，以免 shim 出现路径问题。
+  ```bash
+  npm config set prefix "C:\npm"
+  ```
 
-## 架构说明（当前版本）
+## 安全
 
-当前版本以 Gemini 为唯一运行时链路，核心路径如下：
+YUUKA 默认以 **YOLO 模式** 运行 — 所有工具调用自动批准，追求最大生产力。这很方便，但会跳过权限检查。
 
-- 对话主链路：`src/query.ts` → `src/services/llm.ts` → `src/services/gemini/query.ts`
-- 历史 `src/services/claude.ts` 分叉已下线，运行时统一收敛到 `src/services/llm.ts`（Gemini-only）
-- Provider 校验与模型列表能力拆分到 `src/services/llm/*` 独立模块
-- 系统提示词与项目上下文拼装独立到 `src/services/llm/systemPrompt.ts`、`src/services/llm/yuukaContext.ts`
+处理敏感项目时，建议使用：
 
-如果你从旧版本升级，可把历史“多 provider 运行时”文档视为过时内容。
+```bash
+yuuka --safe
+```
+
+该模式对每次工具调用（文件写入、命令执行等）都需要手动确认。
+
+> **模型建议**：为获得最佳效果，请使用专为 Agent 工作流和扩展推理设计的模型。较老的问答型模型在持续自主任务中表现可能不佳。
+
+## 架构
+
+```
+src/entrypoints/cli.tsx  →  src/screens/REPL.tsx
+                              ↓
+                         processUserInput
+                         /command  │  plain text
+                              ↓         ↓
+                          src/query.ts
+                              ↓
+                    src/services/llm.ts
+                              ↓
+                src/services/gemini/query.ts
+```
+
+- **配置**：`./.yuuka/settings.json`（auth / model / mcp）
+- **数据**：`~/.yuuka/data/`
+- **工具**：`src/tools/*` + 权限系统
+- **Agent**：`./.yuuka/agents/` + `~/.yuuka/agents/`
+- **提示词**：`src/services/llm/systemPrompt.ts`、`src/services/llm/yuukaContext.ts`
 
 ## 开发
 
-YUUKA 使用现代化工具构建，开发需要 Node.js（>=20）。
-
-### 设置开发环境
+需要 Node.js >= 20。
 
 ```bash
-# 克隆仓库
+# 克隆
 git clone https://github.com/shareAI-lab/yuuka.git
 cd yuuka
 
 # 安装依赖
 npm install
 
-# 在开发模式下运行
+# 开发模式
 npm run dev
-```
 
-### 构建
-
-```bash
+# 构建
 npm run build
-```
 
-### 测试
-
-```bash
 # 类型检查
 npm run typecheck
-
-# 构建校验
-npm run build
-
-# 测试 CLI
-./cli.cjs --help
 ```
 
-### 论坛巡检命令
+## 截图
 
-执行一轮“逛论坛 + 可选回复 1 条”：
+<details>
+<summary>点击展开</summary>
 
-```bash
-npm run forum:patrol
-```
+<img width="90%" alt="截图-1" src="https://github.com/user-attachments/assets/fdce7017-8095-429d-b74e-07f43a6919e1" />
 
-前置条件：
-- 必须存在 `~/.config/astrbook/credentials.json`
-- 文件格式：
+<img width="90%" alt="截图-2" src="https://github.com/user-attachments/assets/f220cc27-084d-468e-a3f4-d5bc44d84fac" />
 
-```json
-{
-  "api_base": "https://your-astrbook-host",
-  "token": "YOUR_TOKEN"
-}
-```
+<img width="90%" alt="截图-3" src="https://github.com/user-attachments/assets/90ec7399-1349-4607-b689-96613b3dc3e2" />
 
-可选：
-- 你可以用 `FORUM_PATROL_PROMPT` 覆盖默认巡检提示词。
+<img width="90%" alt="截图-4" src="https://github.com/user-attachments/assets/b30696ce-5ab1-40a0-b741-c7ef3945dba0" />
 
-### 定时巡检（每 4 小时）
+<img width="600" alt="截图-5" src="https://github.com/user-attachments/assets/8b46a39d-1ab6-4669-9391-14ccc6c5234c" />
 
-工作流文件：`.github/workflows/forum-patrol.yml`
+</details>
 
-- 触发：每 4 小时一次（`cron: 0 */4 * * *`，UTC）+ 手动触发 `workflow_dispatch`
-- 必需 GitHub Secrets：
-  - `GEMINI_API_KEY`
-  - `ASTRBOOK_API_BASE`
-  - `ASTRBOOK_TOKEN`
-- 可选 GitHub Secrets：
-  - `GEMINI_BASE_URL`（默认 `https://generativelanguage.googleapis.com`）
-  - `GEMINI_MODEL`（默认 `models/gemini-2.5-flash`）
+## 致谢
 
-如果缺少必需密钥，工作流会安全跳过，不会发帖/回复。
-
-### MCP 在 GitHub 上怎么配（重点）
-
-你本机 MCP 正常不代表 GitHub Runner 能直接用。GitHub 托管 Runner 无法直接访问你本机进程/文件。常见做法：
-
-1. 用 `self-hosted runner`（部署在你自己的机器/VPS）复用本地 MCP。
-2. 把 MCP 打包成服务/容器，在 GitHub Actions 里临时启动。
-3. 用远程 MCP 服务地址，通过 GitHub Secrets 注入凭据。
-
-### GitHub 发布前清单
-
-推送前请检查：
-- 不提交密钥：`.yuuka/settings.json`、OAuth 凭据、token、本地历史。
-- 不提交本地缓存/构建垃圾：`node_modules/`、`dist/`（除非你明确需要）、`.npm-cache-local/`。
-- 不提交本地专用二进制（本仓库：`mcp-servers/windows-mcp/bin/`）。
-- 执行：
-
-```bash
-npm run typecheck
-npm run build
-git status --ignored=matching
-```
+- 部分代码来自 [@dnakov](https://github.com/dnakov) 的 anonkode
+- 部分代码来自 [Kode](https://github.com/shareAI-lab/kode)
+- UI 灵感来自 [gemini-cli](https://github.com/anthropics/gemini-cli)
+- 系统设计参考了 [Claude Code](https://github.com/anthropics/claude-code)
 
 ## 许可证
 
-Apache 2.0 许可证 - 详见 [LICENSE](LICENSE)。
+Apache 2.0 — 详见 [LICENSE](LICENSE)。
 
 ## 支持
 

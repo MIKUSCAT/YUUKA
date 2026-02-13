@@ -98,7 +98,7 @@ export function TaskProgressMessage({
 
   return (
     <Box flexDirection="row">
-      <Text color={theme.yuuka}>{TASK_DASH} </Text>
+      <Text color={theme.yuuka}> {TASK_DASH} </Text>
       <Text bold>[{agentType}]</Text>
       <Text color={theme.secondaryText}> {parts.join(' · ')}</Text>
     </Box>

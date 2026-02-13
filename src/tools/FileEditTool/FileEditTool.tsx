@@ -1,7 +1,7 @@
 import { Hunk } from 'diff'
 import { existsSync, mkdirSync, readFileSync, statSync } from 'fs'
 import { Box, Text } from 'ink'
-import { dirname, isAbsolute, relative, resolve, sep } from 'path'
+import { dirname, isAbsolute, relative, resolve } from 'path'
 import * as React from 'react'
 import { z } from 'zod'
 import { FileEditToolUpdatedMessage } from '@components/FileEditToolUpdatedMessage'
@@ -26,7 +26,6 @@ import { NotebookEditTool } from '@tools/NotebookEditTool/NotebookEditTool'
 import { DESCRIPTION } from './prompt'
 import { applyEdit, normalizeLineEndings } from './utils'
 import { hasWritePermission } from '@utils/permissions/filesystem'
-import { PROJECT_FILE } from '@constants/product'
 import { TREE_END } from '@constants/figures'
 
 const inputSchema = z.strictObject({
@@ -272,10 +271,6 @@ export const FileEditTool = {
 
     // Update read timestamp, to invalidate stale writes
     readFileTimestamps[fullFilePath] = statSync(fullFilePath).mtimeMs
-
-    // Log when editing CLAUDE.md
-    if (fullFilePath.endsWith(`${sep}${PROJECT_FILE}`)) {
-    }
 
     // Emit file edited event for system reminders
     emitReminderEvent('file:edited', {

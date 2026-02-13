@@ -1,11 +1,14 @@
 import type { Command } from '@commands'
-import { existsSync, readFileSync, writeFileSync } from 'fs'
-import { join } from 'path'
 import { getMessagesGetter } from '@messages'
 import type { Message } from '@query'
 import { queryQuick } from '@services/llm'
 import { extractTag } from '@utils/messages'
-import { getCwd } from '@utils/state'
+import { getGlobalConfig } from '@utils/config'
+import {
+  deleteMemoryFile,
+  readMemoryFile,
+  writeMemoryFile,
+} from '@utils/memoryStore'
 
 function formatLocalDateYYYYMMDD(date = new Date()): string {
   const yyyy = date.getFullYear()
@@ -80,23 +83,20 @@ function buildTranscript(messages: Message[]): string {
   return lines.join('\n')
 }
 
-function appendToAgentsMd(agentsPath: string, contentToAppend: string): void {
-  const existing = existsSync(agentsPath) ? readFileSync(agentsPath, 'utf-8') : ''
-  const trimmedExisting = existing.trimEnd()
-  const prefix = trimmedExisting ? `${trimmedExisting}\n\n` : ''
-  writeFileSync(agentsPath, `${prefix}${contentToAppend.trim()}\n`, 'utf-8')
-}
-
 const memory = {
   type: 'local',
   name: 'memory',
-  description: '把今天对话总结写入 AGENTS.md（含用户习惯/偏好）',
+  description: '更新用户偏好记忆（lead/YUUKA.md）',
   isEnabled: true,
   isHidden: false,
   userFacingName() {
     return 'memory'
   },
   async call(_args: string, context) {
+    if (!(getGlobalConfig().memoryWriteEnabled ?? true)) {
+      return 'MemoryWrite 已关闭，无法更新记忆。请先在 /config 里打开 MemoryWrite。'
+    }
+
     const getMessages = getMessagesGetter()
     const messages = typeof getMessages === 'function' ? getMessages() : []
 
@@ -107,20 +107,27 @@ const memory = {
 
     const today = formatLocalDateYYYYMMDD()
     const nowHHMM = formatLocalTimeHHMM()
-    const agentsPath = join(getCwd(), 'AGENTS.md')
+    const memoryFilePath = 'YUUKA.md'
+    const existingMemory = readMemoryFile(memoryFilePath, 'lead')?.trim() || ''
 
     const systemPrompt = [
-      '你是一个“工作记忆整理助手”。你要把今天的对话整理成一段会被追加到 AGENTS.md 的内容。',
+      '你是一个“用户偏好记忆整理助手”。你要更新 YUUKA.md。',
+      '目标：基于“已有记忆 + 本次对话”，输出完整的新 YUUKA.md（覆盖旧内容，不是追加）。',
       '要求：中文、口语化、短句为主，不要长篇大论。',
-      '只输出最终要写入 AGENTS.md 的 Markdown 内容，不要解释你的过程，也不要输出“我将/我会”。',
-      '必须包含两块：1) 今日对话总结 2) 用户习惯/偏好（尽量提炼成稳定规则）。',
-      '如果对话里有明确的下一步/未决事项，可以加一块“下一步”。',
+      '只保留跨会话有价值的稳定偏好、沟通习惯、长期工作方式。',
+      '不要记录临时任务、一次性细节、敏感信息。',
+      '遇到重复内容要去重；遇到冲突时，以本次对话最新表达为准。',
+      '必须输出 Markdown，且至少包含：# 用户偏好记忆、## 沟通偏好、## 工作偏好、## 其他长期约定、## 最后更新。',
       '不要泄露任何思考链/推理过程。',
+      '只输出最终 Markdown，不要解释过程，也不要输出“我将/我会”。',
     ]
 
     const userPrompt = [
-      `请基于下面“对话记录”，生成一段要追加到 AGENTS.md 的内容。`,
-      `标题里要带日期：${today}，并写上时间：${nowHHMM}。`,
+      '请更新 YUUKA.md。',
+      `最后更新时间请写：${today} ${nowHHMM}。`,
+      '',
+      '已有记忆（可能为空）：',
+      existingMemory || '(暂无)',
       '',
       '对话记录：',
       transcript,
@@ -147,8 +154,9 @@ const memory = {
       return '生成失败：模型没有返回可写入的内容'
     }
 
-    appendToAgentsMd(agentsPath, cleaned)
-    return `已写入：${agentsPath}`
+    const fullPath = writeMemoryFile(memoryFilePath, cleaned, 'lead')
+    deleteMemoryFile('index.md', 'lead')
+    return `已更新：${fullPath}`
   },
 } satisfies Command
 

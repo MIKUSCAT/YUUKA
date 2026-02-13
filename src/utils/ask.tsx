@@ -66,6 +66,7 @@ export async function ask({
       },
       abortController: new AbortController(),
       messageId: undefined,
+      agentId: 'lead',
       readFileTimestamps: {},
       setToolJSX: () => {}, // No-op function for non-interactive use
     },

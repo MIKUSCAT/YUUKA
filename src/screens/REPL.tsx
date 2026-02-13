@@ -88,6 +88,8 @@ export type BinaryFeedbackContext = {
   resolve: (result: BinaryFeedbackResult) => void
 }
 
+const EMPTY_TOOL_USE_IDS = new Set<string>()
+
 export function REPL({
   commands,
   safeMode,
@@ -327,6 +329,7 @@ export function REPL({
               maxThinkingTokens,
             },
             messageId: getLastAssistantMessageId([...messages, ...newMessages]),
+            agentId: 'lead',
             readFileTimestamps: readFileTimestamps.current,
             abortController: newAbortController,
             setToolJSX,
@@ -421,6 +424,7 @@ export function REPL({
           maxThinkingTokens,
         },
         messageId: getLastAssistantMessageId([...messages, lastMessage]),
+        agentId: 'lead',
         readFileTimestamps: readFileTimestamps.current,
         abortController: controllerToUse,
         setToolJSX,
@@ -504,9 +508,19 @@ export function REPL({
     [orderedMessages, normalizedMessages, unresolvedToolUseIDs],
   )
 
+  const canAnimateMessages =
+    !toolJSX && !toolUseConfirm && !isMessageSelectorVisible
+
   const messagesJSX = useMemo(() => {
     return orderedMessages.map((_, index) => {
         const toolUseID = getToolUseID(_)
+        const progressToolUseID =
+          _.type === 'progress' && _.content?.message?.content?.[0]
+            ? (_.content.message.content[0] as ToolUseBlockParam).id
+            : null
+        const progressUnresolvedToolUseIDs = progressToolUseID
+          ? new Set([progressToolUseID])
+          : EMPTY_TOOL_USE_IDS
         const message =
           _.type === 'progress' ? (
             _.content?.message?.content?.[0]?.type === 'text' &&
@@ -519,9 +533,9 @@ export function REPL({
                 tools={_.tools}
                 verbose={verbose ?? false}
                 debug={debug}
-                erroredToolUseIDs={new Set()}
-                inProgressToolUseIDs={new Set()}
-                unresolvedToolUseIDs={new Set()}
+                erroredToolUseIDs={EMPTY_TOOL_USE_IDS}
+                inProgressToolUseIDs={EMPTY_TOOL_USE_IDS}
+                unresolvedToolUseIDs={EMPTY_TOOL_USE_IDS}
                 shouldAnimate={false}
                 shouldShowDot={false}
               />
@@ -534,15 +548,9 @@ export function REPL({
                   tools={_.tools}
                   verbose={verbose ?? false}
                   debug={debug}
-                  erroredToolUseIDs={new Set()}
-                  inProgressToolUseIDs={new Set()}
-                  unresolvedToolUseIDs={
-                    new Set(
-                      _.content?.message?.content?.[0]
-                        ? [(_.content.message.content[0] as ToolUseBlockParam).id]
-                        : []
-                    )
-                  }
+                  erroredToolUseIDs={EMPTY_TOOL_USE_IDS}
+                  inProgressToolUseIDs={EMPTY_TOOL_USE_IDS}
+                  unresolvedToolUseIDs={progressUnresolvedToolUseIDs}
                   shouldAnimate={false}
                   shouldShowDot={false}
                 />
@@ -559,9 +567,7 @@ export function REPL({
               erroredToolUseIDs={erroredToolUseIDs}
               inProgressToolUseIDs={inProgressToolUseIDs}
               shouldAnimate={
-                !toolJSX &&
-                !toolUseConfirm &&
-                !isMessageSelectorVisible &&
+                canAnimateMessages &&
                 (!toolUseID || inProgressToolUseIDs.has(toolUseID))
               }
               shouldShowDot={true}
@@ -602,9 +608,7 @@ export function REPL({
     debug,
     erroredToolUseIDs,
     inProgressToolUseIDs,
-    toolJSX,
-    toolUseConfirm,
-    isMessageSelectorVisible,
+    canAnimateMessages,
     unresolvedToolUseIDs,
     replStaticPrefixLength,
   ])
@@ -631,6 +635,79 @@ export function REPL({
 
   // only show the dialog once not loading
   const showingCostDialog = !isLoading && showCostDialog
+
+  const toggleAutoMode = useCallback(() => {
+    setAutoMode(prev => !prev)
+  }, [])
+
+  const toggleMessageSelector = useCallback(() => {
+    setIsMessageSelectorVisible(prev => !prev)
+  }, [])
+
+  const promptInputContext = useMemo(
+    () => ({
+      commands,
+      forkNumber,
+      messageLogName,
+      debug,
+      verbose,
+      messages,
+      tools,
+      setForkConvoWithMessagesOnTheNextRender,
+      readFileTimestamps: readFileTimestamps.current,
+    }),
+    [
+      commands,
+      forkNumber,
+      messageLogName,
+      debug,
+      verbose,
+      messages,
+      tools,
+      setForkConvoWithMessagesOnTheNextRender,
+    ],
+  )
+
+  const promptInputState = useMemo(
+    () => ({
+      input: inputValue,
+      onInputChange: setInputValue,
+      cursorOffset,
+      setCursorOffset,
+      submitCount,
+      onSubmitCountChange: setSubmitCount,
+    }),
+    [inputValue, cursorOffset, submitCount],
+  )
+
+  const promptInputRuntime = useMemo(
+    () => ({
+      isDisabled: apiKeyStatus === 'invalid',
+      isLoading,
+      abortController,
+      autoMode,
+    }),
+    [apiKeyStatus, isLoading, abortController, autoMode],
+  )
+
+  const promptInputActions = useMemo(
+    () => ({
+      onQuery,
+      setToolJSX,
+      setIsLoading,
+      setAbortController,
+      onToggleAutoMode: toggleAutoMode,
+      onShowMessageSelector: toggleMessageSelector,
+    }),
+    [
+      onQuery,
+      setToolJSX,
+      setIsLoading,
+      setAbortController,
+      toggleAutoMode,
+      toggleMessageSelector,
+    ],
+  )
 
   return (
     <PermissionProvider 
@@ -708,36 +785,11 @@ export function REPL({
           !binaryFeedbackContext &&
           !showingCostDialog && (
             <>
-                <PromptInput
-                commands={commands}
-                forkNumber={forkNumber}
-                messageLogName={messageLogName}
-                tools={tools}
-                isDisabled={apiKeyStatus === 'invalid'}
-                isLoading={isLoading}
-                onQuery={onQuery}
-                debug={debug}
-                verbose={verbose}
-                messages={messages}
-                setToolJSX={setToolJSX}
-                input={inputValue}
-                onInputChange={setInputValue}
-                cursorOffset={cursorOffset}
-                setCursorOffset={setCursorOffset}
-                submitCount={submitCount}
-                onSubmitCountChange={setSubmitCount}
-                setIsLoading={setIsLoading}
-                  setAbortController={setAbortController}
-                  autoMode={autoMode}
-                  onToggleAutoMode={() => setAutoMode(prev => !prev)}
-                  onShowMessageSelector={() =>
-                    setIsMessageSelectorVisible(prev => !prev)
-                  }
-                setForkConvoWithMessagesOnTheNextRender={
-                  setForkConvoWithMessagesOnTheNextRender
-                }
-                readFileTimestamps={readFileTimestamps.current}
-                abortController={abortController}
+              <PromptInput
+                context={promptInputContext}
+                inputState={promptInputState}
+                runtime={promptInputRuntime}
+                actions={promptInputActions}
               />
             </>
           )}

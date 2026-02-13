@@ -3,14 +3,27 @@ import { getAgentInboxPath, getAgentOutboxPath } from './teamPaths'
 
 export type MailboxKind = 'inbox' | 'outbox'
 
+export type TeamMailboxMessageType =
+  | 'message'
+  | 'progress'
+  | 'result'
+  | 'status'
+  | 'broadcast'
+  | 'shutdown_request'
+  | 'shutdown_response'
+  | 'plan_approval_response'
+
 export interface TeamMailboxMessage {
   id: string
   teamName: string
   from: string
   to: string
-  type: 'message' | 'progress' | 'result' | 'status'
+  type: TeamMailboxMessageType
   content: string
   taskId?: string
+  summary?: string
+  requestId?: string
+  approve?: boolean
   createdAt: number
   metadata?: Record<string, unknown>
 }

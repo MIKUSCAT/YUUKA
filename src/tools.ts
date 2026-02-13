@@ -23,6 +23,9 @@ import { DocWriteTool } from './tools/DocTool/DocWriteTool'
 import { TeamCreateTool } from './tools/TeamTools/TeamCreateTool'
 import { TeamDeleteTool } from './tools/TeamTools/TeamDeleteTool'
 import { SendMessageTool } from './tools/TeamTools/SendMessageTool'
+import { TaskCreateTool } from './tools/SharedTaskTools/TaskCreateTool'
+import { TaskListTool } from './tools/SharedTaskTools/TaskListTool'
+import { TaskUpdateTool } from './tools/SharedTaskTools/TaskUpdateTool'
 import { getMCPTools } from './services/mcpClient'
 import { memoize } from 'lodash-es'
 
@@ -53,6 +56,9 @@ export const getAllTools = (): Tool[] => {
     TeamCreateTool as unknown as Tool,
     TeamDeleteTool as unknown as Tool,
     SendMessageTool as unknown as Tool,
+    TaskCreateTool as unknown as Tool,
+    TaskListTool as unknown as Tool,
+    TaskUpdateTool as unknown as Tool,
     ...ANT_ONLY_TOOLS,
   ]
 }

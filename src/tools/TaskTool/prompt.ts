@@ -35,6 +35,7 @@ ${agentDescriptions}
 
 When using the Task tool, you must specify a subagent_type parameter to select which agent type to use.
 You may optionally pass team_name and name to route the task through process teammates when process mode is enabled.
+When team_name is used, teammates should coordinate via SendMessage and shared task board tools (TaskCreate/TaskList/TaskUpdate).
 
 When to use the Agent tool:
 - When you are instructed to execute custom slash commands. Use the Agent tool with the slash command invocation as the entire prompt. The slash command can take arguments. For example: Task(description="Check the file", prompt="/check-file path/to/file.py")

@@ -598,6 +598,26 @@ export type NormalizedMessage =
   | AssistantMessage
   | ProgressMessage
 
+function createDeterministicBlockUUID(
+  assistantUUID: UUID,
+  blockIndex: number,
+): UUID {
+  const parts = String(assistantUUID).split('-')
+  if (parts.length !== 5) {
+    return randomUUID()
+  }
+
+  const tail = Number.parseInt(parts[4]!, 16)
+  const safeIndex = Math.max(0, blockIndex)
+  const stableTail = Number.isFinite(tail)
+    ? ((tail + safeIndex) % 0x1_0000_0000_0000)
+        .toString(16)
+        .padStart(12, '0')
+    : safeIndex.toString(16).padStart(12, '0').slice(-12)
+
+  return `${parts[0]}-${parts[1]}-${parts[2]}-${parts[3]}-${stableTail}` as UUID
+}
+
 // Split assistant messages, so each content block gets its own message.
 // Keep user messages intact to avoid duplicating the same uuid when content has multiple blocks.
 export function normalizeMessages(messages: Message[]): NormalizedMessage[] {
@@ -612,10 +632,10 @@ export function normalizeMessages(messages: Message[]): NormalizedMessage[] {
       return [message as NormalizedUserMessage]
     }
 
-    return message.message.content.map(block => {
+    return message.message.content.map((block, blockIndex) => {
       return {
         type: 'assistant',
-        uuid: randomUUID(),
+        uuid: createDeterministicBlockUUID(message.uuid, blockIndex),
         message: {
           ...message.message,
           content: [block],

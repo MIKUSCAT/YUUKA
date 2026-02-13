@@ -27,36 +27,44 @@ import { getActiveSkills, type SkillConfig } from '@utils/skillLoader'
 import { setSessionEnabledSkillNames } from '@utils/skillSession'
 
 type Props = {
-  commands: Command[]
-  forkNumber: number
-  messageLogName: string
-  isDisabled: boolean
-  isLoading: boolean
-  onQuery: (
-    newMessages: Message[],
-    abortController?: AbortController,
-  ) => Promise<void>
-  debug: boolean
-  verbose: boolean
-  messages: Message[]
-  setToolJSX: SetToolJSXFn
-  tools: Tool[]
-  input: string
-  onInputChange: (value: string) => void
-  cursorOffset: number
-  setCursorOffset: (offset: number) => void
-  submitCount: number
-  onSubmitCountChange: (updater: (prev: number) => number) => void
-  setIsLoading: (isLoading: boolean) => void
-  setAbortController: (abortController: AbortController | null) => void
-  autoMode: boolean
-  onToggleAutoMode: () => void
-  onShowMessageSelector: () => void
-  setForkConvoWithMessagesOnTheNextRender: (
-    forkConvoWithMessages: Message[],
-  ) => void
-  readFileTimestamps: { [filename: string]: number }
-  abortController: AbortController | null
+  context: {
+    commands: Command[]
+    forkNumber: number
+    messageLogName: string
+    debug: boolean
+    verbose: boolean
+    messages: Message[]
+    tools: Tool[]
+    setForkConvoWithMessagesOnTheNextRender: (
+      forkConvoWithMessages: Message[],
+    ) => void
+    readFileTimestamps: { [filename: string]: number }
+  }
+  inputState: {
+    input: string
+    onInputChange: (value: string) => void
+    cursorOffset: number
+    setCursorOffset: (offset: number) => void
+    submitCount: number
+    onSubmitCountChange: (updater: (prev: number) => number) => void
+  }
+  runtime: {
+    isDisabled: boolean
+    isLoading: boolean
+    abortController: AbortController | null
+    autoMode: boolean
+  }
+  actions: {
+    onQuery: (
+      newMessages: Message[],
+      abortController?: AbortController,
+    ) => Promise<void>
+    setToolJSX: SetToolJSXFn
+    setIsLoading: (isLoading: boolean) => void
+    setAbortController: (abortController: AbortController | null) => void
+    onToggleAutoMode: () => void
+    onShowMessageSelector: () => void
+  }
 }
 
 function getPastedTextPrompt(text: string): string {
@@ -64,32 +72,40 @@ function getPastedTextPrompt(text: string): string {
   return `[Pasted text +${newlineCount} lines] `
 }
 function PromptInput({
-  commands,
-  forkNumber,
-  messageLogName,
-  isDisabled,
-  isLoading,
-  onQuery,
-  debug,
-  verbose,
-  messages,
-  setToolJSX,
-  tools,
-  input,
-  onInputChange,
-  cursorOffset,
-  setCursorOffset,
-  submitCount,
-  onSubmitCountChange,
-  setIsLoading,
-  abortController,
-  setAbortController,
-  autoMode,
-  onToggleAutoMode,
-  onShowMessageSelector,
-  setForkConvoWithMessagesOnTheNextRender,
-  readFileTimestamps,
+  context,
+  inputState,
+  runtime,
+  actions,
 }: Props): React.ReactNode {
+  const {
+    commands,
+    forkNumber,
+    messageLogName,
+    debug,
+    verbose,
+    messages,
+    tools,
+    setForkConvoWithMessagesOnTheNextRender,
+    readFileTimestamps,
+  } = context
+  const {
+    input,
+    onInputChange,
+    cursorOffset,
+    setCursorOffset,
+    submitCount,
+    onSubmitCountChange,
+  } = inputState
+  const { isDisabled, isLoading, abortController, autoMode } = runtime
+  const {
+    onQuery,
+    setToolJSX,
+    setIsLoading,
+    setAbortController,
+    onToggleAutoMode,
+    onShowMessageSelector,
+  } = actions
+
   const [exitMessage, setExitMessage] = useState<{
     show: boolean
     key?: string

@@ -2,7 +2,7 @@ import { Hunk } from 'diff'
 import { existsSync, mkdirSync, readFileSync, statSync } from 'fs'
 import { Box, Text } from 'ink'
 import { EOL } from 'os'
-import { dirname, extname, isAbsolute, relative, resolve, sep } from 'path'
+import { dirname, extname, isAbsolute, relative, resolve } from 'path'
 import * as React from 'react'
 import { z } from 'zod'
 import { FileEditToolUpdatedMessage } from '@components/FileEditToolUpdatedMessage'
@@ -25,7 +25,6 @@ import { getGlobalConfig } from '@utils/config'
 import { PROMPT } from './prompt'
 import { hasWritePermission } from '@utils/permissions/filesystem'
 import { getPatch } from '@utils/diff'
-import { PROJECT_FILE } from '@constants/product'
 import { emitReminderEvent } from '@services/systemReminder'
 import { recordFileEdit } from '@services/fileFreshness'
 import { TREE_END } from '@constants/figures'
@@ -230,10 +229,6 @@ export const FileWriteTool = {
 
     // Update read timestamp, to invalidate stale writes
     readFileTimestamps[fullFilePath] = statSync(fullFilePath).mtimeMs
-
-    // Log when writing to CLAUDE.md
-    if (fullFilePath.endsWith(`${sep}${PROJECT_FILE}`)) {
-    }
 
     // Emit file edited event for system reminders
     emitReminderEvent('file:edited', {

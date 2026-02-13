@@ -8,8 +8,6 @@ import { getCwd } from './utils/state'
 import { memoize, omit } from 'lodash-es'
 import { LSTool } from './tools/lsTool/lsTool'
 import { getIsGit } from './utils/git'
-import { ripGrep } from './utils/ripgrep'
-import * as path from 'path'
 import { execFileNoThrow } from './utils/execFileNoThrow'
 import { join } from 'path'
 import { readFile } from 'fs/promises'
@@ -17,50 +15,6 @@ import { existsSync } from 'fs'
 import { getModelManager } from './utils/model'
 import { lastX } from './utils/generators'
 import { getGitEmail } from './utils/user'
-import { PROJECT_FILE } from './constants/product'
-/**
- * Locate AGENTS.md and CLAUDE.md files for backward compatibility with
- * existing documentation workflows.
- */
-export async function getClaudeFiles(): Promise<string | null> {
-  const abortController = new AbortController()
-  const timeout = setTimeout(() => abortController.abort(), 3000)
-  try {
-    // Search for both AGENTS.md and CLAUDE.md files
-    const [codeContextFiles, claudeFiles] = await Promise.all([
-      ripGrep(
-        ['--files', '--glob', join('**', '*', PROJECT_FILE)],
-        getCwd(),
-        abortController.signal,
-      ).catch(() => []),
-      ripGrep(
-        ['--files', '--glob', join('**', '*', 'CLAUDE.md')],
-        getCwd(),
-        abortController.signal,
-      ).catch(() => []),
-    ])
-
-    const allFiles = [...codeContextFiles, ...claudeFiles]
-    if (!allFiles.length) {
-      return null
-    }
-
-    // Add instructions for additional project files
-    const fileTypes = []
-    if (codeContextFiles.length > 0) fileTypes.push('AGENTS.md')
-    if (claudeFiles.length > 0) fileTypes.push('CLAUDE.md')
-
-    return `NOTE: Additional project documentation files (${fileTypes.join(', ')}) were found. When working in these directories, make sure to read and follow the instructions in the corresponding files:\n${allFiles
-      .map(_ => path.join(getCwd(), _))
-      .map(_ => `- ${_}`)
-      .join('\n')}`
-  } catch (error) {
-    logError(error)
-    return null
-  } finally {
-    clearTimeout(timeout)
-  }
-}
 
 export function setContext(key: string, value: string): void {
   const projectConfig = getCurrentProjectConfig()
@@ -91,44 +45,6 @@ export const getReadme = memoize(async (): Promise<string | null> => {
     }
     const content = await readFile(readmePath, 'utf-8')
     return content
-  } catch (e) {
-    logError(e)
-    return null
-  }
-})
-
-/**
- * Get project documentation content (AGENTS.md and CLAUDE.md)
- */
-export const getProjectDocs = memoize(async (): Promise<string | null> => {
-  try {
-    const cwd = getCwd()
-    const codeContextPath = join(cwd, 'AGENTS.md')
-    const claudePath = join(cwd, 'CLAUDE.md')
-
-    const docs = []
-
-    // Try to read AGENTS.md
-    if (existsSync(codeContextPath)) {
-      try {
-        const content = await readFile(codeContextPath, 'utf-8')
-        docs.push(`# AGENTS.md\n\n${content}`)
-      } catch (e) {
-        logError(e)
-      }
-    }
-
-    // Try to read CLAUDE.md
-    if (existsSync(claudePath)) {
-      try {
-        const content = await readFile(claudePath, 'utf-8')
-        docs.push(`# CLAUDE.md\n\n${content}`)
-      } catch (e) {
-        logError(e)
-      }
-    }
-
-    return docs.length > 0 ? docs.join('\n\n---\n\n') : null
   } catch (e) {
     logError(e)
     return null
@@ -214,22 +130,18 @@ export const getContext = memoize(
     const codeStyle = getCodeStyle()
     const projectConfig = getCurrentProjectConfig()
     const dontCrawl = projectConfig.dontCrawlDirectory
-    const [gitStatus, directoryStructure, claudeFiles, readme, projectDocs] =
+    const [gitStatus, directoryStructure, readme] =
       await Promise.all([
         getGitStatus(),
         dontCrawl ? Promise.resolve('') : getDirectoryStructure(),
-        dontCrawl ? Promise.resolve('') : getClaudeFiles(),
         getReadme(),
-        getProjectDocs(),
       ])
     return {
       ...projectConfig.context,
       ...(directoryStructure ? { directoryStructure } : {}),
       ...(gitStatus ? { gitStatus } : {}),
       ...(codeStyle ? { codeStyle } : {}),
-      ...(claudeFiles ? { claudeFiles } : {}),
       ...(readme ? { readme } : {}),
-      ...(projectDocs ? { projectDocs } : {}),
     }
   },
 )

@@ -1,17 +1,14 @@
-import { mkdirSync, writeFileSync } from 'fs'
 import { Box, Text } from 'ink'
-import { dirname, join } from 'path'
 import * as React from 'react'
 import { z } from 'zod'
 import { FallbackToolUseRejectedMessage } from '@components/FallbackToolUseRejectedMessage'
 import { Tool } from '@tool'
-import { MEMORY_DIR } from '@utils/env'
 import { getGlobalConfig } from '@utils/config'
-import { resolveAgentId } from '@utils/agentStorage'
 import { recordFileEdit } from '@services/fileFreshness'
 import { DESCRIPTION, PROMPT } from './prompt'
 import { getTheme } from '@utils/theme'
 import { TREE_END } from '@constants/figures'
+import { resolveMemoryFilePath, writeMemoryFile } from '@utils/memoryStore'
 
 const inputSchema = z.strictObject({
   file_path: z.string().describe('Path to the memory file to write'),
@@ -65,20 +62,15 @@ export const MemoryWriteTool = {
     )
   },
   async validateInput({ file_path }, context) {
-    const agentId = resolveAgentId(context?.agentId)
-    const agentMemoryDir = join(MEMORY_DIR, 'agents', agentId)
-    const fullPath = join(agentMemoryDir, file_path)
-    if (!fullPath.startsWith(agentMemoryDir)) {
+    try {
+      resolveMemoryFilePath(file_path, context?.agentId)
+    } catch {
       return { result: false, message: 'Invalid memory file path' }
     }
     return { result: true }
   },
   async *call({ file_path, content }, context) {
-    const agentId = resolveAgentId(context?.agentId)
-    const agentMemoryDir = join(MEMORY_DIR, 'agents', agentId)
-    const fullPath = join(agentMemoryDir, file_path)
-    mkdirSync(dirname(fullPath), { recursive: true })
-    writeFileSync(fullPath, content, 'utf-8')
+    const fullPath = writeMemoryFile(file_path, content, context?.agentId)
 
     // Record Agent edit operation for file freshness tracking
     recordFileEdit(fullPath, content)

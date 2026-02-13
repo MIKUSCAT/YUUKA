@@ -76,6 +76,34 @@ export async function runTeammateTask(taskFilePath: string): Promise<number> {
           if (message.taskId && message.taskId !== initialTask.id) {
             continue
           }
+          if (message.type === 'shutdown_request') {
+            const responsePayload = {
+              id: randomUUID(),
+              teamName: initialTask.teamName,
+              from: initialTask.agentName,
+              to: message.from || 'lead',
+              type: 'shutdown_response' as const,
+              content: 'approve',
+              requestId: message.requestId,
+              approve: true,
+              createdAt: Date.now(),
+            }
+            appendMailboxMessage(
+              'outbox',
+              initialTask.teamName,
+              initialTask.agentName,
+              responsePayload,
+            )
+            appendMailboxMessage(
+              'inbox',
+              initialTask.teamName,
+              responsePayload.to,
+              responsePayload,
+            )
+            markCancelled(`shutdown requested by ${message.from || 'lead'}`)
+            continue
+          }
+
           const content = String(message.content ?? '').trim()
           if (!content) continue
 
@@ -111,6 +139,9 @@ export async function runTeammateTask(taskFilePath: string): Promise<number> {
         prompt: initialTask.prompt,
         model_name: initialTask.model_name,
         subagent_type: initialTask.subagent_type,
+        team_name: initialTask.teamName,
+        name: initialTask.agentName,
+        agent_id: initialTask.agentName,
         safeMode: initialTask.safeMode,
         forkNumber: initialTask.forkNumber,
         messageLogName: initialTask.messageLogName,

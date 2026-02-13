@@ -203,11 +203,15 @@ source-maps/
 # Local research outputs
 deep-research/
 
-# Large local MCP server checkout (keep local, don't commit)
-mcp-servers/chrome-devtools-mcp/
+# MCP servers (local-only, not published)
+mcp-servers/
 
 # Local npm cache for dry-run/CI debug
 .npm-cache-local/
 
-# Keep windows mcp binary local only
-mcp-servers/windows-mcp/bin/
+# Generic Gemini settings (may contain secrets/session data)
+**/.gemini/
+
+# Forum patrol (internal feature)
+scripts/forum-patrol.cjs
+.github/workflows/forum-patrol.yml

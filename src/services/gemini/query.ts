@@ -15,7 +15,6 @@ import { kodeMessagesToGeminiContents, geminiResponseToAssistantMessage, toolsTo
 import { resolveGeminiModelConfig } from './modelConfig'
 import type { GeminiContent, GeminiGenerateContentResponse, GeminiPart } from './types'
 import { setSessionState } from '@utils/sessionState'
-import { parseThought } from '@utils/thought'
 import { GeminiHttpError } from './transport'
 import { applyGroundingCitations, extractGeminiGrounding, type GroundingSource } from './grounding'
 
@@ -24,6 +23,41 @@ const NO_CONTENT_TEXTS = new Set([
   '(No content)',
   '（模型没有输出可见内容，请重试）',
 ])
+
+type ThoughtSummary = {
+  subject: string
+  description: string
+}
+
+const THOUGHT_START_DELIMITER = '**'
+const THOUGHT_END_DELIMITER = '**'
+
+function parseThought(rawText: string): ThoughtSummary {
+  const text = String(rawText ?? '').trim()
+  const startIndex = text.indexOf(THOUGHT_START_DELIMITER)
+  if (startIndex === -1) {
+    return { subject: '', description: text }
+  }
+
+  const endIndex = text.indexOf(
+    THOUGHT_END_DELIMITER,
+    startIndex + THOUGHT_START_DELIMITER.length,
+  )
+  if (endIndex === -1) {
+    return { subject: '', description: text }
+  }
+
+  const subject = text
+    .substring(startIndex + THOUGHT_START_DELIMITER.length, endIndex)
+    .trim()
+
+  const description = (
+    text.substring(0, startIndex) +
+    text.substring(endIndex + THOUGHT_END_DELIMITER.length)
+  ).trim()
+
+  return { subject, description }
+}
 
 function isNoContentAssistantMessage(message: AssistantMessage): boolean {
   const raw = (message as any)?.message?.content

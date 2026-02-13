@@ -299,6 +299,8 @@ export const TaskTool = {
         prompt,
         model_name,
         subagent_type,
+        team_name,
+        name,
         safeMode,
         forkNumber,
         messageLogName,
@@ -431,7 +433,7 @@ export const TaskTool = {
         // CRITICAL FIX: Match original system interrupt rendering exactly
         return (
           <Box flexDirection="row">
-            <Text color={theme.yuuka}>{TASK_DASH} </Text>
+            <Text color={theme.yuuka}> {TASK_DASH} </Text>
             <Text color={theme.error}>Interrupted by user</Text>
           </Box>
         )
@@ -441,7 +443,7 @@ export const TaskTool = {
         <Box flexDirection="column">
           <Box justifyContent="space-between" width="100%">
             <Box flexDirection="row">
-              <Text color={theme.yuuka}>{TASK_DASH} </Text>
+              <Text color={theme.yuuka}> {TASK_DASH} </Text>
               <Text color={theme.success}>Task completed</Text>
               {textBlocks.length > 0 && (
                 <Text color={theme.secondaryText}>
@@ -457,7 +459,7 @@ export const TaskTool = {
 
     return (
       <Box flexDirection="row">
-        <Text color={theme.yuuka}>{TASK_DASH} </Text>
+        <Text color={theme.yuuka}> {TASK_DASH} </Text>
         <Text color={theme.secondaryText}>Task completed</Text>
       </Box>
     )

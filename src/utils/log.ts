@@ -6,7 +6,6 @@ import {
   promises as fsPromises,
 } from 'fs'
 import { dirname, join } from 'path'
-import { captureException } from '@services/sentry'
 import { randomUUID } from 'crypto'
 import envPaths from 'env-paths'
 import type { LogOption, SerializedMessage } from '@yuuka-types/logs'
@@ -117,8 +116,6 @@ export function logError(error: unknown): void {
   } catch {
     // pass
   }
-  // Also send to Sentry with session ID, but don't await
-  captureException(error)
 }
 
 export function getErrorsLog(): object[] {

@@ -17,6 +17,7 @@ import {
 import { getMaxThinkingTokens } from '@utils/thinking'
 import { generateAgentId } from '@utils/agentStorage'
 import { getAgentByType, getAvailableAgentTypes } from '@utils/agentLoader'
+import { normalizeAgentName, normalizeTeamName } from '@services/teamPaths'
 import { getTaskTools } from './prompt'
 
 export interface TaskExecutionProgress {
@@ -34,6 +35,9 @@ export interface RunAgentTaskExecutionInput {
   prompt: string
   model_name?: string
   subagent_type?: string
+  team_name?: string
+  name?: string
+  agent_id?: string
   safeMode: boolean
   forkNumber: number
   messageLogName: string
@@ -67,6 +71,42 @@ function normalizePreview(text: string, maxLength = 200): string {
   return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text
 }
 
+function buildTeammateGuidance(teamName: string, teammateName: string): string {
+  return `# Agent Teammate Communication
+
+你正在作为团队 "${teamName}" 的成员 "${teammateName}" 运行。
+
+重要规则：
+- 你的普通文本输出对其他队友不可见；需要协作请使用 SendMessage
+- 用户主要和 lead 交互，你的阶段结果要通过 TaskUpdate 与 SendMessage 汇报
+- 输出文件路径时请使用绝对路径
+- 向特定成员发消息用 SendMessage type="message"
+- 广播消息成本高，仅在确实需要同步全员时使用 type="broadcast"
+- 收到 shutdown_request 后，尽快完成当前安全步骤并发送 shutdown_response
+
+Teammate 工作流：
+1. 用 TaskList 查看共享任务（优先 open 且未 owner 的条目）
+2. 认领任务时用 TaskUpdate(taskId, owner="${teammateName}", status="in_progress")
+3. 完成后用 TaskUpdate 写入 status="completed" 和 result
+4. 通过 SendMessage 给 lead 发简短汇报`
+}
+
+function resolveTaskAgentId(input: {
+  team_name?: string
+  name?: string
+  agent_id?: string
+}): string {
+  if (input.agent_id && input.agent_id.trim()) {
+    return normalizeAgentName(input.agent_id)
+  }
+  if (input.team_name || input.name) {
+    const team = normalizeTeamName(input.team_name)
+    const agent = normalizeAgentName(input.name || 'teammate')
+    return `teammate-${team}-${agent}`
+  }
+  return generateAgentId()
+}
+
 export async function runAgentTaskExecution(
   input: RunAgentTaskExecutionInput,
   onProgress?: (progress: TaskExecutionProgress) => Promise<void> | void,
@@ -89,6 +129,9 @@ export async function* runAgentTaskExecutionStream(
     prompt,
     model_name,
     subagent_type,
+    team_name,
+    name,
+    agent_id,
     safeMode,
     forkNumber,
     messageLogName,
@@ -113,6 +156,12 @@ export async function* runAgentTaskExecutionStream(
 
   if (agentConfig.systemPrompt) {
     effectivePrompt = `${agentConfig.systemPrompt}\n\n${prompt}`
+  }
+  if (team_name) {
+    const normalizedTeamName = normalizeTeamName(team_name)
+    const teammateName = normalizeAgentName(name || 'anonymous')
+    const teammateGuidance = buildTeammateGuidance(normalizedTeamName, teammateName)
+    effectivePrompt = `${teammateGuidance}\n\n${effectivePrompt}`
   }
   if (!model_name && agentConfig.model_name && agentConfig.model_name !== 'inherit') {
     effectiveModel = agentConfig.model_name as string
@@ -161,7 +210,7 @@ export async function* runAgentTaskExecutionStream(
     getNextAvailableLogSidechainNumber(messageLogName, forkNumber),
   )
 
-  const taskId = generateAgentId()
+  const taskId = resolveTaskAgentId({ team_name, name, agent_id })
   const queryOptions = {
     safeMode,
     forkNumber,

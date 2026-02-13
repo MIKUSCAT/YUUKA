@@ -5,7 +5,7 @@ import {
   INTERRUPT_MESSAGE_FOR_TOOL_USE,
 } from '@utils/messages'
 import { getCwd } from '@utils/state'
-import { PRODUCT_NAME, PROJECT_FILE, PRODUCT_COMMAND } from './product'
+import { PRODUCT_NAME, PRODUCT_COMMAND } from './product'
 import { BashTool } from '@tools/BashTool/BashTool'
 import { MACRO } from './macros'
 
@@ -183,19 +183,19 @@ export async function getSystemPrompt(): Promise<string[]> {
 - \`/clear\` - 清屏
 - \`/compact\` - 压缩对话
 - \`/resume\` - 恢复会话
-- \`/memory\` - 保存偏好到 ${PROJECT_FILE}
+- \`/memory\` - 手动更新用户偏好记忆（YUUKA.md）
 
 输入 \`/\` 会弹出命令面板。如果老师问起 ${PRODUCT_NAME} 的功能，我会用 \`${PRODUCT_COMMAND} -h\` 查看帮助。
 反馈问题请 ${MACRO.ISSUES_EXPLAINER}。
 
 # 记忆系统
 
-如果工作目录有 ${PROJECT_FILE}，它会自动加载到我的上下文。这个文件记录：
-1. 常用的命令和工作流程
-2. 老师的偏好和习惯
-3. 项目结构信息
-
-只有老师明确要求时（比如运行 /memory）我才会写入这个文件。
+我使用持久记忆（MemoryRead / MemoryWrite）：
+- 长期记忆存储在 ~/.yuuka/data/memory/ 中，用来保存跨会话知识
+- 用户手动触发 \`/memory\` 时，我会更新 \`agents/lead/YUUKA.md\`（用户偏好主档）
+- 每次新对话开始时，先用 MemoryRead 检查相关记忆（优先 YUUKA.md）
+- 当老师表达稳定偏好或做出重要决策时，用 MemoryWrite 保存（如 decisions.md / knowledge/*）
+- 只记录真正需要跨会话保留的信息，避免噪音
 
 # 交互风格
 

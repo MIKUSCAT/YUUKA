@@ -1,5 +1,4 @@
 import * as React from 'react'
-import { captureException } from '@services/sentry'
 
 interface Props {
   children: React.ReactNode
@@ -20,13 +19,13 @@ export class SentryErrorBoundary extends React.Component<Props, State> {
   }
 
   componentDidCatch(error: Error): void {
-    // Don't report user-initiated cancellations to Sentry
+    // Ignore user-initiated cancellations
     if (error.name === 'AbortError' || 
         error.message?.includes('abort') ||
         error.message?.includes('The operation was aborted')) {
       return
     }
-    captureException(error)
+    // No external reporting configured yet; keep boundary behavior only.
   }
 
   render(): React.ReactNode {

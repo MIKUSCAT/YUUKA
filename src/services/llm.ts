@@ -3,7 +3,6 @@ import type { AssistantMessage, UserMessage } from '@query'
 import type { Tool, ToolUseContext } from '@tool'
 import { getGlobalConfig } from '@utils/config'
 import { getCLISyspromptPrefix } from '@constants/prompts'
-import { withVCR } from './vcr'
 import { queryGeminiLLM } from './gemini/query'
 import {
   debug as debugLogger,
@@ -67,16 +66,14 @@ export async function queryLLM(
       : systemPrompt
 
     const config = getGlobalConfig()
-    const result = await withVCR(messages, () =>
-      queryGeminiLLM({
-        messages,
-        systemPrompt: finalSystemPrompt,
-        tools,
-        signal,
-        model: options.model as any,
-        stream: config.stream ?? true,
-      }),
-    )
+    const result = await queryGeminiLLM({
+      messages,
+      systemPrompt: finalSystemPrompt,
+      tools,
+      signal,
+      model: options.model as any,
+      stream: config.stream ?? true,
+    })
 
     debugLogger.api('LLM_REQUEST_SUCCESS', {
       costUSD: result.costUSD,

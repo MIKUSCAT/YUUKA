@@ -59,7 +59,6 @@ function applyContentEdit(
   }
 }
 import { hasWritePermission } from '@utils/permissions/filesystem'
-import { PROJECT_FILE } from '@constants/product'
 import { DESCRIPTION, PROMPT } from './prompt'
 import { emitReminderEvent } from '@services/systemReminder'
 import { recordFileEdit } from '@services/fileFreshness'

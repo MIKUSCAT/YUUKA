@@ -1,6 +1,6 @@
 import { Box } from 'ink'
 import * as React from 'react'
-import type { AssistantMessage, Message, UserMessage } from '@query'
+import type { AssistantMessage, Message as QueryMessage, UserMessage } from '@query'
 import type {
   ContentBlock,
   DocumentBlockParam,
@@ -20,7 +20,7 @@ import { NormalizedMessage } from '@utils/messages'
 import { useTerminalSize } from '@hooks/useTerminalSize'
 import { ThinkTool } from '@tools/ThinkTool/ThinkTool'
 
-type Props = {
+type MessageProps = {
   message: UserMessage | AssistantMessage
   messages: NormalizedMessage[]
   // TODO: Find a way to remove this, and leave spacing to the consumer
@@ -36,7 +36,42 @@ type Props = {
   width?: number | string
 }
 
-export function Message({
+function areEqualStringSets(a: Set<string>, b: Set<string>): boolean {
+  if (a === b) {
+    return true
+  }
+  if (a.size !== b.size) {
+    return false
+  }
+  for (const value of a) {
+    if (!b.has(value)) {
+      return false
+    }
+  }
+  return true
+}
+
+function areMessagePropsEqual(
+  prev: MessageProps,
+  next: MessageProps,
+): boolean {
+  return (
+    prev.message.uuid === next.message.uuid &&
+    prev.messages === next.messages &&
+    prev.addMargin === next.addMargin &&
+    prev.tools === next.tools &&
+    prev.verbose === next.verbose &&
+    prev.debug === next.debug &&
+    prev.shouldAnimate === next.shouldAnimate &&
+    prev.shouldShowDot === next.shouldShowDot &&
+    prev.width === next.width &&
+    areEqualStringSets(prev.erroredToolUseIDs, next.erroredToolUseIDs) &&
+    areEqualStringSets(prev.inProgressToolUseIDs, next.inProgressToolUseIDs) &&
+    areEqualStringSets(prev.unresolvedToolUseIDs, next.unresolvedToolUseIDs)
+  )
+}
+
+function MessageComponent({
   message,
   messages,
   addMargin,
@@ -49,7 +84,7 @@ export function Message({
   shouldAnimate,
   shouldShowDot,
   width,
-}: Props): React.ReactNode {
+}: MessageProps): React.ReactNode {
   // Assistant message
   if (message.type === 'assistant') {
     const firstRenderableIndex = message.message.content.findIndex(block => {
@@ -116,7 +151,7 @@ function UserMessage({
   options: { verbose },
 }: {
   message: UserMessage
-  messages: Message[]
+  messages: QueryMessage[]
   addMargin: boolean
   tools: Tool[]
   param:
@@ -226,3 +261,5 @@ function AssistantMessage({
       return null
   }
 }
+
+export const Message = React.memo(MessageComponent, areMessagePropsEqual)
