@@ -7,9 +7,8 @@ import { homedir } from 'node:os'
 import { openBrowser } from '@utils/browser'
 import { fetch } from 'undici'
 
-const OAUTH_CLIENT_ID =
-  'REDACTED_OAUTH_CLIENT_ID'
-const OAUTH_CLIENT_SECRET = 'REDACTED_OAUTH_CLIENT_SECRET'
+const OAUTH_CLIENT_ID = process.env.YUUKA_OAUTH_CLIENT_ID || ''
+const OAUTH_CLIENT_SECRET = process.env.YUUKA_OAUTH_CLIENT_SECRET || ''
 const OAUTH_SCOPES = [
   'https://www.googleapis.com/auth/cloud-platform',
   'https://www.googleapis.com/auth/userinfo.email',

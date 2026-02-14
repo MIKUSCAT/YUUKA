@@ -1,5 +1,7 @@
 #!/usr/bin/env -S node --no-warnings=ExperimentalWarning --enable-source-maps
 
+import 'dotenv/config'
+
 // Global handler for AbortError - this prevents unhandled rejection crashes
 // when user presses ESC to cancel streaming requests
 process.on('unhandledRejection', (reason: any, promise) => {
