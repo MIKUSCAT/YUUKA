@@ -7,8 +7,8 @@ import { homedir } from 'node:os'
 import { openBrowser } from '@utils/browser'
 import { fetch } from 'undici'
 
-const OAUTH_CLIENT_ID = process.env.YUUKA_OAUTH_CLIENT_ID || ''
-const OAUTH_CLIENT_SECRET = process.env.YUUKA_OAUTH_CLIENT_SECRET || ''
+const OAUTH_CLIENT_ID = process.env.YUUKA_OAUTH_CLIENT_ID?.trim() || ''
+const OAUTH_CLIENT_SECRET = process.env.YUUKA_OAUTH_CLIENT_SECRET?.trim() || ''
 const OAUTH_SCOPES = [
   'https://www.googleapis.com/auth/cloud-platform',
   'https://www.googleapis.com/auth/userinfo.email',
@@ -46,6 +46,19 @@ export type GeminiCliOAuthCreds = {
 
 export function getGlobalGeminiOauthCredsPath(): string {
   return join(homedir(), '.yuuka', 'oauth_creds.json')
+}
+
+function ensureOauthClientConfigured(): void {
+  if (!OAUTH_CLIENT_ID) {
+    throw new Error(
+      'OAuth 配置缺失：client_id 为空。请设置 YUUKA_OAUTH_CLIENT_ID。',
+    )
+  }
+  if (!OAUTH_CLIENT_SECRET) {
+    throw new Error(
+      'OAuth 配置缺失：client_secret 为空。请设置 YUUKA_OAUTH_CLIENT_SECRET。',
+    )
+  }
 }
 
 async function readJsonFile<T>(filePath: string): Promise<T | null> {
@@ -117,6 +130,7 @@ export async function getAvailablePort(): Promise<number> {
 }
 
 function buildAuthUrl(options: { redirectUri: string; state: string }): string {
+  ensureOauthClientConfigured()
   const params = new URLSearchParams({
     client_id: OAUTH_CLIENT_ID,
     redirect_uri: options.redirectUri,
@@ -142,6 +156,7 @@ async function exchangeCodeForTokens(options: {
   code: string
   redirectUri: string
 }): Promise<GeminiCliOAuthCreds> {
+  ensureOauthClientConfigured()
   const form = new URLSearchParams({
     client_id: OAUTH_CLIENT_ID,
     client_secret: OAUTH_CLIENT_SECRET,
@@ -181,6 +196,7 @@ async function exchangeCodeForTokens(options: {
 }
 
 async function refreshAccessToken(creds: GeminiCliOAuthCreds): Promise<GeminiCliOAuthCreds> {
+  ensureOauthClientConfigured()
   const refreshToken = creds.refresh_token
   if (!refreshToken) {
     throw new Error('没有 refresh_token：请重新用 /auth 登录一次')
@@ -384,8 +400,10 @@ export async function getGeminiCliAuthContext(): Promise<{
 export async function loginWithGoogleForGeminiCli(options?: {
   onAuthUrl?: (url: string) => void
 }): Promise<{ email?: string; projectId?: string }> {
+  ensureOauthClientConfigured()
   const port = await getAvailablePort()
-  const redirectUri = `http://localhost:${port}/oauth2callback`
+  // Google 对 Desktop / loopback 回调有严格限制，优先使用 IP 字面量。
+  const redirectUri = `http://127.0.0.1:${port}/oauth2callback`
   const state = crypto.randomBytes(32).toString('hex')
   const authUrl = buildAuthUrl({ redirectUri, state })
 
@@ -393,7 +411,7 @@ export async function loginWithGoogleForGeminiCli(options?: {
   void openBrowser(authUrl)
 
   const code = await new Promise<string>((resolve, reject) => {
-    const host = process.env['OAUTH_CALLBACK_HOST'] || 'localhost'
+    const host = process.env['OAUTH_CALLBACK_HOST'] || '127.0.0.1'
     const server = http.createServer((req, res) => {
       try {
         if (!req.url || !req.url.includes('/oauth2callback')) {
@@ -402,7 +420,7 @@ export async function loginWithGoogleForGeminiCli(options?: {
           return
         }
 
-        const qs = new URL(req.url, 'http://localhost:3000').searchParams
+        const qs = new URL(req.url, 'http://127.0.0.1:3000').searchParams
         const error = qs.get('error')
         const gotState = qs.get('state')
         const gotCode = qs.get('code')
