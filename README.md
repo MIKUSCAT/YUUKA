@@ -1,124 +1,93 @@
 <p align="center">
-  <img src="./YUUKA.jpeg" width="200" alt="YUUKA logo" />
+  <img src="./YUUKA.jpeg" width="180" alt="YUUKA" />
 </p>
 
-<h1 align="center">YUUKA</h1>
+<h1 align="center">
+  𝐘 𝐔 𝐔 𝐊 𝐀
+</h1>
 
 <p align="center">
-  A personal AI agent that lives in your terminal — powered by Gemini.
+  <em>Your terminal, your rules. An AI agent that thinks before it acts.</em>
 </p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/yuuka"><img src="https://badge.fury.io/js/yuuka.svg" alt="npm version" /></a>
-  <a href="https://opensource.org/licenses/Apache-2.0"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License" /></a>
-  <img src="https://img.shields.io/node/v/yuuka" alt="node version" />
+  <a href="https://opensource.org/licenses/Apache-2.0"><img src="https://img.shields.io/badge/License-Apache%202.0-4a86c8.svg" alt="License" /></a>
+  <img src="https://img.shields.io/node/v/yuuka?color=4a86c8" alt="node version" />
 </p>
 
 <p align="center">
   <a href="README.zh-CN.md">中文文档</a>
 </p>
 
+<br/>
+
 <p align="center">
-  <img width="90%" alt="YUUKA terminal screenshot" src="https://github.com/user-attachments/assets/fdce7017-8095-429d-b74e-07f43a6919e1" />
+  <img width="90%" alt="YUUKA — terminal AI agent" src="./screenshots/showcase.png" />
 </p>
 
 ---
 
-## Table of Contents
+## What is YUUKA?
 
-- [Features](#features)
-- [Quick Start](#quick-start)
-- [Usage](#usage)
-- [Configuration](#configuration)
-- [Windows Notes](#windows-notes)
-- [Security](#security)
-- [Architecture](#architecture)
-- [Development](#development)
-- [Screenshots](#screenshots)
-- [Acknowledgements](#acknowledgements)
-- [License](#license)
-- [Support](#support)
+YUUKA is a Gemini-powered coding agent that lives in your terminal. She reads your codebase, edits files, runs commands, delegates to subagents, and remembers context across sessions — all through natural language.
+
+Built for developers who prefer the command line over the GUI.
 
 ## Features
 
-### Core
+**Core**
+- Gemini-native — direct API calls, no wrapper layers
+- Read, write, and refactor code with context-aware suggestions
+- Run shell commands and see results in real-time
+- Persistent memory across sessions via `MemoryRead` / `MemoryWrite`
 
-- **Gemini-native** — Uses Gemini API directly (`Authorization: Bearer <apiKey>`)
-- **Code editing** — Read, write, and refactor files with intelligent suggestions
-- **Codebase understanding** — Analyzes project structure and code relationships
-- **Command execution** — Run shell commands and see results in real-time
-- **Workflow automation** — Handle complex development tasks with simple prompts
-- **Persistent memory** — `MemoryRead` / `MemoryWrite` for cross-session long-term context
+**Agent System**
+- Delegate tasks to specialized subagents with `@run-agent-name`
+- Parallel task execution with grouped tree-style progress display
+- Custom agents in `.yuuka/agents/` (project or global)
+- MCP integration for external tool servers
 
-### Agent System
+**Smart Completion**
+- Fuzzy matching with hyphen-aware abbreviations
+- Context-aware `@` prefixing for agents and files
+- 500+ Unix commands from your system PATH
 
-- **Subagent delegation** — Use `@run-agent-name` to hand off tasks to specialized agents
-- **Custom agents** — Drop agent definitions into `.yuuka/agents/` (project or global)
-- **MCP integration** — Connect external tool servers via `mcpServers` in settings
-
-### Smart Completion
-
-- **Fuzzy matching** — Hyphen-aware, abbreviation-friendly (`dao` → `run-agent-dao-qi-harmony-designer`)
-- **Context detection** — Auto-prefixes `@` for agents and file references
-- **500+ Unix commands** — Curated list intersected with your system PATH
-
-### UX
-
-- **Interactive terminal UI** — Built with React/Ink, syntax highlighting included
-- **External editor** — `Ctrl+G` opens your `$EDITOR`; text returns on close
-- **Multiline input** — `Shift+Enter` for newlines, `Enter` to submit
+**UX**
+- Interactive terminal UI built with React/Ink
+- `Ctrl+G` to open your `$EDITOR`, text returns on close
+- `Shift+Enter` for multiline, `Enter` to submit
 
 ## Quick Start
 
 ```bash
-# 1. Install
 npm install -g yuuka
-
-# 2. Configure (on first run)
-yuuka          # then use /auth to set your Gemini API key
-
-# 3. Run
-yuuka
+yuuka                    # first run: use /auth to set your Gemini API key
 ```
 
 ## Usage
 
-### Interactive Mode
-
 ```bash
+# Interactive
 yuuka
-```
 
-### Non-Interactive Mode
-
-```bash
+# One-shot
 yuuka -p "explain this function" path/to/file.js
-```
 
-### @ Mention System
-
-Delegate to subagents or reference files directly in your prompt:
-
-```bash
-# Agents
-@run-agent-simplicity-auditor Review this code for over-engineering
+# Delegate to agents
+@run-agent-simplicity-auditor Review this code
 @run-agent-architect Design a microservices architecture
 
-# Files
+# Reference files directly
 @src/components/Button.tsx  Explain this component
 ```
-
-### Persistent Memory
-
-- `/memory` — Manually refresh the user preference memory file
-- `MemoryRead` / `MemoryWrite` — Agent-side long-term memory tools
 
 ### Commands
 
 | Command    | Description                        |
 | ---------- | ---------------------------------- |
 | `/config`  | Open configuration panel           |
-| `/model`   | Choose / set model (Gemini)        |
+| `/model`   | Choose / set model                 |
 | `/auth`    | Set Gemini Base URL / API Key      |
 | `/agents`  | Manage agents                      |
 | `/mcp`     | Manage MCP servers                 |
@@ -129,10 +98,7 @@ Delegate to subagents or reference files directly in your prompt:
 
 ## Configuration
 
-Config file: `./.yuuka/settings.json` (project-level only)
-Data directory: `~/.yuuka/data/`
-
-Minimal example:
+Config: `./.yuuka/settings.json` &nbsp;|&nbsp; Data: `~/.yuuka/data/`
 
 ```json
 {
@@ -150,99 +116,70 @@ Minimal example:
 }
 ```
 
-Use `/config` interactively, or `/model <name>` to switch models.
-Default model: `models/gemini-3-flash-preview` (alternative: `models/gemini-3-pro-preview`).
+Use `/config` interactively, or `/model <name>` to switch.
+Default: `models/gemini-3-flash-preview` — alternative: `models/gemini-3-pro-preview`.
+
+## Screenshots
+
+<p align="center">
+  <img width="90%" alt="YUUKA deep research" src="./screenshots/deep-research.png" />
+</p>
+
+<p align="center">
+  <em>Deep research with parallel agent execution and tree-style progress</em>
+</p>
 
 ## Windows Notes
 
-- Install [Git for Windows](https://git-scm.com/download/win) for a Bash environment.
-  - YUUKA automatically prefers Git Bash / MSYS or WSL Bash when available.
-  - Falls back to default shell otherwise, but Bash provides the best experience.
-- Recommended: Use VS Code's integrated terminal (select "Git Bash" as shell).
-- Optional: Avoid spaces in the npm global prefix path to prevent shim issues.
+- Install [Git for Windows](https://git-scm.com/download/win) — YUUKA auto-detects Git Bash / MSYS / WSL.
+- Recommended: VS Code integrated terminal with Git Bash as default shell.
+- Optional: avoid spaces in npm global prefix:
   ```bash
   npm config set prefix "C:\npm"
   ```
 
 ## Security
 
-YUUKA runs in **YOLO mode** by default — all tool calls are auto-approved for maximum productivity. This is convenient but bypasses permission checks.
-
-For sensitive work, start with:
+YUUKA runs in **YOLO mode** by default — all tool calls auto-approved for maximum flow. For sensitive work:
 
 ```bash
 yuuka --safe
 ```
 
-This enables manual approval for every tool invocation (file writes, command execution, etc.).
-
-> **Model advice**: For best results, use models designed for agentic workflows and extended reasoning. Older Q&A-focused models may not perform well in sustained autonomous tasks.
+This enables manual approval for every tool invocation.
 
 ## Architecture
 
 ```
-src/entrypoints/cli.tsx  →  src/screens/REPL.tsx
-                              ↓
-                         processUserInput
-                         /command  │  plain text
-                              ↓         ↓
-                          src/query.ts
-                              ↓
-                    src/services/llm.ts
-                              ↓
-                src/services/gemini/query.ts
+cli.tsx  →  REPL.tsx  →  query.ts  →  llm.ts  →  gemini/query.ts
+                ↓
+          processUserInput
+          /command  │  plain text
 ```
 
-- **Config**: `./.yuuka/settings.json` (auth / model / mcp)
-- **Data**: `~/.yuuka/data/`
-- **Tools**: `src/tools/*` with permission gating
-- **Agents**: `./.yuuka/agents/` + `~/.yuuka/agents/`
-- **Prompts**: `src/services/llm/systemPrompt.ts`, `src/services/llm/yuukaContext.ts`
+- **Config** — `./.yuuka/settings.json`
+- **Tools** — `src/tools/*` with permission gating
+- **Agents** — `./.yuuka/agents/` + `~/.yuuka/agents/`
+- **Prompts** — `src/services/llm/systemPrompt.ts`
 
 ## Development
 
 Requires Node.js >= 20.
 
 ```bash
-# Clone
-git clone https://github.com/shareAI-lab/yuuka.git
-cd yuuka
-
-# Install dependencies
+git clone https://github.com/MIKUSCAT/YUUKA.git
+cd YUUKA
 npm install
-
-# Dev mode
-npm run dev
-
-# Build
-npm run build
-
-# Type check
-npm run typecheck
+npm run dev       # dev mode
+npm run build     # production build
+npm run typecheck # type check
 ```
-
-## Screenshots
-
-<details>
-<summary>Click to expand</summary>
-
-<img width="90%" alt="screenshot-1" src="https://github.com/user-attachments/assets/fdce7017-8095-429d-b74e-07f43a6919e1" />
-
-<img width="90%" alt="screenshot-2" src="https://github.com/user-attachments/assets/f220cc27-084d-468e-a3f4-d5bc44d84fac" />
-
-<img width="90%" alt="screenshot-3" src="https://github.com/user-attachments/assets/90ec7399-1349-4607-b689-96613b3dc3e2" />
-
-<img width="90%" alt="screenshot-4" src="https://github.com/user-attachments/assets/b30696ce-5ab1-40a0-b741-c7ef3945dba0" />
-
-<img width="600" alt="screenshot-5" src="https://github.com/user-attachments/assets/8b46a39d-1ab6-4669-9391-14ccc6c5234c" />
-
-</details>
 
 ## Acknowledgements
 
 - Some code from [@dnakov](https://github.com/dnakov)'s anonkode
 - Some code from [Kode](https://github.com/shareAI-lab/kode)
-- UI inspiration from [gemini-cli](https://github.com/anthropics/gemini-cli)
+- UI inspiration from [gemini-cli](https://github.com/google-gemini/gemini-cli)
 - System design learned from [Claude Code](https://github.com/anthropics/claude-code)
 
 ## License
@@ -251,5 +188,5 @@ Apache 2.0 — see [LICENSE](LICENSE) for details.
 
 ## Support
 
-- [Report Issues](https://github.com/shareAI-lab/yuuka/issues)
-- [Discussions](https://github.com/shareAI-lab/yuuka/discussions)
+- [Issues](https://github.com/MIKUSCAT/YUUKA/issues)
+- [Discussions](https://github.com/MIKUSCAT/YUUKA/discussions)
