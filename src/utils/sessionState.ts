@@ -4,6 +4,7 @@ type SessionState = {
   currentError: string | null
   currentThought: { subject: string; description: string } | null
   enabledSkillNames: string[] | null
+  suppressThoughtDepth: number // > 0 时抑制子 agent 的 thought 写入主界面
 }
 
 const isDebug =
@@ -16,6 +17,7 @@ const sessionState: SessionState = {
   currentError: null,
   currentThought: null,
   enabledSkillNames: null,
+  suppressThoughtDepth: 0,
 } as const
 
 function setSessionState<K extends keyof SessionState>(

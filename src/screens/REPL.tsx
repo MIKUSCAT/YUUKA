@@ -10,7 +10,9 @@ import { Command } from '@commands'
 import { Logo } from '@components/Logo'
 import { Message } from '@components/Message'
 import { MessageResponse } from '@components/MessageResponse'
-import { TASK_PROGRESS_PREFIX } from '@components/messages/TaskProgressMessage'
+import { TASK_PROGRESS_PREFIX, parseTaskProgressText } from '@components/messages/TaskProgressMessage'
+import { TaskProgressGroup } from '@components/messages/TaskProgressGroup'
+import type { TaskProgressPayload } from '@components/messages/TaskProgressMessage'
 import { MessageSelector } from '@components/MessageSelector'
 import {
   PermissionRequest,
@@ -512,8 +514,140 @@ export function REPL({
     !toolJSX && !toolUseConfirm && !isMessageSelectorVisible
 
   const messagesJSX = useMemo(() => {
+    // ── 预处理 pass：收集 Task 分组数据 ──
+    const taskToolUses = new Map<string, { description: string; agentType: string }>()
+    const taskProgresses = new Map<string, TaskProgressPayload>()
+    const taskSiblingMap = new Map<string, Set<string>>()
+
+    for (const msg of orderedMessages) {
+      // 识别 Task tool_use
+      if (msg.type === 'assistant') {
+        const blocks = msg.message?.content
+        if (Array.isArray(blocks)) {
+          for (const block of blocks) {
+            if (block?.type === 'tool_use' && block.name === 'Task') {
+              taskToolUses.set(block.id, {
+                description: (block.input as any)?.description || '',
+                agentType: String((block.input as any)?.subagent_type || 'general-purpose'),
+              })
+            }
+          }
+        }
+      }
+      // 识别 Task progress
+      if (msg.type === 'progress') {
+        const textBlock = msg.content?.message?.content?.[0]
+        const text = textBlock?.type === 'text' ? textBlock.text : null
+        if (text && text.startsWith(TASK_PROGRESS_PREFIX)) {
+          const payload = parseTaskProgressText(text)
+          if (payload && msg.toolUseID) {
+            taskProgresses.set(msg.toolUseID, payload)
+            // 记录兄弟集合（仅保留 Task 类型的兄弟）
+            const taskSiblings = new Set(
+              [...msg.siblingToolUseIDs].filter(id => taskToolUses.has(id)),
+            )
+            // 加入自身
+            if (taskToolUses.has(msg.toolUseID)) {
+              taskSiblings.add(msg.toolUseID)
+            }
+            if (taskSiblings.size > 1) {
+              for (const id of taskSiblings) {
+                const existing = taskSiblingMap.get(id)
+                if (existing) {
+                  for (const s of taskSiblings) existing.add(s)
+                } else {
+                  taskSiblingMap.set(id, new Set(taskSiblings))
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // 确定组长（每组中排序最靠前的 toolUseId）
+    const groupLeaderOf = new Map<string, string>()
+    const groupMembers = new Map<string, string[]>()
+
+    for (const [id, siblings] of taskSiblingMap) {
+      const sorted = [...siblings].sort()
+      const leader = sorted[0]!
+      groupLeaderOf.set(id, leader)
+      if (!groupMembers.has(leader)) {
+        groupMembers.set(leader, sorted)
+      }
+    }
+
+    // 没有分组的单独 Task tool_use → 也视为一人组
+    for (const [id] of taskToolUses) {
+      if (!groupLeaderOf.has(id)) {
+        groupLeaderOf.set(id, id)
+        groupMembers.set(id, [id])
+      }
+    }
+
+    // 收集被分组吞并的 progress toolUseIDs（多任务组才吞并）
+    const groupedProgressIDs = new Set<string>()
+    for (const [leaderId, members] of groupMembers) {
+      if (members.length > 1) {
+        for (const mid of members) {
+          groupedProgressIDs.add(mid)
+        }
+      }
+    }
+
+    // ── 渲染 pass ──
     return orderedMessages.map((_, index) => {
         const toolUseID = getToolUseID(_)
+
+        // --- Task tool_use 分组渲染 ---
+        if (_.type === 'assistant' && toolUseID && taskToolUses.has(toolUseID)) {
+          const leader = groupLeaderOf.get(toolUseID)!
+          const memberIds = groupMembers.get(leader)!
+          if (memberIds.length > 1) {
+            if (toolUseID === leader) {
+              // 组长位置：渲染 TaskProgressGroup
+              const items = memberIds.map(id => ({
+                description: taskToolUses.get(id)!.description,
+                agentType: taskToolUses.get(id)!.agentType,
+                progress: taskProgresses.get(id) || null,
+              }))
+              return {
+                jsx: (
+                  <Box key={_.uuid} width="100%">
+                    <TaskProgressGroup items={items} />
+                  </Box>
+                ),
+              }
+            }
+            // 非组长：渲染空占位
+            return { jsx: <Box key={_.uuid} width="100%" /> }
+          }
+          // 单任务组：下面走正常逻辑，但用 TaskProgressGroup 统一样式
+          const items = [{
+            description: taskToolUses.get(toolUseID)!.description,
+            agentType: taskToolUses.get(toolUseID)!.agentType,
+            progress: taskProgresses.get(toolUseID) || null,
+          }]
+          return {
+            jsx: (
+              <Box key={_.uuid} width="100%">
+                <TaskProgressGroup items={items} />
+              </Box>
+            ),
+          }
+        }
+
+        // --- Task progress 分组渲染：已由组长统一渲染，跳过 ---
+        if (_.type === 'progress' && _.toolUseID && groupedProgressIDs.has(_.toolUseID)) {
+          return { jsx: <Box key={_.uuid} width="100%" /> }
+        }
+        // 单任务的 progress 也跳过（已在 tool_use 位置由 TaskProgressGroup 渲染）
+        if (_.type === 'progress' && _.toolUseID && taskToolUses.has(_.toolUseID)) {
+          return { jsx: <Box key={_.uuid} width="100%" /> }
+        }
+
+        // --- 其余消息：保持原有渲染逻辑 ---
         const progressToolUseID =
           _.type === 'progress' && _.content?.message?.content?.[0]
             ? (_.content.message.content[0] as ToolUseBlockParam).id

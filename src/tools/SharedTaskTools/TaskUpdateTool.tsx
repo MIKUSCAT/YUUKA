@@ -55,16 +55,16 @@ export const TaskUpdateTool = {
   },
   isEnabled: async () => true,
   isReadOnly: () => false,
-  isConcurrencySafe: () => false,
+  isConcurrencySafe: () => true,
   needsPermissions: () => false,
   async *call(input) {
     const task = shouldClaimTask(input)
-      ? claimSharedTask({
+      ? await claimSharedTask({
           teamName: input.team_name,
           taskId: input.taskId,
           owner: input.owner || '',
         })
-      : updateSharedTask({
+      : await updateSharedTask({
           teamName: input.team_name,
           taskId: input.taskId,
           status: input.status,

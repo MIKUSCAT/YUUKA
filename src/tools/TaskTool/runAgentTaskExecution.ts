@@ -18,11 +18,13 @@ import { getMaxThinkingTokens } from '@utils/thinking'
 import { generateAgentId } from '@utils/agentStorage'
 import { getAgentByType, getAvailableAgentTypes } from '@utils/agentLoader'
 import { normalizeAgentName, normalizeTeamName } from '@services/teamPaths'
+import { setSessionState, getSessionState } from '@utils/sessionState'
 import { getTaskTools } from './prompt'
 
 export interface TaskExecutionProgress {
   agentType: string
   model: string
+  description: string
   status: string
   toolCount: number
   elapsedMs: number
@@ -193,6 +195,7 @@ export async function* runAgentTaskExecutionStream(
     progress: {
       agentType,
       model: modelToUse,
+      description,
       status: '启动中',
       toolCount: 0,
       elapsedMs: Date.now() - startTime,
@@ -222,6 +225,11 @@ export async function* runAgentTaskExecutionStream(
     model: modelToUse,
   }
 
+  // Suppress sub-agent thinking from leaking to main Spinner
+  setSessionState('suppressThoughtDepth', getSessionState('suppressThoughtDepth') + 1)
+  setSessionState('currentThought', null) // clear residual thought
+
+  try {
   for await (const message of query(
     messages,
     taskPrompt,
@@ -254,6 +262,7 @@ export async function* runAgentTaskExecutionStream(
           progress: {
             agentType,
             model: modelToUse,
+            description,
             status: '分析中',
             toolCount: toolUseCount,
             elapsedMs: Date.now() - startTime,
@@ -267,6 +276,7 @@ export async function* runAgentTaskExecutionStream(
           progress: {
             agentType,
             model: modelToUse,
+            description,
             status: '调用工具',
             toolCount: toolUseCount,
             elapsedMs: Date.now() - startTime,
@@ -275,6 +285,9 @@ export async function* runAgentTaskExecutionStream(
         }
       }
     }
+  }
+  } finally {
+    setSessionState('suppressThoughtDepth', getSessionState('suppressThoughtDepth') - 1)
   }
 
   const lastMessage = last(messages)
@@ -297,6 +310,7 @@ export async function* runAgentTaskExecutionStream(
       progress: {
         agentType,
         model: modelToUse,
+        description,
         status: '已完成',
         toolCount: toolUseCount,
         tokenCount,

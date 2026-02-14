@@ -305,6 +305,7 @@ export async function getSystemPrompt(): Promise<string[]> {
 
 - 文件搜索优先用 Task 工具节省上下文
 - 读/搜类工具（Read/Glob/Grep/LS/WebSearch/URLFetcher 等）可以并行一次调用多个，提高效率
+- **Task 工具也可以并行调用多个**（多个子任务同时启动），提高吞吐
 - 会改动状态/执行的工具（Bash/Edit/Write/MultiEdit/NotebookEditCell/TodoWrite/mcp 等）一次只调用一个，**等 tool_result 回来再继续下一步**
 - Bash 需要跑多条命令时，尽量合并到一次 Bash 调用里**顺序执行**（用 &&/换行），保证输出可读
 - 批量读取可能有用的文件

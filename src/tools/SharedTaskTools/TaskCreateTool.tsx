@@ -32,10 +32,10 @@ export const TaskCreateTool = {
   },
   isEnabled: async () => true,
   isReadOnly: () => false,
-  isConcurrencySafe: () => false,
+  isConcurrencySafe: () => true,
   needsPermissions: () => false,
   async *call(input) {
-    const task = createSharedTask({
+    const task = await createSharedTask({
       teamName: input.team_name,
       subject: input.subject,
       description: input.description,

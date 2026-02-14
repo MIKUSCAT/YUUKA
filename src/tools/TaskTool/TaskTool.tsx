@@ -115,6 +115,7 @@ export const TaskTool = {
           encodeTaskProgress({
             agentType: progress.agentType,
             status: progress.status,
+            description: progress.description,
             model: progress.model,
             toolCount: progress.toolCount,
             tokenCount: progress.tokenCount,
@@ -157,6 +158,7 @@ export const TaskTool = {
 
         yield createProgressOutput({
           agentType,
+          description,
           status: '排队中',
           model: model_name || 'task',
           toolCount: 0,
@@ -221,6 +223,7 @@ export const TaskTool = {
             for (const progress of newProgress) {
               yield createProgressOutput({
                 agentType,
+                description,
                 status: progress.status,
                 model: progress.model || model_name || 'task',
                 toolCount: progress.toolCount ?? 0,

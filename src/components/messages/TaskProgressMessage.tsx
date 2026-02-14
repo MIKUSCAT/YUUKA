@@ -2,11 +2,13 @@ import React, { useState, useEffect, useRef } from 'react'
 import { Box, Text } from 'ink'
 import { getTheme } from '@utils/theme'
 import { formatDuration } from '@utils/format'
-import { TASK_DASH } from '@constants/figures'
+import { TASK_DASH, SPINNER_FRAMES } from '@constants/figures'
+import { useInterval } from '@hooks/useInterval'
 
 export interface TaskProgressPayload {
   agentType: string
   status: string
+  description?: string   // 稳定的任务描述（不随工具切换变化）
   model?: string
   toolCount?: number
   tokenCount?: number
@@ -53,8 +55,18 @@ export function TaskProgressMessage({
   toolCount,
   tokenCount,
   elapsedMs,
+  lastAction,
 }: Props) {
   const theme = getTheme()
+  const isActive = status !== '已完成'
+
+  // Braille spinner animation (8 frames, ~120ms per frame)
+  const [spinnerIdx, setSpinnerIdx] = useState(0)
+  useInterval(() => {
+    if (isActive) {
+      setSpinnerIdx(i => (i + 1) % SPINNER_FRAMES.length)
+    }
+  }, 120)
 
   // Local running timer: starts from the server-provided elapsedMs and ticks every second
   const baseMs = useRef(typeof elapsedMs === 'number' ? elapsedMs : 0)
@@ -88,18 +100,33 @@ export function TaskProgressMessage({
         : `${tokenCount} tokens`
       : null
 
+  // Truncate lastAction to 40 chars
+  const actionLabel = lastAction
+    ? lastAction.length > 40
+      ? `${lastAction.slice(0, 40)}…`
+      : lastAction
+    : null
+
+  // Status indicator: spinning braille when active, ✓ when completed
+  const indicator = isActive ? SPINNER_FRAMES[spinnerIdx] : '✓'
+
   // Kode-style single-line compact format:
-  // ⎯ [agent-type] status · N tool uses · Nk tokens · Ns
+  // ⎯ [agent-type] ⣾ Read · N tool uses · Nk tokens · Ns
   const parts: string[] = []
-  parts.push(status)
+  if (actionLabel) {
+    parts.push(actionLabel)
+  } else {
+    parts.push(status)
+  }
   if (toolCount != null && toolCount > 0) parts.push(`${toolCount} tool uses`)
   if (tokenLabel) parts.push(tokenLabel)
   if (elapsed) parts.push(elapsed)
 
   return (
     <Box flexDirection="row">
-      <Text color={theme.yuuka}> {TASK_DASH} </Text>
+      <Text color={theme.yuuka}>  {TASK_DASH} </Text>
       <Text bold>[{agentType}]</Text>
+      <Text color={isActive ? theme.yuuka : theme.success}> {indicator}</Text>
       <Text color={theme.secondaryText}> {parts.join(' · ')}</Text>
     </Box>
   )

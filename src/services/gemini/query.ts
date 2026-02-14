@@ -14,7 +14,7 @@ import { GeminiTransport } from './transport'
 import { kodeMessagesToGeminiContents, geminiResponseToAssistantMessage, toolsToFunctionDeclarations } from './adapter'
 import { resolveGeminiModelConfig } from './modelConfig'
 import type { GeminiContent, GeminiGenerateContentResponse, GeminiPart } from './types'
-import { setSessionState } from '@utils/sessionState'
+import { setSessionState, getSessionState } from '@utils/sessionState'
 import { GeminiHttpError } from './transport'
 import { applyGroundingCitations, extractGeminiGrounding, type GroundingSource } from './grounding'
 
@@ -550,10 +550,12 @@ export async function queryGeminiLLM(options: {
             if ((thoughtFlag === true || typeof thoughtFlag === 'string') && thoughtText.trim()) {
               const parsed = parseThought(thoughtText)
               const subject = parsed.subject.trim() || parsed.description.trim() || thoughtText.trim()
-              setSessionState('currentThought', {
-                subject,
-                description: parsed.description.trim(),
-              })
+              if (getSessionState('suppressThoughtDepth') === 0) {
+                setSessionState('currentThought', {
+                  subject,
+                  description: parsed.description.trim(),
+                })
+              }
             }
           }
         }

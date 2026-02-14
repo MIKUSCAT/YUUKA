@@ -4,6 +4,29 @@ import { dirname, join, resolve } from 'path'
 import { ensureTeam } from './teamManager'
 import { getTeamTaskDir, normalizeAgentName, normalizeTeamName } from './teamPaths'
 
+// Async mutex: serializes read-modify-write on the same file path
+// Different team files can proceed concurrently
+class AsyncMutex {
+  private locks = new Map<string, Promise<void>>()
+
+  async acquire(key: string): Promise<() => void> {
+    while (this.locks.has(key)) {
+      await this.locks.get(key)
+    }
+    let release!: () => void
+    const p = new Promise<void>(r => {
+      release = r
+    })
+    this.locks.set(key, p)
+    return () => {
+      this.locks.delete(key)
+      release()
+    }
+  }
+}
+
+const fileMutex = new AsyncMutex()
+
 export type SharedTaskStatus = 'open' | 'in_progress' | 'completed' | 'blocked'
 
 export interface SharedTask {
@@ -80,28 +103,33 @@ function writeJsonAtomic(path: string, data: unknown): void {
   renameSync(tempPath, path)
 }
 
-export function createSharedTask(input: CreateSharedTaskInput): SharedTask {
+export async function createSharedTask(input: CreateSharedTaskInput): Promise<SharedTask> {
   const teamName = normalizeTeamName(input.teamName)
   ensureTeam(teamName)
   const path = getSharedTaskPath(teamName)
-  const tasks = readSharedTasks(path)
-  const now = Date.now()
-  const nextId = tasks.reduce((max, task) => Math.max(max, task.id), 0) + 1
-  const blockedBy = normalizeBlockedBy(input.blockedBy)
+  const release = await fileMutex.acquire(path)
+  try {
+    const tasks = readSharedTasks(path)
+    const now = Date.now()
+    const nextId = tasks.reduce((max, task) => Math.max(max, task.id), 0) + 1
+    const blockedBy = normalizeBlockedBy(input.blockedBy)
 
-  const task: SharedTask = {
-    id: nextId,
-    subject: input.subject.trim(),
-    description: input.description.trim(),
-    status: 'open',
-    blockedBy,
-    createdAt: now,
-    updatedAt: now,
+    const task: SharedTask = {
+      id: nextId,
+      subject: input.subject.trim(),
+      description: input.description.trim(),
+      status: 'open',
+      blockedBy,
+      createdAt: now,
+      updatedAt: now,
+    }
+
+    tasks.push(task)
+    writeJsonAtomic(path, tasks)
+    return task
+  } finally {
+    release()
   }
-
-  tasks.push(task)
-  writeJsonAtomic(path, tasks)
-  return task
 }
 
 export function listSharedTasks(input: ListSharedTaskInput): SharedTask[] {
@@ -121,55 +149,60 @@ export function listSharedTasks(input: ListSharedTaskInput): SharedTask[] {
   })
 }
 
-export function updateSharedTask(input: UpdateSharedTaskInput): SharedTask {
+export async function updateSharedTask(input: UpdateSharedTaskInput): Promise<SharedTask> {
   const teamName = normalizeTeamName(input.teamName)
   const path = getSharedTaskPath(teamName)
-  const tasks = readSharedTasks(path)
-  const index = tasks.findIndex(task => task.id === input.taskId)
-  if (index < 0) {
-    throw new Error(`Shared task ${input.taskId} not found in team "${teamName}"`)
-  }
-
-  const current = tasks[index]
-  const next: SharedTask = {
-    ...current,
-    updatedAt: Date.now(),
-  }
-
-  if (typeof input.status !== 'undefined') {
-    next.status = input.status
-    if (input.status === 'completed') {
-      next.completedAt = Date.now()
-    } else {
-      delete next.completedAt
+  const release = await fileMutex.acquire(path)
+  try {
+    const tasks = readSharedTasks(path)
+    const index = tasks.findIndex(task => task.id === input.taskId)
+    if (index < 0) {
+      throw new Error(`Shared task ${input.taskId} not found in team "${teamName}"`)
     }
-  }
 
-  if (typeof input.owner !== 'undefined') {
-    const normalizedOwner = input.owner.trim()
-      ? normalizeAgentName(input.owner)
-      : undefined
-    next.owner = normalizedOwner
-  }
+    const current = tasks[index]
+    const next: SharedTask = {
+      ...current,
+      updatedAt: Date.now(),
+    }
 
-  if (typeof input.result !== 'undefined') {
-    next.result = input.result
-  }
+    if (typeof input.status !== 'undefined') {
+      next.status = input.status
+      if (input.status === 'completed') {
+        next.completedAt = Date.now()
+      } else {
+        delete next.completedAt
+      }
+    }
 
-  if (typeof input.blockedBy !== 'undefined') {
-    next.blockedBy = normalizeBlockedBy(input.blockedBy)
-  }
+    if (typeof input.owner !== 'undefined') {
+      const normalizedOwner = input.owner.trim()
+        ? normalizeAgentName(input.owner)
+        : undefined
+      next.owner = normalizedOwner
+    }
 
-  tasks[index] = next
-  writeJsonAtomic(path, tasks)
-  return next
+    if (typeof input.result !== 'undefined') {
+      next.result = input.result
+    }
+
+    if (typeof input.blockedBy !== 'undefined') {
+      next.blockedBy = normalizeBlockedBy(input.blockedBy)
+    }
+
+    tasks[index] = next
+    writeJsonAtomic(path, tasks)
+    return next
+  } finally {
+    release()
+  }
 }
 
-export function claimSharedTask(params: {
+export async function claimSharedTask(params: {
   teamName: string
   taskId: number
   owner: string
-}): SharedTask {
+}): Promise<SharedTask> {
   return updateSharedTask({
     teamName: params.teamName,
     taskId: params.taskId,
