@@ -30,7 +30,7 @@ function setSessionState(
   value?: any,
 ): void {
   if (typeof keyOrState === 'string') {
-    sessionState[keyOrState] = value
+    ;(sessionState as Record<string, unknown>)[keyOrState] = value
   } else {
     Object.assign(sessionState, keyOrState)
   }
