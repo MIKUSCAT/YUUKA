@@ -15,12 +15,7 @@ function BashToolResultMessage({ content, verbose }: Props): React.JSX.Element {
   const theme = getTheme()
 
   return (
-    <Box
-      flexDirection="column"
-      borderStyle="round"
-      borderColor={theme.bashBorder}
-      paddingX={1}
-    >
+    <Box flexDirection="column">
       {stdout !== '' ? (
         <OutputLine content={stdout} lines={stdoutLines} verbose={verbose} />
       ) : null}

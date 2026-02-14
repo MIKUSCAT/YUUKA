@@ -31,7 +31,6 @@
     "dev": "node --import tsx ./src/entrypoints/cli.tsx --verbose",
     "build": "node scripts/build.mjs",
     "clean": "rm -rf cli.cjs",
-    "forum:patrol": "node scripts/forum-patrol.cjs",
     "prepublishOnly": "node scripts/build.mjs && node scripts/prepublish-check.cjs",
     "postinstall": "node scripts/postinstall.cjs || true",
     "format": "prettier --write \"src/**/*.{ts,tsx,js,jsx,json}\"",
