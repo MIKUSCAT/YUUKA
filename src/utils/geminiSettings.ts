@@ -12,10 +12,16 @@ export type GeminiApiAuthSettings = {
   apiKeyAuthMode?: 'x-goog-api-key' | 'query' | 'bearer'
 }
 
+export type GeminiCliOAuthSettings = {
+  clientId?: string
+  clientSecret?: string
+}
+
 export type GeminiSettings = {
   security?: {
     auth?: {
       geminiApi?: GeminiApiAuthSettings
+      geminiCliOAuth?: GeminiCliOAuthSettings
       selectedType?: 'gemini-api-key' | 'gemini-cli-oauth'
     }
   }
@@ -140,6 +146,7 @@ function ensureGeminiSettingsAtPath(settingsPath: string): EnsureGeminiSettingsR
         next.security.auth.selectedType = 'gemini-api-key'
       }
       next.security.auth.geminiApi = next.security.auth.geminiApi ?? {}
+      next.security.auth.geminiCliOAuth = next.security.auth.geminiCliOAuth ?? {}
       const keyMode = String(next.security.auth.geminiApi.apiKeyAuthMode ?? '').trim()
       if (keyMode !== 'x-goog-api-key' && keyMode !== 'query' && keyMode !== 'bearer') {
         next.security.auth.geminiApi.apiKeyAuthMode = 'x-goog-api-key'
@@ -168,6 +175,10 @@ function ensureGeminiSettingsAtPath(settingsPath: string): EnsureGeminiSettingsR
             baseUrl: 'https://generativelanguage.googleapis.com',
             apiKey: '',
             apiKeyAuthMode: 'x-goog-api-key',
+          },
+          geminiCliOAuth: {
+            clientId: '',
+            clientSecret: '',
           },
           selectedType: 'gemini-api-key',
         },

@@ -62,7 +62,7 @@ YUUKA 是一个基于 Gemini 驱动的编程 Agent，运行在你的终端中。
 
 ```bash
 npm install -g yuuka
-yuuka                    # 首次运行：使用 /auth 设置 Gemini API Key
+yuuka                    # 首次运行：使用 /auth 设置 API Key 或 Google OAuth Client
 ```
 
 ## 使用方法
@@ -88,7 +88,7 @@ yuuka -p "解释这个函数" path/to/file.js
 | ---------- | ------------------------ |
 | `/config`  | 打开配置面板             |
 | `/model`   | 选择 / 设置模型          |
-| `/auth`    | 设置 Gemini Base URL / API Key |
+| `/auth`    | 设置 Gemini Base URL / API Key / Google OAuth |
 | `/agents`  | 管理 Agent               |
 | `/mcp`     | 管理 MCP 服务器          |
 | `/clear`   | 清空对话                 |
@@ -109,6 +109,10 @@ yuuka -p "解释这个函数" path/to/file.js
         "apiKey": "YOUR_KEY",
         "apiKeyAuthMode": "bearer"
       },
+      "geminiCliOAuth": {
+        "clientId": "YOUR_GOOGLE_OAUTH_CLIENT_ID",
+        "clientSecret": "YOUR_GOOGLE_OAUTH_CLIENT_SECRET"
+      },
       "selectedType": "gemini-api-key"
     }
   },
@@ -118,6 +122,10 @@ yuuka -p "解释这个函数" path/to/file.js
 
 使用 `/config` 交互式配置，或 `/model <name>` 切换模型。
 默认：`models/gemini-3-flash-preview`——可选 `models/gemini-3-pro-preview`。
+
+关于 `/auth` 的 Google OAuth：
+- 当 `clientId/clientSecret` 为空时，YUUKA 会自动写入默认 Gemini CLI OAuth Client。
+- 如果出现 `401`，请改用你自己在 Google Cloud Console 创建的 OAuth Client。
 
 ## 截图
 

@@ -5,10 +5,12 @@ import { promises as fs } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 import { openBrowser } from '@utils/browser'
+import {
+  ensureGlobalGeminiSettings,
+  readGeminiSettingsFile,
+} from '@utils/geminiSettings'
 import { fetch } from 'undici'
 
-const OAUTH_CLIENT_ID = process.env.YUUKA_OAUTH_CLIENT_ID?.trim() || ''
-const OAUTH_CLIENT_SECRET = process.env.YUUKA_OAUTH_CLIENT_SECRET?.trim() || ''
 const OAUTH_SCOPES = [
   'https://www.googleapis.com/auth/cloud-platform',
   'https://www.googleapis.com/auth/userinfo.email',
@@ -30,6 +32,7 @@ const CODE_ASSIST_METADATA = {
 } as const
 
 const EXPIRY_SKEW_MS = 60_000
+const DEFAULT_OAUTH_CALLBACK_HOST = '127.0.0.1'
 
 export type GeminiCliOAuthCreds = {
   access_token?: string
@@ -48,17 +51,35 @@ export function getGlobalGeminiOauthCredsPath(): string {
   return join(homedir(), '.yuuka', 'oauth_creds.json')
 }
 
-function ensureOauthClientConfigured(): void {
-  if (!OAUTH_CLIENT_ID) {
+type OAuthClientConfig = {
+  clientId: string
+  clientSecret: string
+}
+
+function getOAuthClientConfig(): OAuthClientConfig {
+  const { settingsPath } = ensureGlobalGeminiSettings()
+  const settings = readGeminiSettingsFile(settingsPath)
+  const clientId = settings.security?.auth?.geminiCliOAuth?.clientId?.trim() || ''
+  const clientSecret =
+    settings.security?.auth?.geminiCliOAuth?.clientSecret?.trim() || ''
+
+  return { clientId, clientSecret }
+}
+
+function ensureOauthClientConfigured(): OAuthClientConfig {
+  const config = getOAuthClientConfig()
+  if (!config.clientId) {
     throw new Error(
-      'OAuth 配置缺失：client_id 为空。请设置 YUUKA_OAUTH_CLIENT_ID。',
+      'OAuth 配置缺失：client_id 为空。请在 /auth 的 Google OAuth 页面填写 client_id。',
     )
   }
-  if (!OAUTH_CLIENT_SECRET) {
+  if (!config.clientSecret) {
     throw new Error(
-      'OAuth 配置缺失：client_secret 为空。请设置 YUUKA_OAUTH_CLIENT_SECRET。',
+      'OAuth 配置缺失：client_secret 为空。请在 /auth 的 Google OAuth 页面填写 client_secret。',
     )
   }
+
+  return config
 }
 
 async function readJsonFile<T>(filePath: string): Promise<T | null> {
@@ -129,10 +150,61 @@ export async function getAvailablePort(): Promise<number> {
   })
 }
 
+function normalizeCallbackHost(rawHost: string | undefined): string {
+  if (!rawHost) return DEFAULT_OAUTH_CALLBACK_HOST
+
+  let host = rawHost.trim()
+  if (
+    (host.startsWith('"') && host.endsWith('"')) ||
+    (host.startsWith("'") && host.endsWith("'"))
+  ) {
+    host = host.slice(1, -1).trim()
+  }
+
+  if (!host) return DEFAULT_OAUTH_CALLBACK_HOST
+
+  if (host.includes('://')) {
+    try {
+      host = new URL(host).hostname.trim()
+    } catch {
+      return DEFAULT_OAUTH_CALLBACK_HOST
+    }
+  }
+
+  if (host.startsWith('[') && host.endsWith(']')) {
+    host = host.slice(1, -1).trim()
+  }
+
+  if (!host || /\s/.test(host) || host.includes('/')) {
+    return DEFAULT_OAUTH_CALLBACK_HOST
+  }
+
+  // 若误写了 host:port，这里自动去掉端口（IPv6 除外）
+  if (host.includes(':') && net.isIP(host) !== 6) {
+    const index = host.lastIndexOf(':')
+    const maybeHost = host.slice(0, index).trim()
+    const maybePort = host.slice(index + 1).trim()
+    if (maybeHost && /^\d+$/.test(maybePort)) {
+      host = maybeHost
+    }
+  }
+
+  if (!host) return DEFAULT_OAUTH_CALLBACK_HOST
+
+  const isIp = net.isIP(host) !== 0
+  const isLocalhost = host.toLowerCase() === 'localhost'
+  const looksLikeHostname = /^[a-zA-Z0-9.-]+$/.test(host)
+  if (isIp || isLocalhost || looksLikeHostname) {
+    return host
+  }
+
+  return DEFAULT_OAUTH_CALLBACK_HOST
+}
+
 function buildAuthUrl(options: { redirectUri: string; state: string }): string {
-  ensureOauthClientConfigured()
+  const oauthConfig = ensureOauthClientConfigured()
   const params = new URLSearchParams({
-    client_id: OAUTH_CLIENT_ID,
+    client_id: oauthConfig.clientId,
     redirect_uri: options.redirectUri,
     scope: OAUTH_SCOPES.join(' '),
     response_type: 'code',
@@ -156,10 +228,10 @@ async function exchangeCodeForTokens(options: {
   code: string
   redirectUri: string
 }): Promise<GeminiCliOAuthCreds> {
-  ensureOauthClientConfigured()
+  const oauthConfig = ensureOauthClientConfigured()
   const form = new URLSearchParams({
-    client_id: OAUTH_CLIENT_ID,
-    client_secret: OAUTH_CLIENT_SECRET,
+    client_id: oauthConfig.clientId,
+    client_secret: oauthConfig.clientSecret,
     redirect_uri: options.redirectUri,
     code: options.code,
     grant_type: 'authorization_code',
@@ -196,15 +268,15 @@ async function exchangeCodeForTokens(options: {
 }
 
 async function refreshAccessToken(creds: GeminiCliOAuthCreds): Promise<GeminiCliOAuthCreds> {
-  ensureOauthClientConfigured()
+  const oauthConfig = ensureOauthClientConfigured()
   const refreshToken = creds.refresh_token
   if (!refreshToken) {
     throw new Error('没有 refresh_token：请重新用 /auth 登录一次')
   }
 
   const form = new URLSearchParams({
-    client_id: OAUTH_CLIENT_ID,
-    client_secret: OAUTH_CLIENT_SECRET,
+    client_id: oauthConfig.clientId,
+    client_secret: oauthConfig.clientSecret,
     refresh_token: refreshToken,
     grant_type: 'refresh_token',
   })
@@ -411,7 +483,7 @@ export async function loginWithGoogleForGeminiCli(options?: {
   void openBrowser(authUrl)
 
   const code = await new Promise<string>((resolve, reject) => {
-    const host = process.env['OAUTH_CALLBACK_HOST'] || '127.0.0.1'
+    const host = normalizeCallbackHost(process.env['OAUTH_CALLBACK_HOST'])
     const server = http.createServer((req, res) => {
       try {
         if (!req.url || !req.url.includes('/oauth2callback')) {

@@ -62,7 +62,7 @@ Built for developers who prefer the command line over the GUI.
 
 ```bash
 npm install -g yuuka
-yuuka                    # first run: use /auth to set your Gemini API key
+yuuka                    # first run: use /auth to set API Key or Google OAuth client
 ```
 
 ## Usage
@@ -88,7 +88,7 @@ yuuka -p "explain this function" path/to/file.js
 | ---------- | ---------------------------------- |
 | `/config`  | Open configuration panel           |
 | `/model`   | Choose / set model                 |
-| `/auth`    | Set Gemini Base URL / API Key      |
+| `/auth`    | Set Gemini Base URL / API Key / Google OAuth |
 | `/agents`  | Manage agents                      |
 | `/mcp`     | Manage MCP servers                 |
 | `/clear`   | Clear conversation                 |
@@ -109,6 +109,10 @@ Config: `./.yuuka/settings.json` &nbsp;|&nbsp; Data: `~/.yuuka/data/`
         "apiKey": "YOUR_KEY",
         "apiKeyAuthMode": "bearer"
       },
+      "geminiCliOAuth": {
+        "clientId": "YOUR_GOOGLE_OAUTH_CLIENT_ID",
+        "clientSecret": "YOUR_GOOGLE_OAUTH_CLIENT_SECRET"
+      },
       "selectedType": "gemini-api-key"
     }
   },
@@ -118,6 +122,10 @@ Config: `./.yuuka/settings.json` &nbsp;|&nbsp; Data: `~/.yuuka/data/`
 
 Use `/config` interactively, or `/model <name>` to switch.
 Default: `models/gemini-3-flash-preview` — alternative: `models/gemini-3-pro-preview`.
+
+For Google OAuth in `/auth`:
+- If `clientId/clientSecret` is empty, YUUKA auto-fills the default Gemini CLI OAuth client.
+- If you see `401`, switch to your own OAuth client in Google Cloud Console.
 
 ## Screenshots
 

@@ -23,8 +23,13 @@ type Props = {
 }
 
 type FieldId = 'baseUrl' | 'apiKey'
+type OAuthFieldId = 'clientId' | 'clientSecret'
 type AuthMode = 'gemini-api-key' | 'gemini-cli-oauth'
 type Screen = 'choose-mode' | 'api-key' | 'google-oauth'
+
+const DEFAULT_GEMINI_CLI_OAUTH_CLIENT_ID =
+  '681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com'
+const DEFAULT_GEMINI_CLI_OAUTH_CLIENT_SECRET = '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'
 
 export function Auth({ onClose }: Props): React.ReactNode {
   ensureGlobalGeminiSettings()
@@ -53,6 +58,11 @@ export function Auth({ onClose }: Props): React.ReactNode {
   const [oauthAuthUrl, setOauthAuthUrl] = useState<string | null>(null)
   const [oauthError, setOauthError] = useState<string | null>(null)
   const [oauthStatus, setOauthStatus] = useState<string | null>(null)
+  const [oauthEditingField, setOauthEditingField] = useState<OAuthFieldId | null>(
+    null,
+  )
+  const [oauthInput, setOauthInput] = useState('')
+  const [oauthInputError, setOauthInputError] = useState<string | null>(null)
 
   useEffect(() => {
     let mounted = true
@@ -78,6 +88,21 @@ export function Auth({ onClose }: Props): React.ReactNode {
   const apiKeyDisplay = apiKey.trim()
     ? `...${apiKey.trim().slice(-6)}`
     : '(not set)'
+  const oauthClientId = settings.security?.auth?.geminiCliOAuth?.clientId ?? ''
+  const oauthClientSecret =
+    settings.security?.auth?.geminiCliOAuth?.clientSecret ?? ''
+  const oauthClientConfigured =
+    !!oauthClientId.trim() && !!oauthClientSecret.trim()
+  const usingDefaultOAuthClient =
+    oauthClientId.trim() === DEFAULT_GEMINI_CLI_OAUTH_CLIENT_ID &&
+    oauthClientSecret.trim() === DEFAULT_GEMINI_CLI_OAUTH_CLIENT_SECRET
+
+  function maskSensitiveValue(value: string): string {
+    const trimmed = value.trim()
+    if (!trimmed) return '(not set)'
+    if (trimmed.length <= 12) return `${trimmed.slice(0, 2)}...${trimmed.slice(-2)}`
+    return `${trimmed.slice(0, 6)}...${trimmed.slice(-6)}`
+  }
 
   const fields = useMemo(
     () =>
@@ -133,6 +158,42 @@ export function Auth({ onClose }: Props): React.ReactNode {
     }
   }
 
+  function updateOAuthClientField(fieldId: OAuthFieldId, value: string) {
+    const trimmed = value.trim()
+    if (!trimmed) {
+      throw new Error('值不能为空')
+    }
+
+    const next = structuredClone(settings) as any
+    next.security = next.security ?? {}
+    next.security.auth = next.security.auth ?? {}
+    next.security.auth.geminiCliOAuth = next.security.auth.geminiCliOAuth ?? {}
+
+    if (fieldId === 'clientId') {
+      next.security.auth.geminiCliOAuth.clientId = trimmed
+    } else {
+      next.security.auth.geminiCliOAuth.clientSecret = trimmed
+    }
+    writeSettings(next)
+  }
+
+  function applyDefaultOAuthClient(options?: { auto?: boolean }) {
+    const next = structuredClone(settings) as any
+    next.security = next.security ?? {}
+    next.security.auth = next.security.auth ?? {}
+    next.security.auth.geminiCliOAuth = next.security.auth.geminiCliOAuth ?? {}
+    next.security.auth.geminiCliOAuth.clientId = DEFAULT_GEMINI_CLI_OAUTH_CLIENT_ID
+    next.security.auth.geminiCliOAuth.clientSecret =
+      DEFAULT_GEMINI_CLI_OAUTH_CLIENT_SECRET
+    writeSettings(next)
+    setOauthStatus(
+      options?.auto
+        ? '已自动写入默认 OAuth Client（来源：Gemini CLI）'
+        : '已恢复默认 OAuth Client（来源：Gemini CLI）',
+    )
+    setOauthError(null)
+  }
+
   function setSelectedType(selectedType: AuthMode) {
     const next = structuredClone(settings) as any
     next.security = next.security ?? {}
@@ -146,6 +207,9 @@ export function Auth({ onClose }: Props): React.ReactNode {
     setEditing(false)
     setCurrentInput('')
     setInputError(null)
+    setOauthEditingField(null)
+    setOauthInput('')
+    setOauthInputError(null)
     setOauthError(null)
     setOauthStatus(null)
     setOauthAuthUrl(null)
@@ -219,7 +283,55 @@ export function Auth({ onClose }: Props): React.ReactNode {
     }
 
     if (screen === 'google-oauth') {
+      if (oauthEditingField) {
+        if (key.return) {
+          try {
+            updateOAuthClientField(oauthEditingField, oauthInput)
+            setOauthEditingField(null)
+            setOauthInput('')
+            setOauthInputError(null)
+            setOauthStatus('OAuth 配置已保存')
+          } catch (error) {
+            setOauthInputError(
+              error instanceof Error ? error.message : '输入不合法',
+            )
+          }
+          return
+        }
+        if (key.escape) {
+          setOauthEditingField(null)
+          setOauthInput('')
+          setOauthInputError(null)
+          return
+        }
+        if (key.backspace || key.delete) {
+          setOauthInput(prev => prev.slice(0, -1))
+          return
+        }
+        if (input) {
+          setOauthInput(prev => prev + input)
+        }
+        return
+      }
+
       const lower = input?.toLowerCase?.() ?? ''
+      if (lower === 'i') {
+        setOauthEditingField('clientId')
+        setOauthInput(oauthClientId)
+        setOauthInputError(null)
+        return
+      }
+      if (lower === 's') {
+        setOauthEditingField('clientSecret')
+        // secret 不回显，默认空编辑框
+        setOauthInput('')
+        setOauthInputError(null)
+        return
+      }
+      if (lower === 'd') {
+        applyDefaultOAuthClient()
+        return
+      }
       if (lower === 'g') {
         startGoogleLogin()
         return
@@ -229,6 +341,9 @@ export function Auth({ onClose }: Props): React.ReactNode {
         return
       }
       if (key.escape) {
+        setOauthEditingField(null)
+        setOauthInput('')
+        setOauthInputError(null)
         setScreen('choose-mode')
       }
       return
@@ -294,6 +409,13 @@ export function Auth({ onClose }: Props): React.ReactNode {
     }
   })
 
+  useEffect(() => {
+    if (screen !== 'google-oauth') return
+    if (oauthClientConfigured) return
+    applyDefaultOAuthClient({ auto: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [screen, oauthClientConfigured])
+
   if (screen === 'choose-mode') {
     const apiOk = !!apiKey.trim()
     const oauthOk = !!oauthCreds?.refresh_token
@@ -349,6 +471,12 @@ export function Auth({ onClose }: Props): React.ReactNode {
                     {`（${oauthCreds.user_email}）`}
                   </Text>
                 ) : null}
+              </Text>
+              <Text color={theme.secondaryText}>
+                · OAuth Client：{' '}
+                <Text color={oauthClientConfigured ? theme.success : theme.warning}>
+                  {oauthClientConfigured ? '已配置' : '未配置'}
+                </Text>
               </Text>
             </Box>
           </Box>
@@ -434,11 +562,37 @@ export function Auth({ onClose }: Props): React.ReactNode {
       >
         <Text bold>Auth（Google 官方登录 / Gemini CLI）</Text>
         <Text color={theme.secondaryText}>写入：{oauthCredsPath}</Text>
+        <Text color={theme.secondaryText}>OAuth 配置：{settingsPath}</Text>
         <Text color={theme.secondaryText}>
           已激活：<Text color={theme.success}>gemini-cli-oauth</Text>（此模式不会使用 API Key）
         </Text>
 
         <Box flexDirection="column" marginTop={1}>
+          <Text color={theme.secondaryText}>
+            client_id: {maskSensitiveValue(oauthClientId)}
+          </Text>
+          <Text color={theme.secondaryText}>
+            client_secret: {maskSensitiveValue(oauthClientSecret)}
+          </Text>
+          <Text color={theme.secondaryText}>
+            配置状态：
+            <Text color={oauthClientConfigured ? theme.success : theme.warning}>
+              {' '}
+              {oauthClientConfigured ? '已配置' : '未配置'}
+            </Text>
+          </Text>
+          <Text color={theme.secondaryText}>
+            来源：
+            <Text color={usingDefaultOAuthClient ? theme.warning : theme.success}>
+              {' '}
+              {usingDefaultOAuthClient ? '默认（Gemini CLI）' : '自定义'}
+            </Text>
+          </Text>
+          {usingDefaultOAuthClient ? (
+            <Text color={theme.secondaryText}>
+              提示：默认 Client 可能阶段性失效；若 401，请改成你自己的 OAuth Client。
+            </Text>
+          ) : null}
           <Text color={theme.text}>
             状态：
             <Text
@@ -458,6 +612,19 @@ export function Auth({ onClose }: Props): React.ReactNode {
           </Text>
         </Box>
 
+        {oauthEditingField ? (
+          <Box flexDirection="column" marginTop={1}>
+            <Text color={theme.suggestion}>
+              编辑 {oauthEditingField === 'clientId' ? 'client_id' : 'client_secret'}：
+              {oauthInput}
+            </Text>
+            {oauthInputError ? (
+              <Text color={theme.error}>{oauthInputError}</Text>
+            ) : null}
+            <Text color={theme.secondaryText}>Enter 保存 · Esc 取消</Text>
+          </Box>
+        ) : null}
+
         {oauthAuthUrl ? (
           <Box flexDirection="column" marginTop={1}>
             <Text color={theme.suggestion}>
@@ -472,7 +639,7 @@ export function Auth({ onClose }: Props): React.ReactNode {
 
         <Box marginTop={1}>
           <Text dimColor>
-            快捷键：G 开始登录 · L 退出登录 · Esc 返回选择
+            快捷键：I 编辑 client_id · S 编辑 client_secret · D 恢复默认 · G 开始登录 · L 退出登录 · Esc 返回选择
             {oauthBusy ? '（进行中…）' : ''}
           </Text>
         </Box>
