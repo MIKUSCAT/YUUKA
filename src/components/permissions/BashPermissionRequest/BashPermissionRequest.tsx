@@ -13,7 +13,10 @@ import { PermissionRequestTitle } from '@components/permissions/PermissionReques
 import { logUnaryPermissionEvent } from '@components/permissions/utils'
 import { Select } from '@components/CustomSelect/select'
 import { toolUseOptions } from '@components/permissions/toolUseOptions'
-import { isUnsafeCompoundCommand } from '@utils/commands'
+import {
+  isHighRiskBashCommand,
+  isUnsafeCompoundCommand,
+} from '@utils/commands'
 import { logError } from '@utils/log'
 
 type Props = {
@@ -29,6 +32,7 @@ export function BashPermissionRequest({
 
   // ok to use parse since we've already validated args earliers
   const { command } = BashTool.inputSchema.parse(toolUseConfirm.input)
+  const isHighRiskCommand = isHighRiskBashCommand(command)
 
   const unaryEvent = useMemo<UnaryEvent>(
     () => ({ completion_type: 'tool_use_single', language_name: 'none' }),
@@ -54,12 +58,21 @@ export function BashPermissionRequest({
       <Box flexDirection="column" paddingX={2} paddingY={1}>
         <Text>{BashTool.renderToolUseMessage({ command })}</Text>
         <Text color={theme.secondaryText}>{toolUseConfirm.description}</Text>
+        {isHighRiskCommand && (
+          <Text color={theme.warning}>
+            危险命令：该命令每次执行都需要你手动确认，不能会话放行。
+          </Text>
+        )}
       </Box>
 
       <Box flexDirection="column">
         <Text>Do you want to proceed?</Text>
         <Select
-          options={toolUseOptions({ toolUseConfirm, command })}
+          options={toolUseOptions({
+            toolUseConfirm,
+            command,
+            forceTemporaryOnly: isHighRiskCommand,
+          })}
           onChange={newValue => {
             switch (newValue) {
               case 'yes':
@@ -72,6 +85,16 @@ export function BashPermissionRequest({
                 toolUseConfirm.onAllow('temporary')
                 break
               case 'yes-allow-session': {
+                if (isHighRiskCommand) {
+                  logUnaryPermissionEvent(
+                    'tool_use_single',
+                    toolUseConfirm,
+                    'accept',
+                  )
+                  onDone()
+                  toolUseConfirm.onAllow('temporary')
+                  break
+                }
                 const prefix = toolUseConfirmGetPrefix(toolUseConfirm)
                 const canUsePrefix =
                   !isUnsafeCompoundCommand(command) &&

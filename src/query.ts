@@ -41,6 +41,7 @@ import { getCwd } from './utils/state'
 import { checkAutoCompact } from './utils/autoCompactCore'
 import { setSessionState } from '@utils/sessionState'
 import { TOOL_NAME as SKILL_TOOL_NAME } from '@tools/SkillTool/constants'
+import { PermissionMode } from '@yuuka-types/PermissionMode'
 
 // Extended ToolUseContext for query functions
 interface ExtendedToolUseContext extends ToolUseContext {
@@ -52,6 +53,7 @@ interface ExtendedToolUseContext extends ToolUseContext {
     tools: Tool[]
     verbose: boolean
     safeMode: boolean
+    permissionMode?: PermissionMode
     maxThinkingTokens: number
     model?: string | import('./utils/config').ModelPointerType
   }

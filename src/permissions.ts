@@ -12,6 +12,11 @@ import { AbortError } from './utils/errors'
 import { logError } from './utils/log'
 import { grantWritePermissionForOriginalDir } from './utils/permissions/filesystem'
 import { PRODUCT_NAME } from './constants/product'
+import {
+  MODE_CONFIGS,
+  PermissionMode,
+} from '@yuuka-types/PermissionMode'
+import { isHighRiskBashCommand } from '@utils/commands'
 
 // Commands that are known to be safe for execution
 const SAFE_COMMANDS = new Set([
@@ -28,11 +33,33 @@ const SAFE_COMMANDS = new Set([
 // In-memory approvals that reset each session ("this conversation" whitelist)
 const SESSION_ALLOWED_TOOLS = new Set<string>()
 
+function normalizePermissionMode(rawMode: unknown): PermissionMode {
+  if (
+    typeof rawMode === 'string' &&
+    Object.prototype.hasOwnProperty.call(MODE_CONFIGS, rawMode)
+  ) {
+    return rawMode as PermissionMode
+  }
+  return 'default'
+}
+
+function modeAllowsTool(mode: PermissionMode, toolName: string): boolean {
+  const allowedTools = MODE_CONFIGS[mode].allowedTools
+  return allowedTools.includes('*') || allowedTools.includes(toolName)
+}
+
+function createPermissionDeniedMessage(toolName: string): string {
+  return `${PRODUCT_NAME} requested permissions to use ${toolName}, but you haven't granted it yet.`
+}
+
 export const bashToolCommandHasExactMatchPermission = (
   tool: Tool,
   command: string,
   allowedTools: string[],
 ): boolean => {
+  if (isHighRiskBashCommand(command)) {
+    return false
+  }
   if (SAFE_COMMANDS.has(command)) {
     return true
   }
@@ -61,6 +88,13 @@ export const bashToolHasPermission = async (
     throw new AbortError()
   }
 
+  if (isHighRiskBashCommand(command)) {
+    return {
+      result: false,
+      message: 'Dangerous command requires explicit confirmation every time.',
+    }
+  }
+
   if (bashToolCommandHasExactMatchPermission(tool, command, allowedTools)) {
     return { result: true }
   }
@@ -68,7 +102,7 @@ export const bashToolHasPermission = async (
   // 不再做“命令前缀/注入检测”的后台解析：直接请示用户确认
   return {
     result: false,
-    message: `${PRODUCT_NAME} requested permissions to use ${tool.name}, but you haven't granted it yet.`,
+    message: createPermissionDeniedMessage(tool.name),
   }
 }
 
@@ -80,13 +114,18 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
   context,
   _assistantMessage,
 ): Promise<PermissionResult> => {
-  // If safe mode is not enabled, allow all tools (permissive by default)
-  if (!context.options.safeMode) {
-    return { result: true }
-  }
-
   if (context.abortController.signal.aborted) {
     throw new AbortError()
+  }
+
+  const permissionMode = normalizePermissionMode(context.options?.permissionMode)
+  const modeConfig = MODE_CONFIGS[permissionMode]
+
+  if (!modeAllowsTool(permissionMode, tool.name)) {
+    return {
+      result: false,
+      message: `Tool ${tool.name} is not available in ${permissionMode} mode.`,
+    }
   }
 
   // Check if the tool needs permissions
@@ -97,6 +136,30 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
   } catch (e) {
     logError(`Error checking permissions: ${e}`)
     return { result: false, message: 'Error checking permissions' }
+  }
+
+  // High-risk bash commands are always confirmed, regardless of mode or safe flag.
+  if (tool === BashTool) {
+    const parsedInput = inputSchema.safeParse(input)
+    if (parsedInput.success && isHighRiskBashCommand(parsedInput.data.command)) {
+      return {
+        result: false,
+        message: 'Dangerous command requires explicit confirmation every time.',
+      }
+    }
+  }
+
+  if (modeConfig.restrictions.bypassValidation) {
+    return { result: true }
+  }
+
+  if (!modeConfig.restrictions.requireConfirmation) {
+    return { result: true }
+  }
+
+  // Non-safe default mode stays permissive except high-risk bash commands handled above.
+  if (!context.options?.safeMode && permissionMode === 'default') {
+    return { result: true }
   }
 
   const projectConfig = getCurrentProjectConfig()
@@ -128,7 +191,7 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
       }
       return {
         result: false,
-        message: `${PRODUCT_NAME} requested permissions to use ${tool.name}, but you haven't granted it yet.`,
+        message: createPermissionDeniedMessage(tool.name),
       }
     }
     // For other tools, check persistent permissions
@@ -140,7 +203,7 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
 
       return {
         result: false,
-        message: `${PRODUCT_NAME} requested permissions to use ${tool.name}, but you haven't granted it yet.`,
+        message: createPermissionDeniedMessage(tool.name),
       }
     }
   }

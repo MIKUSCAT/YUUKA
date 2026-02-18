@@ -7,6 +7,7 @@ import {
   GlobalConfig,
   saveGlobalConfig,
   getGlobalConfig,
+  parseDangerousCommandsInput,
 } from '@utils/config'
 import { useExitOnCtrlCD } from '@hooks/useExitOnCtrlCD'
 import {
@@ -81,6 +82,8 @@ export function Config({ onClose }: Props): React.ReactNode {
   const apiKeyDisplay = mergedApiKey.trim()
     ? `...${mergedApiKey.trim().slice(-6)}`
     : '(not set)'
+  const dangerousCommandsDisplay =
+    (globalConfig.dangerousCommands ?? []).join(', ') || '(none)'
 
   const settings: Setting[] = [
     // Global settings
@@ -215,6 +218,18 @@ export function Config({ onClose }: Props): React.ReactNode {
       },
       type: 'boolean',
     },
+    {
+      id: 'dangerousCommands',
+      label: 'Dangerous Commands Blacklist',
+      value: dangerousCommandsDisplay,
+      onChange(value: string) {
+        const dangerousCommands = parseDangerousCommandsInput(value)
+        const config = { ...getGlobalConfig(), dangerousCommands }
+        saveGlobalConfig(config)
+        setGlobalConfig(config)
+      },
+      type: 'string',
+    },
 
     // Gemini settings (global ~/.yuuka/settings.json)
     {
@@ -345,6 +360,11 @@ export function Config({ onClose }: Props): React.ReactNode {
           String(currentSetting.value).trim() === '(not set)'
         ) {
           setCurrentInput('')
+        } else if (
+          currentSetting.id === 'dangerousCommands' &&
+          String(currentSetting.value).trim() === '(none)'
+        ) {
+          setCurrentInput('')
         } else {
           setCurrentInput(String(currentSetting.value))
         }
@@ -443,6 +463,15 @@ export function Config({ onClose }: Props): React.ReactNode {
                   {inputError && <Text color="red">{inputError}</Text>}
                 </Box>
               )}
+              {index === selectedIndex &&
+                !editingString &&
+                setting.id === 'dangerousCommands' && (
+                  <Box marginLeft={2}>
+                    <Text color={theme.secondaryText}>
+                      仅填命令名，逗号/换行分隔；留空表示只用内置黑名单
+                    </Text>
+                  </Box>
+                )}
             </Box>
           ))}
         </Box>

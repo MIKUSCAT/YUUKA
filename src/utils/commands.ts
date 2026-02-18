@@ -2,9 +2,56 @@ import { memoize } from 'lodash-es'
 import { API_ERROR_MESSAGE_PREFIX, queryQuick } from '@services/llm'
 import { type ControlOperator, parse, ParseEntry } from 'shell-quote'
 import { PRODUCT_NAME } from '@constants/product'
+import {
+  DEFAULT_DANGEROUS_COMMANDS,
+  getConfiguredDangerousCommands,
+} from '@utils/config'
 
 const SINGLE_QUOTE = '__SINGLE_QUOTE__'
 const DOUBLE_QUOTE = '__DOUBLE_QUOTE__'
+const DANGEROUS_BASE_COMMANDS = new Set<string>(DEFAULT_DANGEROUS_COMMANDS)
+const COMMAND_WRAPPERS = new Set([
+  'sudo',
+  'doas',
+  'env',
+  'command',
+  'nohup',
+  'time',
+  'nice',
+  'ionice',
+  'chrt',
+  'setsid',
+])
+const WRAPPER_SHORT_OPTIONS_WITH_VALUE = new Set([
+  '-u',
+  '-g',
+  '-h',
+  '-p',
+  '-c',
+  '-r',
+  '-t',
+  '-T',
+  '-C',
+  '-n',
+])
+const WRAPPER_LONG_OPTIONS_WITH_VALUE = new Set([
+  '--user',
+  '--group',
+  '--host',
+  '--prompt',
+  '--chdir',
+  '--other-user',
+  '--login-class',
+  '--set-home',
+  '--shell',
+  '--preserve-env',
+  '--command',
+  '--cpu-list',
+  '--class',
+  '--pid',
+  '--priority',
+  '--timeout',
+])
 
 export type CommandPrefixResult =
   | {
@@ -71,6 +118,102 @@ export function splitCommand(command: string): string[] {
   return quotedParts.filter(
     part => !(COMMAND_LIST_SEPARATORS as Set<string>).has(part),
   )
+}
+
+function normalizeCommandToken(token: string): string {
+  const trimmed = token.trim().replace(/^['"]|['"]$/g, '')
+  if (!trimmed) return ''
+  const fileName = trimmed.split(/[\\/]/).pop() ?? trimmed
+  return fileName.toLowerCase().replace(/\.exe$/i, '')
+}
+
+function extractBaseCommand(subcommand: string): string | null {
+  const tokens = subcommand.trim().split(/\s+/).filter(Boolean)
+  if (tokens.length === 0) {
+    return null
+  }
+
+  let wrapperMode = false
+  let skipNextAsWrapperOptionValue = false
+
+  for (const rawToken of tokens) {
+    const token = normalizeCommandToken(rawToken)
+    if (!token) {
+      continue
+    }
+    if (skipNextAsWrapperOptionValue) {
+      skipNextAsWrapperOptionValue = false
+      continue
+    }
+
+    if (/^[a-z_][a-z0-9_]*=.*/i.test(token)) {
+      continue
+    }
+    if (wrapperMode) {
+      if (token === '--') {
+        continue
+      }
+      if (token.startsWith('--')) {
+        if (token.includes('=')) {
+          continue
+        }
+        if (WRAPPER_LONG_OPTIONS_WITH_VALUE.has(token)) {
+          skipNextAsWrapperOptionValue = true
+        }
+        continue
+      }
+      if (token.startsWith('-')) {
+        if (WRAPPER_SHORT_OPTIONS_WITH_VALUE.has(token)) {
+          skipNextAsWrapperOptionValue = true
+        }
+        continue
+      }
+      if (COMMAND_WRAPPERS.has(token)) {
+        wrapperMode = true
+        continue
+      }
+      wrapperMode = false
+      return token
+    }
+
+    if (COMMAND_WRAPPERS.has(token)) {
+      wrapperMode = true
+      continue
+    }
+    return token
+  }
+  return null
+}
+
+function isDangerousBaseCommand(baseCommand: string): boolean {
+  if (!baseCommand) {
+    return false
+  }
+  if (baseCommand.startsWith('mkfs.')) {
+    return true
+  }
+  if (DANGEROUS_BASE_COMMANDS.has(baseCommand)) {
+    return true
+  }
+  try {
+    return getConfiguredDangerousCommands().includes(baseCommand)
+  } catch {
+    return false
+  }
+}
+
+export function isHighRiskBashCommand(command: string): boolean {
+  const subcommands = splitCommand(command)
+  for (const subcommand of subcommands) {
+    const baseCommand = extractBaseCommand(subcommand)
+    if (!baseCommand) {
+      continue
+    }
+    if (isDangerousBaseCommand(baseCommand)) {
+      return true
+    }
+  }
+  return false
 }
 
 export const getCommandSubcommandPrefix = memoize(

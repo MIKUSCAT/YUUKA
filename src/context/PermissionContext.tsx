@@ -3,6 +3,7 @@ import React, {
   useContext,
   useState,
   useCallback,
+  useEffect,
   ReactNode,
 } from 'react'
 import {
@@ -28,11 +29,13 @@ const PermissionContext = createContext<PermissionContextValue | undefined>(
 interface PermissionProviderProps {
   children: ReactNode
   isBypassPermissionsModeAvailable?: boolean
+  onModeChange?: (mode: PermissionMode) => void
 }
 
 export function PermissionProvider({
   children,
   isBypassPermissionsModeAvailable = false,
+  onModeChange,
 }: PermissionProviderProps) {
   const [permissionContext, setPermissionContext] =
     useState<IPermissionContext>({
@@ -111,6 +114,10 @@ export function PermissionProvider({
   const getModeConfig = useCallback(() => {
     return MODE_CONFIGS[permissionContext.mode]
   }, [permissionContext.mode])
+
+  useEffect(() => {
+    onModeChange?.(permissionContext.mode)
+  }, [onModeChange, permissionContext.mode])
 
   const value: PermissionContextValue = {
     permissionContext,

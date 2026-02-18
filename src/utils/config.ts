@@ -92,6 +92,89 @@ export type NotificationChannel =
 
 export type ProviderType = 'gemini'
 
+export const DEFAULT_DANGEROUS_COMMANDS = [
+  'rm',
+  'rmdir',
+  'dd',
+  'mkfs',
+  'fdisk',
+  'sfdisk',
+  'cfdisk',
+  'parted',
+  'shutdown',
+  'reboot',
+  'poweroff',
+  'halt',
+  'init',
+  'diskpart',
+  'format',
+  'del',
+  'rd',
+] as const
+const COMMAND_WRAPPERS = new Set([
+  'sudo',
+  'doas',
+  'env',
+  'command',
+  'nohup',
+  'time',
+  'nice',
+  'ionice',
+  'chrt',
+  'setsid',
+])
+
+function normalizeDangerousCommandName(value: unknown): string {
+  const raw = String(value ?? '').trim().replace(/^['"]|['"]$/g, '')
+  if (!raw) {
+    return ''
+  }
+  const baseName = raw.split(/[\\/]/).pop() ?? raw
+  const tokens = baseName
+    .split(/\s+/)
+    .map(token => token.toLowerCase().replace(/\.exe$/i, ''))
+    .filter(Boolean)
+  for (const token of tokens) {
+    if (token.startsWith('-')) {
+      continue
+    }
+    if (COMMAND_WRAPPERS.has(token)) {
+      continue
+    }
+    return token
+  }
+  return ''
+}
+
+export function normalizeDangerousCommands(value: unknown): string[] {
+  if (typeof value === 'string') {
+    return normalizeDangerousCommands(value.split(/[\n,;]+/))
+  }
+  if (!Array.isArray(value)) {
+    return []
+  }
+  const unique = new Set<string>()
+  for (const item of value) {
+    const normalized = normalizeDangerousCommandName(item)
+    if (normalized) {
+      unique.add(normalized)
+    }
+  }
+  return [...unique]
+}
+
+export function parseDangerousCommandsInput(raw: string): string[] {
+  const trimmed = String(raw ?? '').trim()
+  if (!trimmed) {
+    return []
+  }
+  const parsedAsJson = safeParseJSON(trimmed)
+  if (Array.isArray(parsedAsJson)) {
+    return normalizeDangerousCommands(parsedAsJson)
+  }
+  return normalizeDangerousCommands(trimmed.split(/[\n,;]+/))
+}
+
 // New model system types
 export type ModelProfile = {
   name: string // User-friendly name
@@ -155,6 +238,7 @@ export type GlobalConfig = {
   thinkingNonGemini3Budget?: number
   memoryReadEnabled?: boolean
   memoryWriteEnabled?: boolean
+  dangerousCommands?: string[]
 
   // New model system
   modelProfiles?: ModelProfile[] // Model configuration list
@@ -183,6 +267,7 @@ export const DEFAULT_GLOBAL_CONFIG: GlobalConfig = {
   thinkingNonGemini3Budget: 8192,
   memoryReadEnabled: true,
   memoryWriteEnabled: true,
+  dangerousCommands: [],
 
   // New model system defaults
   modelProfiles: [],
@@ -215,6 +300,7 @@ export const GLOBAL_CONFIG_KEYS = [
   'thinkingNonGemini3Budget',
   'memoryReadEnabled',
   'memoryWriteEnabled',
+  'dangerousCommands',
 ] as const
 
 export type GlobalConfigKey = (typeof GLOBAL_CONFIG_KEYS)[number]
@@ -291,8 +377,15 @@ function extractGlobalConfigFromSettings(settings: GeminiSettings): GlobalConfig
   if (settings.mcpServers && typeof settings.mcpServers === 'object') {
     mergedConfig.mcpServers = settings.mcpServers as any
   }
+  mergedConfig.dangerousCommands = normalizeDangerousCommands(
+    (mergedConfig as any).dangerousCommands,
+  )
 
   return migrateModelProfilesRemoveId(mergedConfig)
+}
+
+export function getConfiguredDangerousCommands(): string[] {
+  return normalizeDangerousCommands(getGlobalConfig().dangerousCommands)
 }
 
 function applyGlobalConfigToSettings(
@@ -795,6 +888,9 @@ export function setConfigForCLI(
         process.exit(1)
       }
       value = Math.floor(parsed)
+    }
+    if (key === 'dangerousCommands') {
+      value = parseDangerousCommandsInput(String(value ?? ''))
     }
 
     const currentConfig = getGlobalConfig()

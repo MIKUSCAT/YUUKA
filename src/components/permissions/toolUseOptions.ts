@@ -11,10 +11,25 @@ import { type OptionSubtree } from '@components/CustomSelect/select'
 export function toolUseOptions({
   toolUseConfirm,
   command,
+  forceTemporaryOnly = false,
 }: {
   toolUseConfirm: ToolUseConfirm
   command: string
+  forceTemporaryOnly?: boolean
 }): (Option | OptionSubtree)[] {
+  if (forceTemporaryOnly) {
+    return [
+      {
+        label: 'Yes',
+        value: 'yes',
+      },
+      {
+        label: `No, and provide instructions (${chalk.bold.hex(getTheme().warning)('esc')})`,
+        value: 'no',
+      },
+    ]
+  }
+
   const prefix = toolUseConfirmGetPrefix(toolUseConfirm)
   const canUsePrefix =
     !isUnsafeCompoundCommand(command) &&
