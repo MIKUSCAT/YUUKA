@@ -269,7 +269,7 @@ export default function TextInput({
 
   const showPlaceholder = originalValue.length == 0 && placeholder
   return (
-    <Text wrap="truncate-end" dimColor={isDimmed}>
+    <Text wrap="wrap" dimColor={isDimmed}>
       {showPlaceholder ? renderedPlaceholder : renderedValue}
     </Text>
   )

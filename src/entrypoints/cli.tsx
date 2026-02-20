@@ -773,6 +773,7 @@ ${commandList}`,
           process.exit(0)
         } else {
           // Render REPL immediately, check for updates in background
+          await clearTerminal()
           const { render } = await import('ink')
           const { REPL } = await import('@screens/REPL')
           const tools = await getCoreTools()

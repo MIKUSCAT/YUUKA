@@ -66,6 +66,7 @@ import { clearTerminal } from '@utils/terminal'
 import { BinaryFeedback } from '@components/binary-feedback/BinaryFeedback'
 import { getMaxThinkingTokens } from '@utils/thinking'
 import { getOriginalCwd } from '@utils/state'
+import { setConversationScope } from '@utils/agentStorage'
 import { logError } from '@utils/log'
 
 type Props = {
@@ -462,6 +463,11 @@ export function REPL({
 
   // Log startup time
   useLogStartupTime()
+
+  // Keep todo/memory storage isolated per conversation log
+  useEffect(() => {
+    setConversationScope(messageLogName)
+  }, [messageLogName])
 
   // Initial load
   useEffect(() => {

@@ -245,10 +245,20 @@ class FileFreshnessService {
   public startWatchingTodoFile(agentId: string): void {
     try {
       const filePath = getAgentFilePath(agentId)
+      const existingPath = this.state.watchedTodoFiles.get(agentId)
 
-      // Don't watch if already watching
-      if (this.state.watchedTodoFiles.has(agentId)) {
+      // Already watching current file path
+      if (existingPath === filePath) {
         return
+      }
+
+      // Conversation scope changed: switch watcher to new file path
+      if (existingPath && existingPath !== filePath) {
+        try {
+          unwatchFile(existingPath)
+        } catch {
+          // Ignore unwatch failures and continue with fresh watcher
+        }
       }
 
       this.state.watchedTodoFiles.set(agentId, filePath)

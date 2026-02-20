@@ -22,6 +22,7 @@ import { getTotalCost } from '@costTracker'
 import { formatNumber } from '@utils/format'
 import figures from 'figures'
 import { getTodos } from '@utils/todoStorage'
+import { getDefaultAgentId } from '@utils/agentStorage'
 import { TodoPanel } from './TodoPanel'
 import { getActiveSkills, type SkillConfig } from '@utils/skillLoader'
 import { setSessionEnabledSkillNames } from '@utils/skillSession'
@@ -521,7 +522,7 @@ function PromptInput({
     tokenUsage,
   ])
   const showTokenWarning = tokenUsage >= 600000
-  const todos = getTodos()
+  const todos = getTodos(getDefaultAgentId())
   const todoStats = useMemo(() => {
     const total = todos.length
     const completed = todos.filter(t => t.status === 'completed').length

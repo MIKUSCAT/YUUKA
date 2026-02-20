@@ -10,6 +10,32 @@ import { CONFIG_BASE_DIR } from '@constants/product'
  * Based on the Agent ID architecture
  */
 
+const FALLBACK_CONVERSATION_SCOPE = `session-${randomUUID().slice(0, 8)}`
+let conversationScope = FALLBACK_CONVERSATION_SCOPE
+
+function sanitizeScope(scope?: string | null): string {
+  if (!scope) return ''
+
+  return scope
+    .trim()
+    .replace(/[^a-zA-Z0-9_-]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 64)
+}
+
+/**
+ * Set conversation storage scope.
+ * Use messageLogName so each conversation has isolated todo storage.
+ */
+export function setConversationScope(scope?: string): void {
+  const sanitized = sanitizeScope(scope)
+  conversationScope = sanitized || FALLBACK_CONVERSATION_SCOPE
+}
+
+// Optional bootstrap from env for non-REPL entrypoints
+setConversationScope(process.env.YUUKA_CONVERSATION_SCOPE)
+
 /**
  * Get the config directory
  */
@@ -22,10 +48,10 @@ function getConfigDirectory(): string {
  * Get the current session ID
  */
 function getSessionId(): string {
-  // 基于工作目录生成稳定 session，避免不同项目互相污染
+  // 项目隔离 + 对话隔离，避免新对话读到旧 todo
   const cwd = process.cwd()
   const hash = createHash('md5').update(cwd).digest('hex').slice(0, 8)
-  return `project-${hash}`
+  return `project-${hash}-conv-${conversationScope}`
 }
 
 /**

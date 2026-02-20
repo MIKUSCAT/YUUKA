@@ -40,6 +40,7 @@ import { BashTool } from '@tools/BashTool/BashTool'
 import { getCwd } from './utils/state'
 import { checkAutoCompact } from './utils/autoCompactCore'
 import { setSessionState } from '@utils/sessionState'
+import { setConversationScope } from '@utils/agentStorage'
 import { TOOL_NAME as SKILL_TOOL_NAME } from '@tools/SkillTool/constants'
 import { PermissionMode } from '@yuuka-types/PermissionMode'
 
@@ -369,6 +370,7 @@ export async function* query(
   const currentRequest = getCurrentRequest()
 
   markPhase('QUERY_INIT')
+  setConversationScope(toolUseContext.options.messageLogName)
 
   // Auto-compact check
   const { messages: processedMessages, wasCompacted } = await checkAutoCompact(
