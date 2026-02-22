@@ -30,6 +30,12 @@ export interface TaskExecutionProgress {
   elapsedMs: number
   tokenCount?: number
   lastAction?: string
+  teamName?: string
+  agentName?: string
+  taskId?: string
+  taskState?: string
+  eventType?: 'progress' | 'message' | 'status' | 'result'
+  eventContent?: string
 }
 
 export interface RunAgentTaskExecutionInput {
@@ -90,7 +96,11 @@ Teammate 工作流：
 1. 用 TaskList 查看共享任务（优先 open 且未 owner 的条目）
 2. 认领任务时用 TaskUpdate(taskId, owner="${teammateName}", status="in_progress")
 3. 完成后用 TaskUpdate 写入 status="completed" 和 result
-4. 通过 SendMessage 给 lead 发简短汇报`
+4. 通过 SendMessage 给 lead 发简短汇报
+
+补充：
+- lead 可能会先并行启动多个队友（非阻塞），再在你运行期间持续发消息调度
+- 收到新分工后优先更新共享任务板，避免与其他队友重复工作`
 }
 
 function resolveTaskAgentId(input: {
@@ -147,6 +157,9 @@ export async function* runAgentTaskExecutionStream(
   let effectivePrompt = prompt
   let effectiveModel = model_name || 'task'
   let toolFilter: string[] | '*' | null = null
+  const normalizedTeamName = team_name ? normalizeTeamName(team_name) : undefined
+  const normalizedTeammateName =
+    team_name ? normalizeAgentName(name || 'anonymous') : undefined
 
   const agentConfig = await getAgentByType(agentType)
   if (!agentConfig) {
@@ -160,15 +173,17 @@ export async function* runAgentTaskExecutionStream(
     effectivePrompt = `${agentConfig.systemPrompt}\n\n${prompt}`
   }
   if (team_name) {
-    const normalizedTeamName = normalizeTeamName(team_name)
-    const teammateName = normalizeAgentName(name || 'anonymous')
-    const teammateGuidance = buildTeammateGuidance(normalizedTeamName, teammateName)
+    const teammateGuidance = buildTeammateGuidance(
+      normalizedTeamName!,
+      normalizedTeammateName!,
+    )
     effectivePrompt = `${teammateGuidance}\n\n${effectivePrompt}`
   }
   if (!model_name && agentConfig.model_name && agentConfig.model_name !== 'inherit') {
     effectiveModel = agentConfig.model_name as string
   }
   toolFilter = agentConfig.tools
+  const taskId = resolveTaskAgentId({ team_name, name, agent_id })
 
   const messages: MessageType[] = [createUserMessage(effectivePrompt)]
   let tools = await getTaskTools(safeMode)
@@ -200,6 +215,11 @@ export async function* runAgentTaskExecutionStream(
       toolCount: 0,
       elapsedMs: Date.now() - startTime,
       lastAction: normalizePreview(description, 120),
+      teamName: normalizedTeamName,
+      agentName: normalizedTeammateName,
+      taskId: taskId,
+      taskState: 'in_progress',
+      eventType: 'progress',
     },
   }
 
@@ -213,7 +233,6 @@ export async function* runAgentTaskExecutionStream(
     getNextAvailableLogSidechainNumber(messageLogName, forkNumber),
   )
 
-  const taskId = resolveTaskAgentId({ team_name, name, agent_id })
   const queryOptions = {
     safeMode,
     forkNumber,
@@ -223,9 +242,11 @@ export async function* runAgentTaskExecutionStream(
     verbose,
     maxThinkingTokens,
     model: modelToUse,
+    teamName: normalizedTeamName,
+    teammateName: normalizedTeammateName,
   }
 
-  // Suppress sub-agent thinking from leaking to main Spinner
+  // Suppress teammate thinking from leaking to main Spinner
   setSessionState('suppressThoughtDepth', getSessionState('suppressThoughtDepth') + 1)
   setSessionState('currentThought', null) // clear residual thought
 
@@ -267,6 +288,11 @@ export async function* runAgentTaskExecutionStream(
             toolCount: toolUseCount,
             elapsedMs: Date.now() - startTime,
             lastAction: normalizePreview(content.text),
+            teamName: normalizedTeamName,
+            agentName: normalizedTeammateName,
+            taskId: taskId,
+            taskState: 'in_progress',
+            eventType: 'progress',
           },
         }
       } else if (content.type === 'tool_use') {
@@ -281,6 +307,11 @@ export async function* runAgentTaskExecutionStream(
             toolCount: toolUseCount,
             elapsedMs: Date.now() - startTime,
             lastAction: content.name,
+            teamName: normalizedTeamName,
+            agentName: normalizedTeammateName,
+            taskId: taskId,
+            taskState: 'in_progress',
+            eventType: 'progress',
           },
         }
       }
@@ -316,6 +347,11 @@ export async function* runAgentTaskExecutionStream(
         tokenCount,
         elapsedMs: Date.now() - startTime,
         lastAction: `工具调用 ${toolUseCount} 次`,
+        teamName: normalizedTeamName,
+        agentName: normalizedTeammateName,
+        taskId: taskId,
+        taskState: 'completed',
+        eventType: 'result',
       },
     }
   }

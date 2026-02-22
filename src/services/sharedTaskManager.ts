@@ -3,29 +3,7 @@ import { randomUUID } from 'crypto'
 import { dirname, join, resolve } from 'path'
 import { ensureTeam } from './teamManager'
 import { getTeamTaskDir, normalizeAgentName, normalizeTeamName } from './teamPaths'
-
-// Async mutex: serializes read-modify-write on the same file path
-// Different team files can proceed concurrently
-class AsyncMutex {
-  private locks = new Map<string, Promise<void>>()
-
-  async acquire(key: string): Promise<() => void> {
-    while (this.locks.has(key)) {
-      await this.locks.get(key)
-    }
-    let release!: () => void
-    const p = new Promise<void>(r => {
-      release = r
-    })
-    this.locks.set(key, p)
-    return () => {
-      this.locks.delete(key)
-      release()
-    }
-  }
-}
-
-const fileMutex = new AsyncMutex()
+import { withFileLockSync } from '@utils/fileLock'
 
 export type SharedTaskStatus = 'open' | 'in_progress' | 'completed' | 'blocked'
 
@@ -107,8 +85,7 @@ export async function createSharedTask(input: CreateSharedTaskInput): Promise<Sh
   const teamName = normalizeTeamName(input.teamName)
   ensureTeam(teamName)
   const path = getSharedTaskPath(teamName)
-  const release = await fileMutex.acquire(path)
-  try {
+  return withFileLockSync(path, () => {
     const tasks = readSharedTasks(path)
     const now = Date.now()
     const nextId = tasks.reduce((max, task) => Math.max(max, task.id), 0) + 1
@@ -127,9 +104,7 @@ export async function createSharedTask(input: CreateSharedTaskInput): Promise<Sh
     tasks.push(task)
     writeJsonAtomic(path, tasks)
     return task
-  } finally {
-    release()
-  }
+  })
 }
 
 export function listSharedTasks(input: ListSharedTaskInput): SharedTask[] {
@@ -152,8 +127,7 @@ export function listSharedTasks(input: ListSharedTaskInput): SharedTask[] {
 export async function updateSharedTask(input: UpdateSharedTaskInput): Promise<SharedTask> {
   const teamName = normalizeTeamName(input.teamName)
   const path = getSharedTaskPath(teamName)
-  const release = await fileMutex.acquire(path)
-  try {
+  return withFileLockSync(path, () => {
     const tasks = readSharedTasks(path)
     const index = tasks.findIndex(task => task.id === input.taskId)
     if (index < 0) {
@@ -193,9 +167,7 @@ export async function updateSharedTask(input: UpdateSharedTaskInput): Promise<Sh
     tasks[index] = next
     writeJsonAtomic(path, tasks)
     return next
-  } finally {
-    release()
-  }
+  })
 }
 
 export async function claimSharedTask(params: {

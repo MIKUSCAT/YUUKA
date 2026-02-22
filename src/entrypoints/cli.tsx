@@ -1850,12 +1850,12 @@ async function stdin() {
 
 process.on('exit', () => {
   resetCursor()
-  PersistentShell.getInstance().close()
+  PersistentShell.getIfAlive()?.close()
 })
 
 function gracefulExit(code = 0) {
   try { resetCursor() } catch {}
-  try { PersistentShell.getInstance().close() } catch {}
+  try { PersistentShell.getIfAlive()?.close() } catch {}
   process.exit(code)
 }
 

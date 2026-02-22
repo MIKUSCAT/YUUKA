@@ -1,14 +1,13 @@
 import { randomUUID } from 'crypto'
 import {
   appendMailboxMessage,
-  readMailboxMessages,
+  readMailboxMessagesWithCursor,
 } from '@services/mailbox'
 import {
   readTeamTask,
   TeamTaskProgress,
   updateTeamTask,
 } from '@services/teamManager'
-import { runAgentTaskExecution } from '@tools/TaskTool/runAgentTaskExecution'
 
 export async function runTeammateTask(taskFilePath: string): Promise<number> {
   const initialTask = readTeamTask(taskFilePath)
@@ -63,14 +62,17 @@ export async function runTeammateTask(taskFilePath: string): Promise<number> {
     let inboxLineOffset = 0
     mailboxWatcher = setInterval(() => {
       try {
-        const inboxMessages = readMailboxMessages(
+        const inboxRead = readMailboxMessagesWithCursor(
           'inbox',
           initialTask.teamName,
           initialTask.agentName,
           inboxLineOffset,
         )
+        const inboxMessages = inboxRead.messages
+        if (inboxRead.scannedLines > 0) {
+          inboxLineOffset = inboxRead.nextLine
+        }
         if (inboxMessages.length === 0) return
-        inboxLineOffset += inboxMessages.length
 
         for (const message of inboxMessages) {
           if (message.taskId && message.taskId !== initialTask.id) {
@@ -112,6 +114,25 @@ export async function runTeammateTask(taskFilePath: string): Promise<number> {
             continue
           }
 
+          appendMailboxMessage(
+            'outbox',
+            initialTask.teamName,
+            initialTask.agentName,
+            {
+              id: randomUUID(),
+              teamName: initialTask.teamName,
+              from: initialTask.agentName,
+              to: message.from || 'lead',
+              type: 'status',
+              taskId: initialTask.id,
+              content:
+                content.length > 120
+                  ? `received message: ${content.slice(0, 120)}...`
+                  : `received message: ${content}`,
+              createdAt: Date.now(),
+            },
+          )
+
           const progressMessage: TeamTaskProgress = {
             status: '收到消息',
             model: initialTask.model_name || 'task',
@@ -133,6 +154,9 @@ export async function runTeammateTask(taskFilePath: string): Promise<number> {
       }
     }, 400)
 
+    const { runAgentTaskExecution } = await import(
+      '@tools/TaskTool/runAgentTaskExecution'
+    )
     const result = await runAgentTaskExecution(
       {
         description: initialTask.description,

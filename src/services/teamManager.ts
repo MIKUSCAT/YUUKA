@@ -7,7 +7,7 @@ import {
   statSync,
   writeFileSync,
 } from 'fs'
-import { dirname, resolve } from 'path'
+import { dirname, join, resolve } from 'path'
 import { randomUUID } from 'crypto'
 import { spawn, type ChildProcess } from 'child_process'
 import {
@@ -20,6 +20,7 @@ import {
   normalizeAgentName,
   normalizeTeamName,
 } from './teamPaths'
+import { withFileLockSync } from '@utils/fileLock'
 
 export type TeamTaskStatus =
   | 'pending'
@@ -90,34 +91,36 @@ export function ensureTeam(teamName: string, seedAgents: string[] = []): TeamMet
   const normalizedTeamName = normalizeTeamName(teamName)
   const path = getTeamMetaPath(normalizedTeamName)
   const now = Date.now()
-  const existing = readJsonFile<TeamMetadata>(path)
-  if (existing) {
-    const mergedAgents = Array.from(
-      new Set([
-        ...(existing.agents ?? []),
-        ...seedAgents.map(agent => normalizeAgentName(agent)),
-      ]),
-    ).filter(Boolean)
-    const next: TeamMetadata = {
-      ...existing,
-      name: normalizedTeamName,
-      updatedAt: now,
-      agents: mergedAgents,
+  return withFileLockSync(path, () => {
+    const existing = readJsonFile<TeamMetadata>(path)
+    if (existing) {
+      const mergedAgents = Array.from(
+        new Set([
+          ...(existing.agents ?? []),
+          ...seedAgents.map(agent => normalizeAgentName(agent)),
+        ]),
+      ).filter(Boolean)
+      const next: TeamMetadata = {
+        ...existing,
+        name: normalizedTeamName,
+        updatedAt: now,
+        agents: mergedAgents,
+      }
+      writeJsonAtomic(path, next)
+      return next
     }
-    writeJsonAtomic(path, next)
-    return next
-  }
 
-  const created: TeamMetadata = {
-    name: normalizedTeamName,
-    createdAt: now,
-    updatedAt: now,
-    agents: Array.from(
-      new Set(seedAgents.map(agent => normalizeAgentName(agent)).filter(Boolean)),
-    ),
-  }
-  writeJsonAtomic(path, created)
-  return created
+    const created: TeamMetadata = {
+      name: normalizedTeamName,
+      createdAt: now,
+      updatedAt: now,
+      agents: Array.from(
+        new Set(seedAgents.map(agent => normalizeAgentName(agent)).filter(Boolean)),
+      ),
+    }
+    writeJsonAtomic(path, created)
+    return created
+  })
 }
 
 export function readTeam(teamName: string): TeamMetadata | null {
@@ -213,22 +216,39 @@ export function updateTeamTask(
   taskPath: string,
   updater: (current: TeamTaskRecord) => TeamTaskRecord,
 ): TeamTaskRecord {
-  const current = readTeamTask(taskPath)
-  if (!current) {
-    throw new Error(`Task file not found or invalid: ${taskPath}`)
-  }
-  const next = updater(current)
-  next.updatedAt = Date.now()
-  writeJsonAtomic(taskPath, next)
-  return next
+  return withFileLockSync(taskPath, () => {
+    const current = readTeamTask(taskPath)
+    if (!current) {
+      throw new Error(`Task file not found or invalid: ${taskPath}`)
+    }
+    const next = updater(current)
+    next.updatedAt = Date.now()
+    writeJsonAtomic(taskPath, next)
+    return next
+  })
 }
 
-function resolveCliEntrypoint(): string {
+function resolveTeammateEntrypoint(): string {
   const currentArgvPath = process.argv[1]
   if (currentArgvPath) {
-    return resolve(currentArgvPath)
+    const resolvedCurrent = resolve(currentArgvPath)
+    const currentDir = dirname(resolvedCurrent)
+    const candidates = [
+      join(currentDir, 'teammateCli.ts'),
+      join(currentDir, 'teammateCli.js'),
+      join(currentDir, 'entrypoints', 'teammateCli.ts'),
+      join(currentDir, 'entrypoints', 'teammateCli.js'),
+      // Dist wrapper (`dist/index.js`) should prefer the real teammate entrypoint.
+      join(dirname(currentDir), 'dist', 'entrypoints', 'teammateCli.js'),
+    ]
+    for (const candidate of candidates) {
+      if (existsSync(candidate)) {
+        return candidate
+      }
+    }
+    return resolvedCurrent
   }
-  return resolve(process.cwd(), 'dist/index.js')
+  return resolve(process.cwd(), 'dist/entrypoints/teammateCli.js')
 }
 
 export function spawnTeammateProcess(params: {
@@ -236,10 +256,10 @@ export function spawnTeammateProcess(params: {
   cwd: string
   safeMode: boolean
 }): ChildProcess {
-  const cliEntrypoint = resolveCliEntrypoint()
+  const teammateEntrypoint = resolveTeammateEntrypoint()
   const args = [
-    cliEntrypoint,
-    '--teammate',
+    ...process.execArgv,
+    teammateEntrypoint,
     '--teammate-task-file',
     params.taskPath,
     '--cwd',

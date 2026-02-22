@@ -43,6 +43,7 @@ import { setSessionState } from '@utils/sessionState'
 import { setConversationScope } from '@utils/agentStorage'
 import { TOOL_NAME as SKILL_TOOL_NAME } from '@tools/SkillTool/constants'
 import { PermissionMode } from '@yuuka-types/PermissionMode'
+import { getGlobalConfig } from '@utils/config'
 
 // Extended ToolUseContext for query functions
 interface ExtendedToolUseContext extends ToolUseContext {
@@ -103,7 +104,19 @@ export type ProgressMessage = {
 // Each array item is either a single message or a message-and-response pair
 export type Message = UserMessage | AssistantMessage | ProgressMessage
 
-const MAX_TOOL_USE_CONCURRENCY = 10
+const DEFAULT_TOOL_USE_CONCURRENCY = 4
+const MAX_TOOL_USE_CONCURRENCY_LIMIT = 20
+
+function getToolUseConcurrencyCap(): number {
+  const raw = Number(getGlobalConfig().maxToolUseConcurrency)
+  if (!Number.isFinite(raw) || raw <= 0) {
+    return DEFAULT_TOOL_USE_CONCURRENCY
+  }
+  return Math.min(
+    MAX_TOOL_USE_CONCURRENCY_LIMIT,
+    Math.max(1, Math.floor(raw)),
+  )
+}
 
 function isAbortError(error: unknown): boolean {
   if (!error) return false
@@ -203,14 +216,18 @@ function applyToolUseSerialGate(
       return true
     }
 
-    if (sawNonConcurrencySafeToolUse) {
-      didChange = true
-      return false
-    }
-
     const toolName = String((block as any).name ?? '')
     const tool = toolByName.get(toolName)
     const concurrencySafe = tool?.isConcurrencySafe() ?? false
+
+    // 更稳妥的“串行闸门”：
+    // - 允许并行安全工具继续保留（例如 Task/Read/WebSearch）
+    // - 仅保留第一个非并行安全工具（例如 Bash/Edit/Write/TodoWrite）
+    // 这样可以避免在同一条消息里误砍掉后续并行任务。
+    if (sawNonConcurrencySafeToolUse && !concurrencySafe) {
+      didChange = true
+      return false
+    }
 
     if (!concurrencySafe) {
       sawNonConcurrencySafeToolUse = true
@@ -534,9 +551,10 @@ export async function* query(
   let assistantMessage = result.message
   const shouldSkipPermissionCheck = result.shouldSkipPermissionCheck
 
-  // 稳妥策略：如果同一条 assistant message 里既有并行安全工具（读/搜）
-  // 又有会改动状态/执行的工具（Bash/Edit/Write/...），只执行“第一个非并行安全工具”，
-  // 并丢弃它之后的所有 tool_use，迫使模型等 tool_result 再决定下一步。
+  // 稳妥策略（升级版）：
+  // - 非并行安全工具（Bash/Edit/Write/...）只保留第一个，后续非并行安全调用会被裁掉
+  // - 并行安全工具（Task/Read/WebSearch/...）即使出现在后面也会保留
+  // 这样既能抑制高风险连发，又不影响并行任务启动。
   assistantMessage = applyToolUseSerialGate(
     assistantMessage,
     effectiveTools,
@@ -582,6 +600,7 @@ export async function* query(
     executionGroups.push({ concurrent: true, toolUses: pendingConcurrent })
   }
 
+  const toolUseConcurrencyCap = getToolUseConcurrencyCap()
   for (const group of executionGroups) {
     const runner = group.concurrent ? runToolsConcurrently : runToolsSerially
     for await (const message of runner(
@@ -590,6 +609,7 @@ export async function* query(
       canUseTool,
       effectiveToolUseContext,
       shouldSkipPermissionCheck,
+      toolUseConcurrencyCap,
     )) {
       yield message
       // progress messages are not sent to the server, so don't need to be accumulated for the next turn
@@ -638,6 +658,7 @@ async function* runToolsConcurrently(
   canUseTool: CanUseToolFn,
   toolUseContext: ExtendedToolUseContext,
   shouldSkipPermissionCheck?: boolean,
+  concurrencyCap: number = DEFAULT_TOOL_USE_CONCURRENCY,
 ): AsyncGenerator<Message, void> {
   yield* all(
     toolUseMessages.map(toolUse =>
@@ -650,7 +671,7 @@ async function* runToolsConcurrently(
         shouldSkipPermissionCheck,
       ),
     ),
-    MAX_TOOL_USE_CONCURRENCY,
+    concurrencyCap,
   )
 }
 
@@ -660,6 +681,7 @@ async function* runToolsSerially(
   canUseTool: CanUseToolFn,
   toolUseContext: ExtendedToolUseContext,
   shouldSkipPermissionCheck?: boolean,
+  _concurrencyCap?: number,
 ): AsyncGenerator<Message, void> {
   for (const toolUse of toolUseMessages) {
     yield* runToolUse(

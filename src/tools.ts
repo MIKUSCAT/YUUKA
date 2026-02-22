@@ -1,5 +1,7 @@
 import { Tool } from './Tool'
 import { TaskTool } from './tools/TaskTool/TaskTool'
+import { TaskBatchTool } from './tools/TaskBatchTool/TaskBatchTool'
+import { TaskStatusTool } from './tools/TaskStatusTool/TaskStatusTool'
 import { BashTool } from './tools/BashTool/BashTool'
 import { TaskOutputTool } from './tools/TaskOutputTool/TaskOutputTool'
 import { FileEditTool } from './tools/FileEditTool/FileEditTool'
@@ -9,6 +11,7 @@ import { GlobTool } from './tools/GlobTool/GlobTool'
 import { GrepTool } from './tools/GrepTool/GrepTool'
 import { LSTool } from './tools/lsTool/lsTool'
 import { MemoryReadTool } from './tools/MemoryReadTool/MemoryReadTool'
+import { MemorySearchTool } from './tools/MemorySearchTool/MemorySearchTool'
 import { MemoryWriteTool } from './tools/MemoryWriteTool/MemoryWriteTool'
 import { MultiEditTool } from './tools/MultiEditTool/MultiEditTool'
 import { NotebookEditTool } from './tools/NotebookEditTool/NotebookEditTool'
@@ -29,12 +32,18 @@ import { TaskUpdateTool } from './tools/SharedTaskTools/TaskUpdateTool'
 import { getMCPTools } from './services/mcpClient'
 import { memoize } from 'lodash-es'
 
-const ANT_ONLY_TOOLS = [MemoryReadTool as unknown as Tool, MemoryWriteTool as unknown as Tool]
+const ANT_ONLY_TOOLS = [
+  MemoryReadTool as unknown as Tool,
+  MemorySearchTool as unknown as Tool,
+  MemoryWriteTool as unknown as Tool,
+]
 
 // Function to avoid circular dependencies in the CLI loader
 export const getAllTools = (): Tool[] => {
   return [
     TaskTool as unknown as Tool,
+    TaskBatchTool as unknown as Tool,
+    TaskStatusTool as unknown as Tool,
     BashTool as unknown as Tool,
     TaskOutputTool as unknown as Tool,
     GlobTool as unknown as Tool,

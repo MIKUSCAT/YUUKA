@@ -17,4 +17,6 @@ export const PROMPT = `使用 MemoryWrite 保存需要跨会话记住的信息�
 - file_path 使用有意义的名字（如 preferences.md、decisions.md）
 - 内容使用 Markdown，简洁、可回读
 - 优先“更新已有内容”，不要无脑追加重复段落
+- 可以补充 title / tags / summary / layer，提升后续检索质量
+- layer 建议：core（核心偏好）、retrievable（可检索知识）、episodic（临时情景）
 - 用户偏好主档 \`YUUKA.md\` 通常由 \`/memory\` 手动维护，除非用户明确要求你直接改`

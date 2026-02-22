@@ -220,6 +220,7 @@ export type GlobalConfig = {
   preferredNotifChannel: NotificationChannel
   verbose: boolean
   agentExecutionMode?: 'inline' | 'process'
+  maxToolUseConcurrency?: number
   customApiKeyResponses?: {
     approved?: string[]
     rejected?: string[]
@@ -254,7 +255,8 @@ export const DEFAULT_GLOBAL_CONFIG: GlobalConfig = {
   theme: 'dark' as ThemeNames,
   preferredNotifChannel: 'iterm2',
   verbose: false,
-  agentExecutionMode: 'inline',
+  agentExecutionMode: 'process',
+  maxToolUseConcurrency: 4,
   proxyEnabled: true,
   proxyPort: 7890,
   primaryProvider: 'gemini' as ProviderType,
@@ -288,6 +290,7 @@ export const GLOBAL_CONFIG_KEYS = [
   'lastReleaseNotesSeen',
   'verbose',
   'agentExecutionMode',
+  'maxToolUseConcurrency',
   'proxyEnabled',
   'proxyPort',
   'proxy',
@@ -366,6 +369,11 @@ function extractGlobalConfigFromSettings(settings: GeminiSettings): GlobalConfig
     rawProxyPort <= 65535
       ? Math.floor(rawProxyPort)
       : 7890
+  const rawToolUseConcurrency = Number((mergedConfig as any).maxToolUseConcurrency)
+  mergedConfig.maxToolUseConcurrency =
+    Number.isFinite(rawToolUseConcurrency) && rawToolUseConcurrency > 0
+      ? Math.min(20, Math.max(1, Math.floor(rawToolUseConcurrency)))
+      : 4
 
   // 兼容 Gemini CLI 的字段：ui/theme、mcpServers 放在顶层
   if (settings.ui?.theme) {

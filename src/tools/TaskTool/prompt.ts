@@ -11,8 +11,10 @@ import { getModelManager } from '@utils/model'
 import { getActiveAgents } from '@utils/agentLoader'
 
 export async function getTaskTools(_safeMode: boolean): Promise<Tool[]> {
-  // Task 子代理需要完整工具集；是否允许执行由 safeMode + 权限系统控制
-  return (await getTools()).filter(_ => _.name !== TaskTool.name)
+  // Task teammates 需要完整工具集；是否允许执行由 safeMode + 权限系统控制
+  return (await getTools()).filter(
+    _ => _.name !== TaskTool.name && _.name !== 'TaskBatch',
+  )
 }
 
 export async function getPrompt(safeMode: boolean): Promise<string> {
@@ -33,8 +35,9 @@ export async function getPrompt(safeMode: boolean): Promise<string> {
 Available agent types and the tools they have access to:
 ${agentDescriptions}
 
-When using the Task tool, you must specify a subagent_type parameter to select which agent type to use.
+When using the Task tool, you must specify the agent type parameter subagent_type.
 You may optionally pass team_name and name to route the task through process teammates when process mode is enabled.
+Use wait_for_completion=false when you need true parallel orchestration (launch first, coordinate while running, then check with TaskStatus).
 When team_name is used, teammates should coordinate via SendMessage and shared task board tools (TaskCreate/TaskList/TaskUpdate).
 
 When to use the Agent tool:
@@ -48,11 +51,15 @@ When NOT to use the Agent tool:
 
 Usage notes:
 1. Launch multiple agents concurrently whenever possible, to maximize performance; to do that, use a single message with multiple tool uses
-2. When the agent is done, it will return a single message back to you. The result returned by the agent is not visible to the user. To show the user the result, you should send a text message back to the user with a concise summary of the result.
-3. Each agent invocation is stateless. You will not be able to send additional messages to the agent, nor will the agent be able to communicate with you outside of its final report. Therefore, your prompt should contain a highly detailed task description for the agent to perform autonomously and you should specify exactly what information the agent should return back to you in its final and only message to you.
-4. The agent's outputs should generally be trusted
-5. Clearly tell the agent whether you expect it to write code or just to do research (search, file reads, web fetches, etc.), since it is not aware of the user's intent
-6. If the agent description mentions that it should be used proactively, then you should try your best to use it without the user having to ask for it first. Use your judgement.
+2. If you need the lead to keep coordinating while teammates run, use Task(wait_for_completion=false) for true parallel launch, then use TaskStatus / SendMessage / shared task tools during execution
+3. If you already know all independent subtasks and just want a deterministic batch result, prefer TaskBatch
+4. In one parallel orchestration turn, use exactly one TEAM and create multiple AGENTs inside it
+5. After detached launch, keep task_id/team_name/agent_name and use TaskStatus to check or wait later
+6. When the teammate is done, summarize key outcomes to the user in plain text.
+7. Teammates run in TEAM process mode; they can coordinate during execution via SendMessage and shared Task board tools.
+8. The agent's outputs should generally be trusted
+9. Clearly tell the agent whether you expect it to write code or just to do research (search, file reads, web fetches, etc.), since it is not aware of the user's intent
+10. If the agent description mentions that it should be used proactively, then you should try your best to use it without the user having to ask for it first. Use your judgement.
 
 Example usage:
 

@@ -6,8 +6,11 @@ import { extractTag } from '@utils/messages'
 import { getGlobalConfig } from '@utils/config'
 import {
   deleteMemoryFile,
-  readMemoryFile,
+  removeMemoryIndexEntry,
+  resolveMemoryFilePath,
+  upsertMemoryIndexEntry,
   writeMemoryFile,
+  readMemoryFile,
 } from '@utils/memoryStore'
 
 function formatLocalDateYYYYMMDD(date = new Date()): string {
@@ -86,15 +89,38 @@ function buildTranscript(messages: Message[]): string {
 const memory = {
   type: 'local',
   name: 'memory',
-  description: '更新用户偏好记忆（lead/YUUKA.md）',
+  description: '更新用户偏好记忆（lead/YUUKA.md），或 forget 显式删除记忆',
   isEnabled: true,
   isHidden: false,
   userFacingName() {
     return 'memory'
   },
-  async call(_args: string, context) {
+  async call(args: string, context) {
     if (!(getGlobalConfig().memoryWriteEnabled ?? true)) {
       return 'MemoryWrite 已关闭，无法更新记忆。请先在 /config 里打开 MemoryWrite。'
+    }
+
+    const trimmedArgs = args.trim()
+    const forgetMatch = trimmedArgs.match(/^(forget|delete)\s+(.+)$/i)
+    if (forgetMatch) {
+      const targetPath = forgetMatch[2]?.trim() || ''
+      if (!targetPath) {
+        return '用法：/memory forget <file_path>'
+      }
+
+      try {
+        resolveMemoryFilePath(targetPath, 'lead')
+      } catch {
+        return `删除失败：无效路径 ${targetPath}`
+      }
+
+      const deleted = deleteMemoryFile(targetPath, 'lead')
+      removeMemoryIndexEntry(targetPath, 'lead')
+
+      if (!deleted) {
+        return `未找到记忆文件：${targetPath}`
+      }
+      return `已删除记忆：${targetPath}`
     }
 
     const getMessages = getMessagesGetter()
@@ -155,6 +181,17 @@ const memory = {
     }
 
     const fullPath = writeMemoryFile(memoryFilePath, cleaned, 'lead')
+    upsertMemoryIndexEntry(
+      memoryFilePath,
+      {
+        layer: 'core',
+        title: '用户偏好主档',
+        tags: ['偏好', '核心', '长期约定'],
+      },
+      'lead',
+    )
+
+    // 清理早期遗留索引文件（若存在）
     deleteMemoryFile('index.md', 'lead')
     return `已更新：${fullPath}`
   },

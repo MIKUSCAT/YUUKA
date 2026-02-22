@@ -15,6 +15,12 @@ export interface TaskProgressPayload {
   elapsedMs?: number
   lastAction?: string
   timeline?: string[]
+  teamName?: string
+  agentName?: string
+  taskId?: string
+  taskState?: string
+  eventType?: 'progress' | 'message' | 'status' | 'result'
+  eventContent?: string
 }
 
 interface Props extends TaskProgressPayload {}
@@ -41,6 +47,27 @@ export function parseTaskProgressText(text: string): TaskProgressPayload | null 
       (!Array.isArray(parsed.timeline) ||
         !parsed.timeline.every((item: unknown) => typeof item === 'string'))
     ) {
+      return null
+    }
+    if (parsed.teamName !== undefined && typeof parsed.teamName !== 'string') {
+      return null
+    }
+    if (parsed.agentName !== undefined && typeof parsed.agentName !== 'string') {
+      return null
+    }
+    if (parsed.taskId !== undefined && typeof parsed.taskId !== 'string') {
+      return null
+    }
+    if (parsed.taskState !== undefined && typeof parsed.taskState !== 'string') {
+      return null
+    }
+    if (
+      parsed.eventType !== undefined &&
+      !['progress', 'message', 'status', 'result'].includes(parsed.eventType)
+    ) {
+      return null
+    }
+    if (parsed.eventContent !== undefined && typeof parsed.eventContent !== 'string') {
       return null
     }
     return parsed as TaskProgressPayload

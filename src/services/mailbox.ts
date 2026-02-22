@@ -1,5 +1,6 @@
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'fs'
 import { getAgentInboxPath, getAgentOutboxPath } from './teamPaths'
+import { withFileLockSync } from '@utils/fileLock'
 
 export type MailboxKind = 'inbox' | 'outbox'
 
@@ -28,6 +29,12 @@ export interface TeamMailboxMessage {
   metadata?: Record<string, unknown>
 }
 
+export interface MailboxReadCursorResult {
+  messages: TeamMailboxMessage[]
+  nextLine: number
+  scannedLines: number
+}
+
 function ensureMailboxFile(path: string): void {
   if (!existsSync(path)) {
     writeFileSync(path, '', 'utf-8')
@@ -51,22 +58,34 @@ export function appendMailboxMessage(
   message: TeamMailboxMessage,
 ): void {
   const path = getMailboxPath(kind, teamName, agentName)
-  ensureMailboxFile(path)
-  appendFileSync(path, `${JSON.stringify(message)}\n`, 'utf-8')
+  withFileLockSync(path, () => {
+    ensureMailboxFile(path)
+    appendFileSync(path, `${JSON.stringify(message)}\n`, 'utf-8')
+  })
 }
 
-export function readMailboxMessages(
+export function readMailboxMessagesWithCursor(
   kind: MailboxKind,
   teamName: string,
   agentName: string,
   fromLine = 0,
-): TeamMailboxMessage[] {
+): MailboxReadCursorResult {
   const path = getMailboxPath(kind, teamName, agentName)
   ensureMailboxFile(path)
   const content = readFileSync(path, 'utf-8')
-  if (!content.trim()) return []
-  const lines = content.split('\n').filter(Boolean)
-  const sliced = lines.slice(Math.max(0, fromLine))
+  if (!content) {
+    const nextLine = Math.max(0, fromLine)
+    return { messages: [], nextLine, scannedLines: 0 }
+  }
+  const lines = content.split('\n')
+  const nonEmptyLines = lines.filter(Boolean)
+  if (nonEmptyLines.length === 0) {
+    const nextLine = Math.max(0, fromLine)
+    return { messages: [], nextLine, scannedLines: 0 }
+  }
+
+  const startLine = Math.max(0, fromLine)
+  const sliced = nonEmptyLines.slice(startLine)
   const messages: TeamMailboxMessage[] = []
   for (const line of sliced) {
     try {
@@ -76,5 +95,18 @@ export function readMailboxMessages(
       // 忽略损坏行，避免整个读取失败
     }
   }
-  return messages
+  return {
+    messages,
+    scannedLines: sliced.length,
+    nextLine: startLine + sliced.length,
+  }
+}
+
+export function readMailboxMessages(
+  kind: MailboxKind,
+  teamName: string,
+  agentName: string,
+  fromLine = 0,
+): TeamMailboxMessage[] {
+  return readMailboxMessagesWithCursor(kind, teamName, agentName, fromLine).messages
 }

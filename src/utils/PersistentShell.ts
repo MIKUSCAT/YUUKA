@@ -291,6 +291,13 @@ export class PersistentShell {
     return PersistentShell.instance
   }
 
+  static getIfAlive(): PersistentShell | null {
+    if (!PersistentShell.instance || !PersistentShell.instance.isAlive) {
+      return null
+    }
+    return PersistentShell.instance
+  }
+
   killChildren() {
     const parentPid = this.shell.pid
     try {

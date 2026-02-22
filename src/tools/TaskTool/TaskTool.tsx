@@ -10,7 +10,6 @@ import {
 } from '@utils/messages'
 import { getModelManager } from '@utils/model'
 import { getTheme } from '@utils/theme'
-import { getGlobalConfig } from '@utils/config'
 import { getOriginalCwd } from '@utils/state'
 import { getPrompt } from './prompt'
 import { TOOL_NAME } from './constants'
@@ -18,16 +17,17 @@ import { getAvailableAgentTypes } from '@utils/agentLoader'
 import { TASK_DASH } from '@constants/figures'
 import { encodeTaskProgress } from '@components/messages/TaskProgressMessage'
 import {
+  readMailboxMessagesWithCursor,
+  type TeamMailboxMessage,
+} from '@services/mailbox'
+import {
   createTeamTask,
   readTeamTask,
   spawnTeammateProcess,
   updateTeamTask,
 } from '@services/teamManager'
 import { normalizeAgentName, normalizeTeamName } from '@services/teamPaths'
-import {
-  runAgentTaskExecutionStream,
-  TaskExecutionProgress,
-} from './runAgentTaskExecution'
+import { TaskExecutionProgress } from './runAgentTaskExecution'
 
 const inputSchema = z.object({
   description: z
@@ -49,15 +49,41 @@ const inputSchema = z.object({
   team_name: z
     .string()
     .optional()
-    .describe('Optional team workspace name (process mode)'),
+    .describe('Optional team workspace name (TEAM mode)'),
   name: z
     .string()
     .optional()
-    .describe('Optional teammate instance name (process mode)'),
+    .describe('Optional teammate instance name (TEAM mode)'),
+  wait_for_completion: z
+    .boolean()
+    .optional()
+    .describe(
+      'Whether to wait for the teammate to finish. Set false to launch in true parallel and continue orchestration.',
+    ),
 })
 
 function textBlocksToString(data: TextBlock[]): string {
   return data.map(block => (block.type === 'text' ? block.text : '')).join('\n')
+}
+
+export type TaskLaunchHandle = {
+  mode: 'launched'
+  launched: true
+  wait_for_completion: false
+  task_id: string
+  team_name: string
+  agent_name: string
+  status: 'pending' | 'running'
+  task_file_path: string
+  child_pid: number | null
+}
+
+type TaskToolOutput = TextBlock[] | TaskLaunchHandle
+
+function isTaskLaunchHandle(data: unknown): data is TaskLaunchHandle {
+  if (!data || typeof data !== 'object') return false
+  const value = data as Record<string, unknown>
+  return value.mode === 'launched' && value.launched === true
 }
 
 export const TaskTool = {
@@ -73,10 +99,18 @@ export const TaskTool = {
   inputSchema,
   
   async *call(
-    { description, prompt, model_name, subagent_type, team_name, name },
+    {
+      description,
+      prompt,
+      model_name,
+      subagent_type,
+      team_name,
+      name,
+      wait_for_completion,
+    },
     toolUseContext,
   ): AsyncGenerator<
-    | { type: 'result'; data: TextBlock[]; resultForAssistant?: string }
+    | { type: 'result'; data: TaskToolOutput; resultForAssistant?: string }
     | { type: 'progress'; content: any; normalizedMessages?: any[]; tools?: any[] },
     void,
     unknown
@@ -92,7 +126,6 @@ export const TaskTool = {
       readFileTimestamps,
     } = toolUseContext as any
 
-    const executionMode = getGlobalConfig().agentExecutionMode ?? 'inline'
     const agentType = subagent_type || 'general-purpose'
     const timelineItems: string[] = []
     const pushTimeline = (value?: string) => {
@@ -122,6 +155,12 @@ export const TaskTool = {
             elapsedMs: progress.elapsedMs,
             lastAction: progress.lastAction,
             timeline: getTimelineSnapshot(),
+            teamName: progress.teamName,
+            agentName: progress.agentName,
+            taskId: progress.taskId,
+            taskState: progress.taskState,
+            eventType: progress.eventType,
+            eventContent: progress.eventContent,
           }),
         ),
       }
@@ -136,62 +175,278 @@ export const TaskTool = {
       }
     }
 
-    if (executionMode === 'process') {
-      try {
-        const resolvedTeamName = normalizeTeamName(team_name || messageLogName)
-        const teammateName = normalizeAgentName(
-          name || `${agentType}-${Date.now().toString(36).slice(-5)}`,
-        )
+    const createLaunchResultOutput = (
+      launched: TaskLaunchHandle,
+    ): {
+      type: 'result'
+      data: TaskLaunchHandle
+      resultForAssistant: string
+    } => ({
+      type: 'result',
+      data: launched,
+      resultForAssistant: JSON.stringify(launched, null, 2),
+    })
 
-        const { taskPath } = createTeamTask({
-          teamName: resolvedTeamName,
-          agentName: teammateName,
-          description,
-          prompt,
-          subagent_type,
-          model_name,
-          safeMode,
-          verbose,
-          forkNumber,
-          messageLogName,
+    // Team process mode is now the only execution path.
+    try {
+      const resolvedTeamName = normalizeTeamName(team_name || messageLogName)
+      const teammateName = normalizeAgentName(
+        name || `${agentType}-${Date.now().toString(36).slice(-5)}`,
+      )
+
+      const { taskPath, task } = createTeamTask({
+        teamName: resolvedTeamName,
+        agentName: teammateName,
+        description,
+        prompt,
+        subagent_type,
+        model_name,
+        safeMode,
+        verbose,
+        forkNumber,
+        messageLogName,
+      })
+
+      const child = spawnTeammateProcess({
+        taskPath,
+        cwd: getOriginalCwd(),
+        safeMode,
+      })
+      let childExitedAt: number | null = null
+      child.on('exit', () => {
+        if (childExitedAt === null) {
+          childExitedAt = Date.now()
+        }
+      })
+
+      const toBoardState = (
+        raw: string | undefined,
+      ): 'open' | 'in_progress' | 'completed' => {
+        if (!raw) return 'open'
+        if (
+          raw === 'completed' ||
+          raw === 'failed' ||
+          raw === 'cancelled' ||
+          raw === '已完成'
+        ) {
+          return 'completed'
+        }
+        if (
+          raw === 'pending' ||
+          raw === 'running' ||
+          raw === 'in_progress' ||
+          raw === '启动中' ||
+          raw === '分析中' ||
+          raw === '调用工具' ||
+          raw === '排队中' ||
+          raw === '收到消息'
+        ) {
+          return 'in_progress'
+        }
+        return 'open'
+      }
+
+      yield createProgressOutput({
+        agentType,
+        description,
+        status: '启动中',
+        model: model_name || 'task',
+        toolCount: 0,
+        elapsedMs: 0,
+        lastAction: `worker started · team=${resolvedTeamName} · agent=${teammateName}`,
+        teamName: resolvedTeamName,
+        agentName: teammateName,
+        taskId: task.id,
+        taskState: 'in_progress',
+        eventType: 'status',
+        eventContent: 'worker spawned',
+      })
+
+      if (wait_for_completion === false) {
+        yield createLaunchResultOutput({
+          mode: 'launched',
+          launched: true,
+          wait_for_completion: false,
+          task_id: task.id,
+          team_name: resolvedTeamName,
+          agent_name: teammateName,
+          status: 'pending',
+          task_file_path: taskPath,
+          child_pid: child.pid ?? null,
         })
+        return
+      }
 
-        yield createProgressOutput({
+      let lastProgressIndex = 0
+      let lastOutboxLine = 0
+      const startTime = Date.now()
+      const sleep = (ms: number) =>
+        new Promise(resolve => setTimeout(resolve, ms))
+
+      const emitMailboxEvent = (message: TeamMailboxMessage) => {
+        const content = String(message.content ?? '').trim()
+        if (!content) return null
+
+        if (message.type === 'progress') {
+          return null
+        }
+
+        const eventType: 'message' | 'status' | 'result' =
+          message.type === 'result'
+            ? 'result'
+            : message.type === 'message' || message.type === 'broadcast'
+              ? 'message'
+              : 'status'
+
+        const prettyContent =
+          content.length > 180 ? `${content.slice(0, 180)}...` : content
+
+        return createProgressOutput({
           agentType,
           description,
-          status: '排队中',
+          status: eventType === 'message' ? '队友消息' : '状态更新',
           model: model_name || 'task',
           toolCount: 0,
-          elapsedMs: 0,
-          lastAction: `team=${resolvedTeamName} · worker=${teammateName}`,
+          elapsedMs: Date.now() - startTime,
+          lastAction:
+            eventType === 'message'
+              ? `${message.from} -> ${message.to}: ${prettyContent}`
+              : `${message.type}: ${prettyContent}`,
+          teamName: resolvedTeamName,
+          agentName: teammateName,
+          taskId: task.id,
+          taskState: 'in_progress',
+          eventType,
+          eventContent: prettyContent,
         })
+      }
 
-        const child = spawnTeammateProcess({
-          taskPath,
-          cwd: getOriginalCwd(),
-          safeMode,
-        })
-        let childExitedAt: number | null = null
-        child.on('exit', () => {
+      while (true) {
+        if (abortController.signal.aborted) {
+          child.kill('SIGTERM')
+          setTimeout(() => {
+            if (child.exitCode === null) {
+              child.kill('SIGKILL')
+            }
+          }, 1000)
+          updateTeamTask(taskPath, current => {
+            if (
+              current.status === 'completed' ||
+              current.status === 'failed' ||
+              current.status === 'cancelled'
+            ) {
+              return current
+            }
+            return {
+              ...current,
+              status: 'cancelled',
+              endedAt: Date.now(),
+              error: 'Cancelled by lead agent',
+            }
+          })
+          const interruptedData: TextBlock[] = [
+            { type: 'text', text: INTERRUPT_MESSAGE },
+          ] as TextBlock[]
+          yield {
+            type: 'result',
+            data: interruptedData,
+            resultForAssistant: textBlocksToString(interruptedData),
+          }
+          return
+        }
+
+        const outboxRead = readMailboxMessagesWithCursor(
+          'outbox',
+          resolvedTeamName,
+          teammateName,
+          lastOutboxLine,
+        )
+        const outboxMessages = outboxRead.messages
+        if (outboxRead.scannedLines > 0) {
+          lastOutboxLine = outboxRead.nextLine
+        }
+        if (outboxMessages.length > 0) {
+          for (const message of outboxMessages) {
+            if (message.taskId && message.taskId !== task.id) {
+              continue
+            }
+            const event = emitMailboxEvent(message)
+            if (event) {
+              yield event
+            }
+          }
+        }
+
+        const taskState = readTeamTask(taskPath)
+        if (taskState) {
+          const newProgress = taskState.progress.slice(lastProgressIndex)
+          for (const progress of newProgress) {
+            yield createProgressOutput({
+              agentType,
+              description,
+              status: progress.status,
+              model: progress.model || model_name || 'task',
+              toolCount: progress.toolCount ?? 0,
+              tokenCount: progress.tokenCount,
+              elapsedMs: progress.elapsedMs ?? Date.now() - startTime,
+              lastAction: progress.lastAction,
+              teamName: resolvedTeamName,
+              agentName: teammateName,
+              taskId: taskState.id,
+              taskState: toBoardState(taskState.status),
+              eventType: 'progress',
+            })
+          }
+          lastProgressIndex += newProgress.length
+
+          if (
+            taskState.status === 'completed' ||
+            taskState.status === 'failed' ||
+            taskState.status === 'cancelled'
+          ) {
+            const text =
+              taskState.status === 'completed'
+                ? taskState.resultText || ''
+                : taskState.error || `Task ended with status: ${taskState.status}`
+            yield createProgressOutput({
+              agentType,
+              description,
+              status: taskState.status === 'completed' ? '已完成' : '已结束',
+              model: model_name || 'task',
+              toolCount: taskState.toolUseCount ?? 0,
+              tokenCount: taskState.tokenCount,
+              elapsedMs:
+                taskState.durationMs ?? Date.now() - (taskState.startedAt || startTime),
+              lastAction: taskState.status === 'completed' ? 'task completed' : taskState.status,
+              teamName: resolvedTeamName,
+              agentName: teammateName,
+              taskId: taskState.id,
+              taskState: toBoardState(taskState.status),
+              eventType: taskState.status === 'completed' ? 'result' : 'status',
+              eventContent: text,
+            })
+            yield createResultOutput(text)
+            return
+          }
+        }
+
+        if (child.exitCode !== null && !taskState) {
+          yield createResultOutput(
+            `Teammate process exited early (code ${child.exitCode}).`,
+          )
+          return
+        }
+
+        if (
+          child.exitCode !== null &&
+          taskState &&
+          (taskState.status === 'pending' || taskState.status === 'running')
+        ) {
           if (childExitedAt === null) {
             childExitedAt = Date.now()
           }
-        })
-
-        let lastProgressIndex = 0
-        const startTime = Date.now()
-        const sleep = (ms: number) =>
-          new Promise(resolve => setTimeout(resolve, ms))
-
-        while (true) {
-          if (abortController.signal.aborted) {
-            child.kill('SIGTERM')
-            setTimeout(() => {
-              if (child.exitCode === null) {
-                child.kill('SIGKILL')
-              }
-            }, 1000)
-            updateTeamTask(taskPath, current => {
+          if (Date.now() - childExitedAt > 1200) {
+            const failedState = updateTeamTask(taskPath, current => {
               if (
                 current.status === 'completed' ||
                 current.status === 'failed' ||
@@ -201,130 +456,21 @@ export const TaskTool = {
               }
               return {
                 ...current,
-                status: 'cancelled',
+                status: 'failed',
                 endedAt: Date.now(),
-                error: 'Cancelled by lead agent',
+                error: `Teammate process exited unexpectedly (code ${child.exitCode}).`,
               }
             })
-            const interruptedData: TextBlock[] = [
-              { type: 'text', text: INTERRUPT_MESSAGE },
-            ] as TextBlock[]
-            yield {
-              type: 'result',
-              data: interruptedData,
-              resultForAssistant: textBlocksToString(interruptedData),
-            }
-            return
-          }
-
-          const taskState = readTeamTask(taskPath)
-          if (taskState) {
-            const newProgress = taskState.progress.slice(lastProgressIndex)
-            for (const progress of newProgress) {
-              yield createProgressOutput({
-                agentType,
-                description,
-                status: progress.status,
-                model: progress.model || model_name || 'task',
-                toolCount: progress.toolCount ?? 0,
-                tokenCount: progress.tokenCount,
-                elapsedMs: progress.elapsedMs ?? Date.now() - startTime,
-                lastAction: progress.lastAction,
-              })
-            }
-            lastProgressIndex += newProgress.length
-
-            if (
-              taskState.status === 'completed' ||
-              taskState.status === 'failed' ||
-              taskState.status === 'cancelled'
-            ) {
-              const text =
-                taskState.status === 'completed'
-                  ? taskState.resultText || ''
-                  : taskState.error || `Task ended with status: ${taskState.status}`
-              yield createResultOutput(text)
-              return
-            }
-          }
-
-          if (child.exitCode !== null && !taskState) {
             yield createResultOutput(
-              `Teammate process exited early (code ${child.exitCode}).`,
+              failedState.error ||
+                `Teammate process exited unexpectedly (code ${child.exitCode}).`,
             )
             return
           }
-
-          if (
-            child.exitCode !== null &&
-            taskState &&
-            (taskState.status === 'pending' || taskState.status === 'running')
-          ) {
-            if (childExitedAt === null) {
-              childExitedAt = Date.now()
-            }
-            if (Date.now() - childExitedAt > 1200) {
-              const failedState = updateTeamTask(taskPath, current => {
-                if (
-                  current.status === 'completed' ||
-                  current.status === 'failed' ||
-                  current.status === 'cancelled'
-                ) {
-                  return current
-                }
-                return {
-                  ...current,
-                  status: 'failed',
-                  endedAt: Date.now(),
-                  error: `Teammate process exited unexpectedly (code ${child.exitCode}).`,
-                }
-              })
-              yield createResultOutput(
-                failedState.error ||
-                  `Teammate process exited unexpectedly (code ${child.exitCode}).`,
-              )
-              return
-            }
-          }
-
-          await sleep(250)
         }
-      } catch (error) {
-        const errorText = error instanceof Error ? error.message : String(error)
-        yield createResultOutput(errorText)
-        return
+
+        await sleep(250)
       }
-    }
-
-    try {
-      for await (const event of runAgentTaskExecutionStream({
-        description,
-        prompt,
-        model_name,
-        subagent_type,
-        team_name,
-        name,
-        safeMode,
-        forkNumber,
-        messageLogName,
-        verbose,
-        abortController,
-        readFileTimestamps,
-        canUseTool: (toolUseContext as any)?.canUseTool,
-      })) {
-        if (event.type === 'progress') {
-          yield createProgressOutput(event.progress)
-          continue
-        }
-        yield {
-          type: 'result',
-          data: event.result.data,
-          resultForAssistant: event.result.resultForAssistant,
-        }
-        return
-      }
-      yield createResultOutput('Task execution ended unexpectedly without result.')
-      return
     } catch (error) {
       const errorText = error instanceof Error ? error.message : String(error)
       yield createResultOutput(errorText)
@@ -361,6 +507,15 @@ export const TaskTool = {
       return {
         result: false,
         message: 'name must be a string',
+      }
+    }
+    if (
+      typeof (input as any).wait_for_completion !== 'undefined' &&
+      typeof (input as any).wait_for_completion !== 'boolean'
+    ) {
+      return {
+        result: false,
+        message: 'wait_for_completion must be a boolean',
       }
     }
 
@@ -407,11 +562,17 @@ export const TaskTool = {
   needsPermissions() {
     return false
   },
-  renderResultForAssistant(data: TextBlock[]) {
+  renderResultForAssistant(data: TaskToolOutput) {
+    if (isTaskLaunchHandle(data)) {
+      return JSON.stringify(data, null, 2)
+    }
     return textBlocksToString(data)
   },
-  renderToolUseMessage({ description }, { verbose }) {
+  renderToolUseMessage({ description, wait_for_completion }, { verbose }) {
     if (!description) return null
+    if (wait_for_completion === false) {
+      return `${description} (detach)`
+    }
     return `${description}`
   },
   renderToolUseRejectedMessage() {
@@ -419,6 +580,17 @@ export const TaskTool = {
   },
   renderToolResultMessage(content) {
     const theme = getTheme()
+
+    if (isTaskLaunchHandle(content)) {
+      return (
+        <Box flexDirection="row">
+          <Text color={theme.yuuka}> {TASK_DASH} </Text>
+          <Text color={theme.success}>
+            Task launched: {content.agent_name} (task_id={content.task_id})
+          </Text>
+        </Box>
+      )
+    }
 
     if (Array.isArray(content)) {
       const textBlocks = content.filter(block => block.type === 'text')
@@ -467,4 +639,4 @@ export const TaskTool = {
       </Box>
     )
   },
-} satisfies Tool<typeof inputSchema, TextBlock[]>
+} satisfies Tool<typeof inputSchema, TaskToolOutput>

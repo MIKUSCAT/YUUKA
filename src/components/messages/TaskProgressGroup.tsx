@@ -1,121 +1,211 @@
-import React, { useState } from 'react'
+import React from 'react'
 import { Box, Text } from 'ink'
 import { getTheme } from '@utils/theme'
 import { formatDuration } from '@utils/format'
-import { SPINNER_FRAMES } from '@constants/figures'
-import { useInterval } from '@hooks/useInterval'
 import type { TaskProgressPayload } from './TaskProgressMessage'
 
 export interface TaskProgressItem {
   description: string
   agentType: string
   progress: TaskProgressPayload | null
+  teamName?: string
+  agentName?: string
+  taskId?: string
+  events?: Array<{
+    type: 'message' | 'progress' | 'status' | 'result'
+    content: string
+  }>
 }
 
 interface Props {
   items: TaskProgressItem[]
 }
 
-function formatTokens(count: number | undefined): string | null {
-  if (typeof count !== 'number') return null
-  return count >= 1000
-    ? `${(count / 1000).toFixed(1)}k tokens`
-    : `${count} tokens`
-}
-
 function truncate(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max)}…` : text
 }
 
+type BoardState = 'open' | 'in_progress' | 'completed'
+
+const PREFIX_WIDTH = '[PROGRESS]'.length
+
+function prefixCell(prefix: string): string {
+  return prefix.padEnd(PREFIX_WIDTH, ' ')
+}
+
+function normalizeTaskState(progress: TaskProgressPayload | null): BoardState {
+  const rawState = String(progress?.taskState || '').trim().toLowerCase()
+  const rawStatus = String(progress?.status || '').trim()
+
+  if (rawState === 'completed' || rawState === 'failed' || rawState === 'cancelled') {
+    return 'completed'
+  }
+  if (rawState === 'in_progress' || rawState === 'running') {
+    return 'in_progress'
+  }
+  if (rawState === 'open' || rawState === 'pending' || rawState === 'blocked') {
+    return 'open'
+  }
+
+  if (rawStatus === '已完成') return 'completed'
+  if (
+    rawStatus === '分析中' ||
+    rawStatus === '调用工具' ||
+    rawStatus === '启动中' ||
+    rawStatus === '排队中' ||
+    rawStatus === '收到消息'
+  ) {
+    return 'in_progress'
+  }
+  return 'open'
+}
+
+function summarizeStates(items: TaskProgressItem[]) {
+  const total = items.length
+  const completed = items.filter(item => normalizeTaskState(item.progress) === 'completed').length
+  const inProgress = items.filter(item => normalizeTaskState(item.progress) === 'in_progress').length
+  const open = Math.max(0, total - completed - inProgress)
+  return { total, completed, inProgress, open }
+}
+
+function statusIcon(state: BoardState): string {
+  if (state === 'completed') return '●'
+  if (state === 'in_progress') return '◐'
+  return '○'
+}
+
+function stateLabel(state: BoardState): string {
+  if (state === 'completed') return 'completed'
+  if (state === 'in_progress') return 'in_progress'
+  return 'open'
+}
+
+function groupByAgent(items: TaskProgressItem[]) {
+  const byAgent = new Map<string, TaskProgressItem[]>()
+  for (const item of items) {
+    const agentKey = item.agentName || item.progress?.agentName || item.agentType || 'agent'
+    if (!byAgent.has(agentKey)) {
+      byAgent.set(agentKey, [])
+    }
+    byAgent.get(agentKey)!.push(item)
+  }
+  return Array.from(byAgent.entries())
+}
+
 export function TaskProgressGroup({ items }: Props) {
   const theme = getTheme()
-  const allCompleted = items.every(
-    item => item.progress?.status === '已完成',
-  )
-  const isActive = !allCompleted
-
-  // Braille spinner
-  const [spinnerIdx, setSpinnerIdx] = useState(0)
-  useInterval(() => {
-    if (isActive) {
-      setSpinnerIdx(i => (i + 1) % SPINNER_FRAMES.length)
-    }
-  }, 120)
-
-  const agentType = items[0]?.agentType ?? 'Task'
-  const count = items.length
-  const isMulti = count > 1
-
-  // Header
-  const indicator = isActive ? SPINNER_FRAMES[spinnerIdx] : '✓'
-  const indicatorColor = isActive ? theme.yuuka : theme.success
-  let headerText: string
-  if (allCompleted) {
-    headerText = isMulti
-      ? `${count} ${agentType} agents completed`
-      : `${agentType} agent completed`
-  } else {
-    headerText = isMulti
-      ? `Running ${count} ${agentType} agents…`
-      : `Running ${agentType} agent…`
-  }
+  const teamName = items[0]?.teamName || items[0]?.progress?.teamName || 'default-team'
+  const teamStats = summarizeStates(items)
+  const agents = groupByAgent(items)
 
   return (
     <Box flexDirection="column">
-      {/* Header line */}
       <Box flexDirection="row">
-        <Text color={indicatorColor}>{indicator}</Text>
-        <Text> {headerText}</Text>
+        <Text color={theme.secondaryText}>{prefixCell('[TEAM]')} </Text>
+        <Text bold>{teamName}</Text>
+        <Text color={theme.secondaryText}>
+          {' '}
+          open:{teamStats.open} in_progress:{teamStats.inProgress} completed:
+          {teamStats.completed}
+        </Text>
       </Box>
 
-      {/* Child items */}
-      {items.map((item, idx) => {
-        const isLast = idx === count - 1
-        const branch = isLast ? '└─' : '├─'
-        const continuation = isLast ? '   ' : '│  '
-        const p = item.progress
-
-        // First line: description · stats
-        const parts: string[] = [item.description]
-        if (p) {
-          if (p.toolCount != null && p.toolCount > 0) {
-            parts.push(`${p.toolCount} tool uses`)
-          }
-          const tokenLabel = formatTokens(p.tokenCount)
-          if (tokenLabel) parts.push(tokenLabel)
-          if (p.status === '已完成' && typeof p.elapsedMs === 'number' && p.elapsedMs > 0) {
-            parts.push(formatDuration(p.elapsedMs))
-          }
-        }
-        const firstLine = parts.join(' · ')
-
-        // Second line: action detail
-        let secondLineText: string
-        let secondLineColor: string
-        if (!p) {
-          secondLineText = '启动中…'
-          secondLineColor = theme.secondaryText
-        } else if (p.status === '已完成') {
-          secondLineText = '✓ 完成'
-          secondLineColor = theme.success
-        } else {
-          const action = p.lastAction
-            ? truncate(p.lastAction, 50)
-            : p.status
-          secondLineText = `${action}…`
-          secondLineColor = theme.secondaryText
-        }
-
+      {agents.map(([agentName, agentItems], agentIndex) => {
+        const isLastAgent = agentIndex === agents.length - 1
+        const agentStats = summarizeStates(agentItems)
         return (
-          <Box flexDirection="column" key={idx}>
+          <Box flexDirection="column" key={agentName}>
             <Box flexDirection="row">
-              <Text color={theme.secondaryText}>  {branch} </Text>
-              <Text>{firstLine}</Text>
+              <Text color={theme.secondaryText}>{isLastAgent ? '└─' : '├─'}</Text>
+              <Text color={theme.secondaryText}>{prefixCell('[AGENT]')} </Text>
+              <Text bold>{agentName}</Text>
+              <Text color={theme.secondaryText}>
+                {' '}
+                open:{agentStats.open} in_progress:{agentStats.inProgress} completed:
+                {agentStats.completed}
+              </Text>
             </Box>
-            <Box flexDirection="row">
-              <Text color={theme.secondaryText}>  {continuation}</Text>
-              <Text color={secondLineColor}>└ {secondLineText}</Text>
-            </Box>
+
+            {agentItems.map((item, taskIndex) => {
+              const isLastTask = taskIndex === agentItems.length - 1
+              const state = normalizeTaskState(item.progress)
+              const icon = statusIcon(state)
+              const taskLabel = item.taskId || item.progress?.taskId || '-'
+              const taskDesc = item.description || '未命名任务'
+              const elapsed =
+                typeof item.progress?.elapsedMs === 'number' && item.progress.elapsedMs > 0
+                  ? formatDuration(item.progress.elapsedMs)
+                  : null
+
+              const progressText = item.progress?.lastAction
+                ? truncate(item.progress.lastAction, 88)
+                : item.progress?.status
+                  ? truncate(item.progress.status, 88)
+                  : 'waiting...'
+
+              const eventNodes = (item.events || [])
+                .filter(event => Boolean(event.content?.trim()))
+                .slice(-4)
+
+              return (
+                <Box flexDirection="column" key={`${agentName}-${taskLabel}-${taskIndex}`}>
+                  <Box flexDirection="row">
+                    <Text color={theme.secondaryText}>
+                      {isLastAgent ? '   ' : '│  '}
+                      {isLastTask ? '└─' : '├─'}
+                    </Text>
+                    <Text color={theme.secondaryText}>{prefixCell('[TASK]')} </Text>
+                    <Text color={state === 'completed' ? theme.secondaryText : theme.yuuka}>
+                      {icon}{' '}
+                    </Text>
+                    <Text
+                      strikethrough={state === 'completed'}
+                      color={state === 'completed' ? theme.secondaryText : undefined}
+                    >
+                      {taskLabel} {taskDesc}
+                    </Text>
+                    <Text color={theme.secondaryText}> · {stateLabel(state)}</Text>
+                    {elapsed && <Text color={theme.secondaryText}> · {elapsed}</Text>}
+                  </Box>
+
+                  <Box flexDirection="row">
+                    <Text color={theme.secondaryText}>
+                      {isLastAgent ? '   ' : '│  '}
+                      {isLastTask ? '   ' : '│  '}
+                      {eventNodes.length === 0 ? '└─' : '├─'}
+                    </Text>
+                    <Text color={theme.secondaryText}>{prefixCell('[PROGRESS]')} </Text>
+                    <Text color={theme.secondaryText}>{progressText}</Text>
+                  </Box>
+
+                  {eventNodes.map((event, eventIndex) => {
+                    const isLastEvent = eventIndex === eventNodes.length - 1
+                    const prefix =
+                      event.type === 'message'
+                        ? '[MSG]'
+                        : event.type === 'status'
+                          ? '[STATUS]'
+                          : event.type === 'result'
+                            ? '[STATUS]'
+                            : '[PROGRESS]'
+                    return (
+                      <Box
+                        flexDirection="row"
+                        key={`${agentName}-${taskLabel}-event-${eventIndex}`}
+                      >
+                        <Text color={theme.secondaryText}>
+                          {isLastAgent ? '   ' : '│  '}
+                          {isLastTask ? '   ' : '│  '}
+                          {isLastEvent ? '└─' : '├─'}
+                        </Text>
+                        <Text color={theme.secondaryText}>{prefixCell(prefix)} </Text>
+                        <Text color={theme.secondaryText}>{truncate(event.content, 88)}</Text>
+                      </Box>
+                    )
+                  })}
+                </Box>
+              )
+            })}
           </Box>
         )
       })}

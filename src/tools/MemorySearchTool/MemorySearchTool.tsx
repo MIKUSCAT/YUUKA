@@ -2,34 +2,33 @@ import { Box, Text } from 'ink'
 import * as React from 'react'
 import { z } from 'zod'
 import { FallbackToolUseRejectedMessage } from '@components/FallbackToolUseRejectedMessage'
+import { TREE_END } from '@constants/figures'
 import { Tool } from '@tool'
 import { getGlobalConfig } from '@utils/config'
-import { DESCRIPTION, PROMPT } from './prompt'
-import { getTheme } from '@utils/theme'
-import { TREE_END } from '@constants/figures'
 import { sanitizeLongLine } from '@utils/outputPreview'
-import {
-  getMemoryBootstrapContext,
-  markMemoryUsed,
-  readMemoryFile,
-  resolveMemoryFilePath,
-} from '@utils/memoryStore'
+import { searchMemoryIndex } from '@utils/memoryStore'
+import { getTheme } from '@utils/theme'
+import { DESCRIPTION, PROMPT } from './prompt'
 
 const MAX_RENDERED_LINES = 10
 
 const inputSchema = z.strictObject({
-  file_path: z
-    .string()
+  query: z.string().describe('Search query for memory retrieval'),
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(10)
     .optional()
-    .describe('Optional path to a specific memory file to read'),
-  helpful: z
+    .describe('Number of results to return (recommended: 1-3)'),
+  include_archived: z
     .boolean()
     .optional()
-    .describe('Set true only when this read genuinely helped; it will strengthen memory'),
+    .describe('Whether archived memories should be included'),
 })
 
-export const MemoryReadTool = {
-  name: 'MemoryRead',
+export const MemorySearchTool = {
+  name: 'MemorySearch',
   async description() {
     return DESCRIPTION
   },
@@ -38,7 +37,7 @@ export const MemoryReadTool = {
   },
   inputSchema,
   userFacingName() {
-    return 'Read Memory'
+    return 'Search Memory'
   },
   async isEnabled() {
     return getGlobalConfig().memoryReadEnabled ?? true
@@ -47,7 +46,7 @@ export const MemoryReadTool = {
     return true
   },
   isConcurrencySafe() {
-    return true // MemoryRead is read-only, safe for concurrent execution
+    return true
   },
   needsPermissions() {
     return false
@@ -88,50 +87,31 @@ export const MemoryReadTool = {
       </Box>
     )
   },
-  async validateInput({ file_path, helpful }, context) {
-    if (helpful && !file_path) {
-      return {
-        result: false,
-        message: 'helpful 仅在读取指定 file_path 时可用',
-      }
+  async *call({ query, limit, include_archived }, context) {
+    const results = searchMemoryIndex(query, context?.agentId, {
+      limit,
+      includeArchived: include_archived ?? false,
+    })
+
+    let content = ''
+    if (results.length === 0) {
+      content = `未找到与「${query}」相关的记忆。请换一个关键词重试，或直接 MemoryRead() 查看索引摘要。`
+    } else {
+      const lines = results
+        .map(
+          (entry, index) =>
+            `${index + 1}. file_path: ${entry.file_path}\n   标题: ${entry.title}\n   标签: ${entry.tags.length ? entry.tags.join(', ') : '无'}\n   摘要: ${entry.summary}\n   强度: ${entry.strength}\n   最近使用: ${entry.last_used_at || '未使用'}`,
+        )
+        .join('\n')
+
+      content = [
+        `找到 ${results.length} 条相关记忆候选：`,
+        lines,
+        '',
+        '下一步请用 MemoryRead(file_path=...) 读取细节。',
+      ].join('\n')
     }
 
-    if (file_path) {
-      try {
-        resolveMemoryFilePath(file_path, context?.agentId)
-      } catch {
-        return { result: false, message: 'Invalid memory file path' }
-      }
-      if (readMemoryFile(file_path, context?.agentId) === null) {
-        return { result: false, message: 'Memory file does not exist' }
-      }
-    }
-    return { result: true }
-  },
-  async *call({ file_path, helpful }, context) {
-    // If a specific file is requested, return its contents
-    if (file_path) {
-      const content = readMemoryFile(file_path, context?.agentId)
-      if (content === null) {
-        throw new Error('Memory file does not exist')
-      }
-
-      if (helpful) {
-        markMemoryUsed(file_path, context?.agentId, true)
-      }
-
-      yield {
-        type: 'result',
-        data: {
-          content,
-        },
-        resultForAssistant: this.renderResultForAssistant({ content }),
-      }
-      return
-    }
-
-    // Default behavior: mandatory bootstrap memory (core memory + index summary)
-    const content = getMemoryBootstrapContext(context?.agentId)
     yield {
       type: 'result',
       data: { content },

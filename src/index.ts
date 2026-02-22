@@ -30,5 +30,9 @@ if (hasFlag('--help-lite')) {
   process.exit(0)
 }
 
-// For compatibility, --help loads full CLI help
-await import('./entrypoints/cli.js')
+if (hasFlag('--teammate') || process.argv.some(arg => arg.startsWith('--teammate-task-file'))) {
+  await import('./entrypoints/teammateCli.js')
+} else {
+  // For compatibility, --help loads full CLI help
+  await import('./entrypoints/cli.js')
+}

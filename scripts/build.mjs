@@ -75,7 +75,10 @@ async function main() {
   mkdirSync(OUT_DIR, { recursive: true })
 
   // 只打包 CLI 入口即可（解决 @utils/* 等 tsconfig path 在 Node 环境无法解析的问题）
-  const entries = [join(SRC_DIR, 'entrypoints', 'cli.tsx')]
+  const entries = [
+    join(SRC_DIR, 'entrypoints', 'cli.tsx'),
+    join(SRC_DIR, 'entrypoints', 'teammateCli.ts'),
+  ]
 
   // Build ESM format but ensure Node.js compatibility
   await build({
@@ -109,7 +112,10 @@ async function main() {
   // Create a proper entrypoint - ESM with async handling
   const mainEntrypoint = join(OUT_DIR, 'index.js')
   writeFileSync(mainEntrypoint, `#!/usr/bin/env node
-import('./entrypoints/cli.js').catch(err => {
+const args = process.argv.slice(2);
+const isTeammate = args.includes('--teammate') || args.includes('--teammate-task-file') || args.some(a => a.startsWith('--teammate-task-file='));
+const entry = isTeammate ? './entrypoints/teammateCli.js' : './entrypoints/cli.js';
+import(entry).catch(err => {
   console.error('ERROR: Failed to load CLI:', err.message);
   process.exit(1);
 });
@@ -180,6 +186,7 @@ save-exact=true
   console.log('  - dist/ (ESM modules)')
   console.log('  - dist/index.js (main entrypoint)')
   console.log('  - dist/entrypoints/cli.js (CLI main)')
+  console.log('  - dist/entrypoints/teammateCli.js (teammate worker entrypoint)')
   console.log('  - cli.cjs (cross-platform wrapper)')
   console.log('  - .npmrc (npm configuration)')
 }

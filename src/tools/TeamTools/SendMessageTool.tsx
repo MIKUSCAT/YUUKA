@@ -24,14 +24,13 @@ const MESSAGE_TYPES = [
 type SendMessageType = (typeof MESSAGE_TYPES)[number]
 
 const inputSchema = z.object({
-  team_name: z.string().describe('Team name'),
+  team_name: z.string().optional().describe('Team name'),
   type: z.enum(MESSAGE_TYPES).default('message'),
   to: z.string().optional().describe('Target agent name (not required for broadcast)'),
   message: z.string().describe('Message content'),
   from: z
     .string()
     .optional()
-    .default('lead')
     .describe('Optional sender name, default is "lead"'),
   summary: z.string().optional().describe('5-10字摘要，UI预览用'),
   request_id: z.string().optional(),
@@ -71,7 +70,15 @@ Supported types:
   isReadOnly: () => false,
   isConcurrencySafe: () => true,
   needsPermissions: () => false,
-  async validateInput(input) {
+  async validateInput(input, context) {
+    const fallbackTeamName = String((context as any)?.options?.teamName || '').trim()
+    const teamName = String(input.team_name || fallbackTeamName).trim()
+    if (!teamName) {
+      return {
+        result: false,
+        message: '`team_name` is required (or run inside a team task context)',
+      }
+    }
     if (input.type !== 'broadcast' && !input.to) {
       return {
         result: false,
@@ -80,10 +87,14 @@ Supported types:
     }
     return { result: true }
   },
-  async *call(input) {
-    const teamName = normalizeTeamName(input.team_name)
+  async *call(input, context) {
+    const contextOptions = (context as any)?.options || {}
+    const fallbackTeamName = String(contextOptions.teamName || '').trim()
+    const fallbackFrom = String(contextOptions.teammateName || '').trim()
+
+    const teamName = normalizeTeamName(input.team_name || fallbackTeamName)
     const messageType = input.type || 'message'
-    const from = normalizeAgentName(input.from || 'lead')
+    const from = normalizeAgentName(input.from || fallbackFrom || 'lead')
     const createPayload = (
       to: string,
       type: TeamMailboxMessageType,

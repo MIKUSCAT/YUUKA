@@ -1,4 +1,5 @@
 import { generateSystemReminders } from '@services/systemReminder'
+import { getMemoryBootstrapContext } from '@utils/memoryStore'
 import { generateYuukaContext } from './yuukaContext'
 
 export function formatSystemPromptWithContext(
@@ -9,6 +10,17 @@ export function formatSystemPromptWithContext(
 ): { systemPrompt: string[]; reminders: string } {
   const enhancedPrompt = [...systemPrompt]
   let reminders = ''
+
+  try {
+    const memoryBootstrap = getMemoryBootstrapContext(agentId)
+    if (memoryBootstrap) {
+      enhancedPrompt.push('\n---\n# 记忆上下文（开局必加载）\n')
+      enhancedPrompt.push(memoryBootstrap)
+      enhancedPrompt.push('\n---\n')
+    }
+  } catch {
+    // 记忆上下文读取失败时不阻塞主流程
+  }
 
   const hasContext = Object.entries(context).length > 0
   if (!hasContext) {

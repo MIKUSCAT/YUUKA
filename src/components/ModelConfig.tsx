@@ -73,7 +73,7 @@ export function ModelConfig({ onClose }: Props): React.ReactNode {
       {
         id: 'task',
         label: 'Task Model',
-        description: 'Model for TaskTool sub-agents and automation',
+        description: 'Model for TaskTool agents and automation',
         value: config.modelPointers?.task || '',
         options: availableModels,
         type: 'modelPointer' as const,

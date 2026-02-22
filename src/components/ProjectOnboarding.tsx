@@ -57,7 +57,7 @@ export default function ProjectOnboarding({
         {/* @ts-expect-error - OrderedList.Item children prop issue */}
         <OrderedList.Item>
           <Text color={theme.secondaryText}>
-            用 <Text color={theme.text}>/agents</Text> 管理你的个人子代理
+            用 <Text color={theme.text}>/agents</Text> 管理你的个人 Agent
           </Text>
         </OrderedList.Item>
         {/* @ts-expect-error - OrderedList.Item children prop issue */}

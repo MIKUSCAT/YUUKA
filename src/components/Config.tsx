@@ -138,19 +138,19 @@ export function Config({ onClose }: Props): React.ReactNode {
       type: 'number',
     },
     {
-      id: 'agentExecutionMode',
-      label: 'Agent execution mode',
-      value: globalConfig.agentExecutionMode ?? 'inline',
-      options: ['inline', 'process'],
-      onChange(agentExecutionMode: string) {
-        const config = {
-          ...getGlobalConfig(),
-          agentExecutionMode: agentExecutionMode as 'inline' | 'process',
+      id: 'maxToolUseConcurrency',
+      label: 'Tool use concurrency',
+      value: globalConfig.maxToolUseConcurrency ?? 4,
+      onChange(maxToolUseConcurrency: number) {
+        const normalized = Math.floor(maxToolUseConcurrency)
+        if (!Number.isFinite(normalized) || normalized < 1 || normalized > 20) {
+          throw new Error('Please enter an integer between 1 and 20')
         }
+        const config = { ...getGlobalConfig(), maxToolUseConcurrency: normalized }
         saveGlobalConfig(config)
         setGlobalConfig(config)
       },
-      type: 'enum',
+      type: 'number',
     },
     {
       id: 'stream',

@@ -68,6 +68,7 @@ import { getMaxThinkingTokens } from '@utils/thinking'
 import { getOriginalCwd } from '@utils/state'
 import { setConversationScope } from '@utils/agentStorage'
 import { logError } from '@utils/log'
+import { normalizeTeamName } from '@services/teamPaths'
 
 type Props = {
   commands: Command[]
@@ -520,10 +521,60 @@ export function REPL({
     !toolJSX && !toolUseConfirm && !isMessageSelectorVisible
 
   const messagesJSX = useMemo(() => {
-    // ── 预处理 pass：收集 Task 分组数据 ──
-    const taskToolUses = new Map<string, { description: string; agentType: string }>()
+    // ── 预处理 pass：收集 Team/Task 树数据 ──
+    const taskToolUses = new Map<
+      string,
+      {
+        description: string
+        agentType: string
+        teamName: string
+        agentName: string
+        taskId?: string
+      }
+    >()
     const taskProgresses = new Map<string, TaskProgressPayload>()
-    const taskSiblingMap = new Map<string, Set<string>>()
+    const taskEvents = new Map<
+      string,
+      Array<{ type: 'message' | 'progress' | 'status' | 'result'; content: string }>
+    >()
+    const taskOrder: string[] = []
+    const batchToolUseIDs = new Set<string>()
+    const renderAnchorMembers = new Map<string, Set<string>>()
+    const groupedProgressToolUseIDs = new Set<string>()
+
+    const addTaskToAnchor = (anchorToolUseID: string, taskKey: string) => {
+      if (!renderAnchorMembers.has(anchorToolUseID)) {
+        renderAnchorMembers.set(anchorToolUseID, new Set())
+      }
+      renderAnchorMembers.get(anchorToolUseID)!.add(taskKey)
+    }
+
+    const removeTaskKey = (taskKey: string) => {
+      taskToolUses.delete(taskKey)
+      taskProgresses.delete(taskKey)
+      taskEvents.delete(taskKey)
+      const idx = taskOrder.indexOf(taskKey)
+      if (idx >= 0) {
+        taskOrder.splice(idx, 1)
+      }
+      for (const members of renderAnchorMembers.values()) {
+        members.delete(taskKey)
+      }
+    }
+
+    const pushEvent = (
+      taskToolUseId: string,
+      event: { type: 'message' | 'progress' | 'status' | 'result'; content: string },
+    ) => {
+      const normalized = event.content.replace(/\s+/g, ' ').trim()
+      if (!normalized) return
+      const existing = taskEvents.get(taskToolUseId) ?? []
+      if (existing.some(item => item.type === event.type && item.content === normalized)) {
+        return
+      }
+      const next = [...existing, { ...event, content: normalized }].slice(-6)
+      taskEvents.set(taskToolUseId, next)
+    }
 
     for (const msg of orderedMessages) {
       // 识别 Task tool_use
@@ -532,10 +583,47 @@ export function REPL({
         if (Array.isArray(blocks)) {
           for (const block of blocks) {
             if (block?.type === 'tool_use' && block.name === 'Task') {
+              const input = (block.input as any) || {}
+              const teamName = normalizeTeamName(
+                String(input?.team_name || messageLogName || 'default-team'),
+              )
+              const agentName = String(input?.name || input?.subagent_type || 'teammate')
               taskToolUses.set(block.id, {
-                description: (block.input as any)?.description || '',
-                agentType: String((block.input as any)?.subagent_type || 'general-purpose'),
+                description: input?.description || '',
+                agentType: String(input?.subagent_type || 'general-purpose'),
+                teamName,
+                agentName,
               })
+              if (!taskOrder.includes(block.id)) {
+                taskOrder.push(block.id)
+              }
+              addTaskToAnchor(block.id, block.id)
+            }
+
+            if (block?.type === 'tool_use' && block.name === 'TaskBatch') {
+              batchToolUseIDs.add(block.id)
+              const input = (block.input as any) || {}
+              const batchTasks = Array.isArray(input?.tasks) ? input.tasks : []
+              for (let i = 0; i < batchTasks.length; i++) {
+                const task = batchTasks[i] || {}
+                const seedKey = `${block.id}::seed-${i + 1}`
+                const teamName = normalizeTeamName(
+                  String(task?.team_name || messageLogName || 'default-team'),
+                )
+                const agentName = String(
+                  task?.name || task?.subagent_type || `task-${i + 1}`,
+                )
+                taskToolUses.set(seedKey, {
+                  description: String(task?.description || `batch task #${i + 1}`),
+                  agentType: String(task?.subagent_type || 'general-purpose'),
+                  teamName,
+                  agentName,
+                })
+                if (!taskOrder.includes(seedKey)) {
+                  taskOrder.push(seedKey)
+                }
+                addTaskToAnchor(block.id, seedKey)
+              }
             }
           }
         }
@@ -547,57 +635,66 @@ export function REPL({
         if (text && text.startsWith(TASK_PROGRESS_PREFIX)) {
           const payload = parseTaskProgressText(text)
           if (payload && msg.toolUseID) {
-            taskProgresses.set(msg.toolUseID, payload)
-            // 记录兄弟集合（仅保留 Task 类型的兄弟）
-            const taskSiblings = new Set(
-              [...msg.siblingToolUseIDs].filter(id => taskToolUses.has(id)),
-            )
-            // 加入自身
-            if (taskToolUses.has(msg.toolUseID)) {
-              taskSiblings.add(msg.toolUseID)
-            }
-            if (taskSiblings.size > 1) {
-              for (const id of taskSiblings) {
-                const existing = taskSiblingMap.get(id)
-                if (existing) {
-                  for (const s of taskSiblings) existing.add(s)
-                } else {
-                  taskSiblingMap.set(id, new Set(taskSiblings))
+            groupedProgressToolUseIDs.add(msg.toolUseID)
+            const isBatchChild = batchToolUseIDs.has(msg.toolUseID)
+            const taskKey = isBatchChild
+              ? `${msg.toolUseID}::${payload.taskId || payload.agentName || payload.description || 'runtime-unknown'}`
+              : msg.toolUseID
+
+            if (isBatchChild) {
+              // 如果已有同描述 seed 节点，替换为真实 runtime 节点，避免重复显示
+              const members = renderAnchorMembers.get(msg.toolUseID)
+              if (members) {
+                const seedMatch = [...members].find(key => {
+                  if (!key.startsWith(`${msg.toolUseID}::seed-`)) return false
+                  const meta = taskToolUses.get(key)
+                  if (!meta) return false
+                  if (payload.description && meta.description === payload.description) {
+                    return true
+                  }
+                  if (payload.agentName && meta.agentName === payload.agentName) {
+                    return true
+                  }
+                  return false
+                })
+                if (seedMatch) {
+                  removeTaskKey(seedMatch)
                 }
               }
             }
+
+            const existingMeta = taskToolUses.get(taskKey)
+            taskToolUses.set(taskKey, {
+              description:
+                payload.description ||
+                existingMeta?.description ||
+                (isBatchChild ? 'batch task' : ''),
+              agentType: payload.agentType || existingMeta?.agentType || 'general-purpose',
+              teamName:
+                (payload.teamName ? normalizeTeamName(payload.teamName) : undefined) ||
+                existingMeta?.teamName ||
+                normalizeTeamName(String(messageLogName || 'default-team')),
+              agentName:
+                payload.agentName ||
+                existingMeta?.agentName ||
+                payload.agentType ||
+                'teammate',
+              taskId: payload.taskId || existingMeta?.taskId,
+            })
+
+            taskProgresses.set(taskKey, payload)
+            if (!taskOrder.includes(taskKey)) {
+              taskOrder.push(taskKey)
+            }
+            addTaskToAnchor(msg.toolUseID, taskKey)
+
+            if (payload.eventType && payload.eventType !== 'progress' && payload.eventContent) {
+              pushEvent(taskKey, {
+                type: payload.eventType,
+                content: payload.eventContent,
+              })
+            }
           }
-        }
-      }
-    }
-
-    // 确定组长（每组中排序最靠前的 toolUseId）
-    const groupLeaderOf = new Map<string, string>()
-    const groupMembers = new Map<string, string[]>()
-
-    for (const [id, siblings] of taskSiblingMap) {
-      const sorted = [...siblings].sort()
-      const leader = sorted[0]!
-      groupLeaderOf.set(id, leader)
-      if (!groupMembers.has(leader)) {
-        groupMembers.set(leader, sorted)
-      }
-    }
-
-    // 没有分组的单独 Task tool_use → 也视为一人组
-    for (const [id] of taskToolUses) {
-      if (!groupLeaderOf.has(id)) {
-        groupLeaderOf.set(id, id)
-        groupMembers.set(id, [id])
-      }
-    }
-
-    // 收集被分组吞并的 progress toolUseIDs（多任务组才吞并）
-    const groupedProgressIDs = new Set<string>()
-    for (const [leaderId, members] of groupMembers) {
-      if (members.length > 1) {
-        for (const mid of members) {
-          groupedProgressIDs.add(mid)
         }
       }
     }
@@ -606,50 +703,61 @@ export function REPL({
     return orderedMessages.map((_, index) => {
         const toolUseID = getToolUseID(_)
 
-        // --- Task tool_use 分组渲染 ---
-        if (_.type === 'assistant' && toolUseID && taskToolUses.has(toolUseID)) {
-          const leader = groupLeaderOf.get(toolUseID)!
-          const memberIds = groupMembers.get(leader)!
-          if (memberIds.length > 1) {
-            if (toolUseID === leader) {
-              // 组长位置：渲染 TaskProgressGroup
-              const items = memberIds.map(id => ({
-                description: taskToolUses.get(id)!.description,
-                agentType: taskToolUses.get(id)!.agentType,
-                progress: taskProgresses.get(id) || null,
-              }))
-              return {
-                jsx: (
-                  <Box key={_.uuid} width="100%">
-                    <TaskProgressGroup items={items} />
-                  </Box>
-                ),
+        // --- Task/TaskBatch tool_use：按 Team 树渲染 ---
+        if (_.type === 'assistant' && toolUseID && renderAnchorMembers.has(toolUseID)) {
+          const memberSet = renderAnchorMembers.get(toolUseID)!
+          const orderedMemberIds = taskOrder.filter(id => memberSet.has(id))
+          if (orderedMemberIds.length === 0) {
+            // 还没有任何子任务进度，回退到默认渲染
+          } else {
+            const byTeam = new Map<string, string[]>()
+            for (const id of orderedMemberIds) {
+              const meta = taskToolUses.get(id)
+              const payload = taskProgresses.get(id)
+              const teamName =
+                meta?.teamName || payload?.teamName || String(messageLogName || 'default-team')
+              if (!byTeam.has(teamName)) {
+                byTeam.set(teamName, [])
               }
+              byTeam.get(teamName)!.push(id)
             }
-            // 非组长：渲染空占位
-            return { jsx: <Box key={_.uuid} width="100%" /> }
-          }
-          // 单任务组：下面走正常逻辑，但用 TaskProgressGroup 统一样式
-          const items = [{
-            description: taskToolUses.get(toolUseID)!.description,
-            agentType: taskToolUses.get(toolUseID)!.agentType,
-            progress: taskProgresses.get(toolUseID) || null,
-          }]
-          return {
-            jsx: (
-              <Box key={_.uuid} width="100%">
-                <TaskProgressGroup items={items} />
-              </Box>
-            ),
+
+            return {
+              jsx: (
+                <Box key={_.uuid} width="100%" flexDirection="column">
+                  {[...byTeam.entries()].map(([teamName, ids]) => {
+                    const items = ids.map(id => {
+                      const meta = taskToolUses.get(id)
+                      const payload = taskProgresses.get(id)
+                      return {
+                        description: meta?.description || payload?.description || '',
+                        agentType: meta?.agentType || payload?.agentType || 'general-purpose',
+                        progress: payload || null,
+                        teamName: meta?.teamName || payload?.teamName || teamName,
+                        agentName:
+                          meta?.agentName || payload?.agentName || meta?.agentType || 'teammate',
+                        taskId: meta?.taskId || payload?.taskId,
+                        events: taskEvents.get(id) || [],
+                      }
+                    })
+                    return (
+                      <Box key={`${_.uuid}-${teamName}`} width="100%">
+                        <TaskProgressGroup items={items} />
+                      </Box>
+                    )
+                  })}
+                </Box>
+              ),
+            }
           }
         }
 
-        // --- Task progress 分组渲染：已由组长统一渲染，跳过 ---
-        if (_.type === 'progress' && _.toolUseID && groupedProgressIDs.has(_.toolUseID)) {
-          return { jsx: <Box key={_.uuid} width="100%" /> }
-        }
-        // 单任务的 progress 也跳过（已在 tool_use 位置由 TaskProgressGroup 渲染）
-        if (_.type === 'progress' && _.toolUseID && taskToolUses.has(_.toolUseID)) {
+        // --- Task progress：已由 Team 树统一渲染，跳过 ---
+        if (
+          _.type === 'progress' &&
+          _.toolUseID &&
+          groupedProgressToolUseIDs.has(_.toolUseID)
+        ) {
           return { jsx: <Box key={_.uuid} width="100%" /> }
         }
 
@@ -751,6 +859,7 @@ export function REPL({
     canAnimateMessages,
     unresolvedToolUseIDs,
     replStaticPrefixLength,
+    messageLogName,
   ])
 
   const staticItems = useMemo(

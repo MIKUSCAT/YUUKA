@@ -8,11 +8,22 @@ import { recordFileEdit } from '@services/fileFreshness'
 import { DESCRIPTION, PROMPT } from './prompt'
 import { getTheme } from '@utils/theme'
 import { TREE_END } from '@constants/figures'
-import { resolveMemoryFilePath, writeMemoryFile } from '@utils/memoryStore'
+import {
+  resolveMemoryFilePath,
+  upsertMemoryIndexEntry,
+  writeMemoryFile,
+} from '@utils/memoryStore'
 
 const inputSchema = z.strictObject({
   file_path: z.string().describe('Path to the memory file to write'),
   content: z.string().describe('Content to write to the file'),
+  title: z.string().optional().describe('Short title shown in memory index'),
+  tags: z.array(z.string()).optional().describe('Tags for memory index'),
+  summary: z.string().optional().describe('One-line summary for memory index'),
+  layer: z
+    .enum(['core', 'retrievable', 'episodic'])
+    .optional()
+    .describe('Memory layer type'),
 })
 
 export const MemoryWriteTool = {
@@ -69,8 +80,19 @@ export const MemoryWriteTool = {
     }
     return { result: true }
   },
-  async *call({ file_path, content }, context) {
+  async *call({ file_path, content, title, tags, summary, layer }, context) {
     const fullPath = writeMemoryFile(file_path, content, context?.agentId)
+
+    upsertMemoryIndexEntry(
+      file_path,
+      {
+        title,
+        tags,
+        summary,
+        layer,
+      },
+      context?.agentId,
+    )
 
     // Record Agent edit operation for file freshness tracking
     recordFileEdit(fullPath, content)

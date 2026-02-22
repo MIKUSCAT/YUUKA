@@ -374,7 +374,7 @@ class SystemReminderService {
         key: `agent_mention_${context.agentType}_${context.timestamp}`,
         category: 'task',
         priority: 'high',
-        content: `The user mentioned @${context.originalMention}. You MUST use the Task tool with subagent_type="${context.agentType}" to delegate this task to the specified agent. Provide a detailed, self-contained task description that fully captures the user's intent for the ${context.agentType} agent to execute.`,
+        content: `The user mentioned @${context.originalMention}. You MUST use the Task tool with agent type subagent_type="${context.agentType}" to delegate this task to the specified agent. Provide a detailed, self-contained task description that fully captures the user's intent for the ${context.agentType} agent to execute.`,
         timestamp: context.timestamp
       })
     })
