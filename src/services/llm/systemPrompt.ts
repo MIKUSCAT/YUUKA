@@ -1,6 +1,10 @@
 import { generateSystemReminders } from '@services/systemReminder'
 import { getMemoryBootstrapContext } from '@utils/memoryStore'
 import { generateYuukaContext } from './yuukaContext'
+import {
+  collectSystemPromptHeaders,
+  ensureBuiltinRuntimeHooksRegistered,
+} from '@utils/runtimeHooks'
 
 export function formatSystemPromptWithContext(
   systemPrompt: string[],
@@ -8,8 +12,19 @@ export function formatSystemPromptWithContext(
   agentId?: string,
   skipContextReminders = false,
 ): { systemPrompt: string[]; reminders: string } {
+  ensureBuiltinRuntimeHooksRegistered()
   const enhancedPrompt = [...systemPrompt]
   let reminders = ''
+
+  const runtimeHeaders = collectSystemPromptHeaders({
+    agentId,
+    context,
+  })
+  if (runtimeHeaders.length > 0) {
+    enhancedPrompt.push('\n---\n# Runtime Resources\n')
+    enhancedPrompt.push(...runtimeHeaders)
+    enhancedPrompt.push('\n---\n')
+  }
 
   try {
     const memoryBootstrap = getMemoryBootstrapContext(agentId)

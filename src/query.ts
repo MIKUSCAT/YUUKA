@@ -44,6 +44,7 @@ import { setConversationScope } from '@utils/agentStorage'
 import { TOOL_NAME as SKILL_TOOL_NAME } from '@tools/SkillTool/constants'
 import { PermissionMode } from '@yuuka-types/PermissionMode'
 import { getGlobalConfig } from '@utils/config'
+import { ensureBuiltinRuntimeHooksRegistered } from '@utils/runtimeHooks'
 
 // Extended ToolUseContext for query functions
 interface ExtendedToolUseContext extends ToolUseContext {
@@ -384,6 +385,7 @@ export async function* query(
     m2: AssistantMessage,
   ) => Promise<BinaryFeedbackResult>,
 ): AsyncGenerator<Message, void> {
+  ensureBuiltinRuntimeHooksRegistered()
   const currentRequest = getCurrentRequest()
 
   markPhase('QUERY_INIT')

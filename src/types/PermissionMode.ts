@@ -1,9 +1,7 @@
-// Permission mode types retained for compatibility with earlier agent implementations
 export type PermissionMode =
   | 'default'
   | 'acceptEdits'
   | 'plan'
-  | 'bypassPermissions'
 
 export interface PermissionContext {
   mode: PermissionMode
@@ -12,7 +10,6 @@ export interface PermissionContext {
   restrictions: {
     readOnly: boolean
     requireConfirmation: boolean
-    bypassValidation: boolean
   }
   metadata: {
     activatedAt?: string
@@ -31,11 +28,9 @@ export interface ModeConfig {
   restrictions: {
     readOnly: boolean
     requireConfirmation: boolean
-    bypassValidation: boolean
   }
 }
 
-// Mode configuration preserved for Claude Code parity
 export const MODE_CONFIGS: Record<PermissionMode, ModeConfig> = {
   default: {
     name: 'default',
@@ -47,7 +42,6 @@ export const MODE_CONFIGS: Record<PermissionMode, ModeConfig> = {
     restrictions: {
       readOnly: false,
       requireConfirmation: true,
-      bypassValidation: false,
     },
   },
   acceptEdits: {
@@ -55,12 +49,11 @@ export const MODE_CONFIGS: Record<PermissionMode, ModeConfig> = {
     label: 'ACCEPT EDITS',
     icon: 'OK',
     color: 'green',
-    description: 'Auto-approve edit operations',
+    description: 'Auto-approve file edits/writes (Bash still requires approval)',
     allowedTools: ['*'],
     restrictions: {
       readOnly: false,
-      requireConfirmation: false,
-      bypassValidation: false,
+      requireConfirmation: true,
     },
   },
   plan: {
@@ -68,42 +61,38 @@ export const MODE_CONFIGS: Record<PermissionMode, ModeConfig> = {
     label: 'PLAN MODE',
     icon: 'PLAN',
     color: 'yellow',
-    description: 'Research and planning - read-only tools only',
+    description: 'Planning mode - read/search tools plus planning coordination tools',
     allowedTools: [
       'Read',
       'Grep',
       'Glob',
       'LS',
       'WebSearch',
-      'WebFetch',
-      'NotebookRead',
-      'exit_plan_mode',
+      'URLFetcher',
+      'ReadNotebook',
+      'MemoryRead',
+      'MemorySearch',
+      'Skill',
+      'Think',
+      'TodoRead',
+      'TodoWrite',
+      'Task',
+      'TaskBatch',
+      'TaskStatus',
+      'TaskList',
+      'TaskCreate',
+      'TaskUpdate',
+      'SendMessage',
     ],
     restrictions: {
       readOnly: true,
       requireConfirmation: true,
-      bypassValidation: false,
-    },
-  },
-  bypassPermissions: {
-    name: 'bypassPermissions',
-    label: 'BYPASS PERMISSIONS',
-    icon: 'UNLOCK',
-    color: 'red',
-    description: 'All permissions bypassed',
-    allowedTools: ['*'],
-    restrictions: {
-      readOnly: false,
-      requireConfirmation: false,
-      bypassValidation: true,
     },
   },
 }
 
-// Mode cycling function preserved from the Claude Code workflow
 export function getNextPermissionMode(
   currentMode: PermissionMode,
-  isBypassAvailable: boolean = true,
 ): PermissionMode {
   switch (currentMode) {
     case 'default':
@@ -111,8 +100,6 @@ export function getNextPermissionMode(
     case 'acceptEdits':
       return 'plan'
     case 'plan':
-      return isBypassAvailable ? 'bypassPermissions' : 'default'
-    case 'bypassPermissions':
       return 'default'
     default:
       return 'default'

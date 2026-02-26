@@ -23,11 +23,35 @@ import {
 import { FileWriteToolDiff } from './FileWriteToolDiff'
 import { useTerminalSize } from '@hooks/useTerminalSize'
 import { logError } from '@utils/log'
+import { pathInOriginalCwd } from '@utils/permissions/filesystem'
 
 type Props = {
   toolUseConfirm: ToolUseConfirm
   onDone(): void
   verbose: boolean
+}
+
+function getOptions(filePath: string) {
+  const showSessionAllow = pathInOriginalCwd(filePath)
+    ? [
+        {
+          label: "Yes, and don't ask again this session",
+          value: 'yes-dont-ask-again',
+        },
+      ]
+    : []
+
+  return [
+    {
+      label: 'Yes',
+      value: 'yes',
+    },
+    ...showSessionAllow,
+    {
+      label: `No, and provide instructions (${chalk.bold.hex(getTheme().warning)('esc')})`,
+      value: 'no',
+    },
+  ]
 }
 
 export function FileWritePermissionRequest({
@@ -78,21 +102,13 @@ export function FileWritePermissionRequest({
           Do you want to {fileExists ? 'make this edit to' : 'create'}{' '}
           <Text bold>{basename(file_path)}</Text>?
         </Text>
+        {!pathInOriginalCwd(file_path) && (
+          <Text dimColor>
+            Session allow is only available for writes inside the original working directory.
+          </Text>
+        )}
         <Select
-          options={[
-            {
-              label: 'Yes',
-              value: 'yes',
-            },
-            {
-              label: "Yes, and don't ask again this session",
-              value: 'yes-dont-ask-again',
-            },
-            {
-              label: `No, and provide instructions (${chalk.bold.hex(getTheme().warning)('esc')})`,
-              value: 'no',
-            },
-          ]}
+          options={getOptions(file_path)}
           onChange={newValue => {
             switch (newValue) {
               case 'yes':

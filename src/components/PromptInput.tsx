@@ -25,7 +25,10 @@ import { getTodos } from '@utils/todoStorage'
 import { getDefaultAgentId } from '@utils/agentStorage'
 import { TodoPanel } from './TodoPanel'
 import { getActiveSkills, type SkillConfig } from '@utils/skillLoader'
-import { setSessionEnabledSkillNames } from '@utils/skillSession'
+import {
+  getSessionEnabledSkillNames,
+  setSessionEnabledSkillNames,
+} from '@utils/skillSession'
 
 type Props = {
   context: {
@@ -131,7 +134,7 @@ function PromptInput({
   )
 
   // Permission context for mode management
-  const { cycleMode } = usePermissionContext()
+  const { cycleMode, currentMode } = usePermissionContext()
 
   // Unified completion system - one hook to rule them all (now with terminal behavior)
   const {
@@ -177,7 +180,9 @@ function PromptInput({
           return
         }
         const names = skills.map((skill: SkillConfig) => skill.name)
-        setSessionEnabledSkillNames(names.length > 0 ? names : null)
+        if (getSessionEnabledSkillNames() === null) {
+          setSessionEnabledSkillNames(names.length > 0 ? names : null)
+        }
         count = names.length
       } catch {
         if (cancelled) {
@@ -361,6 +366,7 @@ function PromptInput({
           messageLogName,
           tools,
           verbose,
+          permissionMode: currentMode,
           maxThinkingTokens: 0,
         },
         messageId: undefined,

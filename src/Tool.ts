@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import * as React from 'react'
+import type { PermissionMode } from '@yuuka-types/PermissionMode'
 
 /**
  * Core Tool interface for YUUKA's extensible tool system
@@ -28,7 +29,7 @@ export interface ToolUseContext {
     verbose?: boolean
     slowAndCapableModel?: string
     safeMode?: boolean
-    permissionMode?: string
+    permissionMode?: PermissionMode
     forkNumber?: number
     messageLogName?: string
     maxThinkingTokens?: any

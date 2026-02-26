@@ -28,13 +28,11 @@ const PermissionContext = createContext<PermissionContextValue | undefined>(
 
 interface PermissionProviderProps {
   children: ReactNode
-  isBypassPermissionsModeAvailable?: boolean
   onModeChange?: (mode: PermissionMode) => void
 }
 
 export function PermissionProvider({
   children,
-  isBypassPermissionsModeAvailable = false,
   onModeChange,
 }: PermissionProviderProps) {
   const [permissionContext, setPermissionContext] =
@@ -45,7 +43,6 @@ export function PermissionProvider({
       restrictions: {
         readOnly: false,
         requireConfirmation: true,
-        bypassValidation: false,
       },
       metadata: {
         transitionCount: 0,
@@ -54,13 +51,8 @@ export function PermissionProvider({
 
   const cycleMode = useCallback(() => {
     setPermissionContext(prev => {
-      const nextMode = getNextPermissionMode(
-        prev.mode,
-        isBypassPermissionsModeAvailable,
-      )
+      const nextMode = getNextPermissionMode(prev.mode)
       const modeConfig = MODE_CONFIGS[nextMode]
-
-      console.log(`Mode cycle: ${prev.mode} -> ${nextMode}`)
 
       return {
         ...prev,
@@ -75,7 +67,7 @@ export function PermissionProvider({
         },
       }
     })
-  }, [isBypassPermissionsModeAvailable])
+  }, [])
 
   const setMode = useCallback((mode: PermissionMode) => {
     setPermissionContext(prev => {

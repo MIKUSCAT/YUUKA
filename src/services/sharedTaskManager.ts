@@ -16,6 +16,7 @@ export interface SharedTask {
   blockedBy?: number[]
   createdAt: number
   updatedAt: number
+  version: number
   completedAt?: number
   result?: string
 }
@@ -40,6 +41,7 @@ export interface UpdateSharedTaskInput {
   owner?: string
   result?: string
   blockedBy?: number[]
+  expectedVersion?: number
 }
 
 function getSharedTaskPath(teamName: string): string {
@@ -62,14 +64,26 @@ function readSharedTasks(path: string): SharedTask[] {
   try {
     const parsed = JSON.parse(readFileSync(path, 'utf-8'))
     if (!Array.isArray(parsed)) return []
-    return parsed.filter(
-      task =>
-        task &&
-        typeof task.id === 'number' &&
-        typeof task.subject === 'string' &&
-        typeof task.description === 'string' &&
-        typeof task.status === 'string',
-    ) as SharedTask[]
+    return parsed
+      .filter(
+        task =>
+          task &&
+          typeof task.id === 'number' &&
+          typeof task.subject === 'string' &&
+          typeof task.description === 'string' &&
+          typeof task.status === 'string',
+      )
+      .map(task => {
+        const current = task as Partial<SharedTask>
+        const version =
+          Number.isInteger(current.version) && Number(current.version) > 0
+            ? Number(current.version)
+            : 1
+        return {
+          ...current,
+          version,
+        } as SharedTask
+      })
   } catch {
     return []
   }
@@ -99,6 +113,7 @@ export async function createSharedTask(input: CreateSharedTaskInput): Promise<Sh
       blockedBy,
       createdAt: now,
       updatedAt: now,
+      version: 1,
     }
 
     tasks.push(task)
@@ -135,9 +150,23 @@ export async function updateSharedTask(input: UpdateSharedTaskInput): Promise<Sh
     }
 
     const current = tasks[index]
+    const currentVersion =
+      Number.isInteger(current.version) && Number(current.version) > 0
+        ? Number(current.version)
+        : 1
+    if (
+      typeof input.expectedVersion === 'number' &&
+      Number.isFinite(input.expectedVersion) &&
+      Math.floor(input.expectedVersion) !== currentVersion
+    ) {
+      throw new Error(
+        `Shared task ${input.taskId} version conflict in team "${teamName}" (expected=${Math.floor(input.expectedVersion)}, actual=${currentVersion})`,
+      )
+    }
     const next: SharedTask = {
       ...current,
       updatedAt: Date.now(),
+      version: currentVersion + 1,
     }
 
     if (typeof input.status !== 'undefined') {
@@ -175,10 +204,54 @@ export async function claimSharedTask(params: {
   taskId: number
   owner: string
 }): Promise<SharedTask> {
-  return updateSharedTask({
-    teamName: params.teamName,
-    taskId: params.taskId,
-    owner: params.owner,
-    status: 'in_progress',
+  const teamName = normalizeTeamName(params.teamName)
+  const path = getSharedTaskPath(teamName)
+  return withFileLockSync(path, () => {
+    const tasks = readSharedTasks(path)
+    const index = tasks.findIndex(task => task.id === params.taskId)
+    if (index < 0) {
+      throw new Error(`Shared task ${params.taskId} not found in team "${teamName}"`)
+    }
+
+    const current = tasks[index]
+    const normalizedOwner = normalizeAgentName(params.owner)
+    const currentVersion =
+      Number.isInteger(current.version) && Number(current.version) > 0
+        ? Number(current.version)
+        : 1
+
+    // 认领必须具备“原子条件”：已被其他成员占用时直接报冲突，避免覆盖。
+    if (
+      current.owner &&
+      current.owner !== normalizedOwner &&
+      (current.status === 'in_progress' || current.status === 'completed')
+    ) {
+      throw new Error(
+        `Shared task ${params.taskId} is already owned by "${current.owner}" (${current.status})`,
+      )
+    }
+    if (current.status === 'completed' && current.owner !== normalizedOwner) {
+      throw new Error(`Shared task ${params.taskId} is already completed`)
+    }
+    if (current.status === 'blocked') {
+      throw new Error(
+        `Shared task ${params.taskId} is blocked; unblock it before claiming`,
+      )
+    }
+
+    if (current.status === 'in_progress' && current.owner === normalizedOwner) {
+      return current
+    }
+
+    const next: SharedTask = {
+      ...current,
+      owner: normalizedOwner,
+      status: 'in_progress',
+      updatedAt: Date.now(),
+      version: currentVersion + 1,
+    }
+    tasks[index] = next
+    writeJsonAtomic(path, tasks)
+    return next
   })
 }

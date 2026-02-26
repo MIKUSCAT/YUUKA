@@ -3,13 +3,14 @@ import { Command } from '@commands'
 import { getSystemPrompt } from '@constants/prompts'
 import { getContext } from '@context'
 import { getTotalCost } from '@costTracker'
-import { Message, query } from '@query'
+import { Message } from '@query'
 import { CanUseToolFn } from '@hooks/useCanUseTool'
 import { Tool } from '@tool'
 import { getModelManager } from '@utils/model'
 import { setCwd } from './state'
 import { getMessagesPath, overwriteLog } from './log'
 import { createUserMessage } from './messages'
+import { runAgentRuntime } from './agentRuntime'
 
 type Props = {
   commands: Command[]
@@ -49,19 +50,19 @@ export async function ask({
     getModelManager().getModelName('main'),
   ])
 
-  for await (const m of query(
+  for await (const m of runAgentRuntime({
     messages,
     systemPrompt,
     context,
-    hasPermissionsToUseTool,
-    {
+    canUseTool: hasPermissionsToUseTool,
+    toolUseContext: {
       options: {
         commands,
         tools,
         verbose,
         safeMode,
         forkNumber: 0,
-        messageLogName: 'unused',
+        messageLogName: messageLogName || 'unused',
         maxThinkingTokens: 0,
       },
       abortController: new AbortController(),
@@ -70,7 +71,7 @@ export async function ask({
       readFileTimestamps: {},
       setToolJSX: () => {}, // No-op function for non-interactive use
     },
-  )) {
+  })) {
     messages.push(m)
   }
 

@@ -21,6 +21,7 @@ import {
   normalizeTeamName,
 } from './teamPaths'
 import { withFileLockSync } from '@utils/fileLock'
+import type { PermissionMode } from '@yuuka-types/PermissionMode'
 
 export type TeamTaskStatus =
   | 'pending'
@@ -56,6 +57,7 @@ export interface TeamTaskRecord {
   subagent_type?: string
   model_name?: string
   safeMode: boolean
+  permissionMode?: PermissionMode
   verbose: boolean
   forkNumber: number
   messageLogName: string
@@ -174,6 +176,7 @@ export function createTeamTask(params: {
   subagent_type?: string
   model_name?: string
   safeMode: boolean
+  permissionMode?: PermissionMode
   verbose: boolean
   forkNumber: number
   messageLogName: string
@@ -196,6 +199,7 @@ export function createTeamTask(params: {
     subagent_type: params.subagent_type,
     model_name: params.model_name,
     safeMode: params.safeMode,
+    permissionMode: params.permissionMode,
     verbose: params.verbose,
     forkNumber: params.forkNumber,
     messageLogName: params.messageLogName,

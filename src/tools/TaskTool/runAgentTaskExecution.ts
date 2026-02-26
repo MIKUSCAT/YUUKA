@@ -3,7 +3,7 @@ import { last, memoize } from 'lodash-es'
 import { hasPermissionsToUseTool } from '@permissions'
 import { getAgentPrompt } from '@constants/prompts'
 import { getContext } from '@context'
-import { Message as MessageType, query } from '@query'
+import { Message as MessageType } from '@query'
 import {
   getMessagesPath,
   getNextAvailableLogSidechainNumber,
@@ -19,7 +19,9 @@ import { generateAgentId } from '@utils/agentStorage'
 import { getAgentByType, getAvailableAgentTypes } from '@utils/agentLoader'
 import { normalizeAgentName, normalizeTeamName } from '@services/teamPaths'
 import { setSessionState, getSessionState } from '@utils/sessionState'
+import { runAgentRuntime } from '@utils/agentRuntime'
 import { getTaskTools } from './prompt'
+import type { PermissionMode } from '@yuuka-types/PermissionMode'
 
 export interface TaskExecutionProgress {
   agentType: string
@@ -47,6 +49,7 @@ export interface RunAgentTaskExecutionInput {
   name?: string
   agent_id?: string
   safeMode: boolean
+  permissionMode?: PermissionMode
   forkNumber: number
   messageLogName: string
   verbose: boolean
@@ -145,6 +148,7 @@ export async function* runAgentTaskExecutionStream(
     name,
     agent_id,
     safeMode,
+    permissionMode,
     forkNumber,
     messageLogName,
     verbose,
@@ -235,6 +239,7 @@ export async function* runAgentTaskExecutionStream(
 
   const queryOptions = {
     safeMode,
+    permissionMode,
     forkNumber,
     messageLogName,
     tools,
@@ -251,12 +256,12 @@ export async function* runAgentTaskExecutionStream(
   setSessionState('currentThought', null) // clear residual thought
 
   try {
-  for await (const message of query(
+  for await (const message of runAgentRuntime({
     messages,
-    taskPrompt,
+    systemPrompt: taskPrompt,
     context,
     canUseTool,
-    {
+    toolUseContext: {
       abortController,
       options: queryOptions,
       messageId: getLastAssistantMessageId(messages),
@@ -264,7 +269,7 @@ export async function* runAgentTaskExecutionStream(
       readFileTimestamps,
       setToolJSX: () => {},
     },
-  )) {
+  })) {
     messages.push(message)
 
     overwriteLog(

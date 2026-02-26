@@ -20,6 +20,12 @@ const inputSchema = z.object({
   owner: z.string().optional(),
   result: z.string().optional(),
   blockedBy: z.array(z.number().int().positive()).optional(),
+  expectedVersion: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe('Optional optimistic concurrency check: task.version must match'),
 })
 
 type TaskUpdateOut = {
@@ -71,6 +77,7 @@ export const TaskUpdateTool = {
           owner: input.owner,
           result: input.result,
           blockedBy: input.blockedBy,
+          expectedVersion: input.expectedVersion,
         })
 
     const data: TaskUpdateOut = {

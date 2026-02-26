@@ -68,7 +68,9 @@ import { getMaxThinkingTokens } from '@utils/thinking'
 import { getOriginalCwd } from '@utils/state'
 import { setConversationScope } from '@utils/agentStorage'
 import { logError } from '@utils/log'
+import { runAgentRuntime } from '@utils/agentRuntime'
 import { normalizeTeamName } from '@services/teamPaths'
+import type { PermissionMode } from '@yuuka-types/PermissionMode'
 
 type Props = {
   commands: Command[]
@@ -110,7 +112,9 @@ export function REPL({
   // Keep CLI default permissive unless user explicitly enables --safe.
   const baseSafeMode = safeMode ?? false
   const [autoMode, setAutoMode] = useState(false)
-  const effectiveSafeMode = baseSafeMode && !autoMode
+  // Auto mode no longer weakens --safe. It only changes UX behavior.
+  const effectiveSafeMode = baseSafeMode
+  const [permissionMode, setPermissionMode] = useState<PermissionMode>('default')
 
   // Cache verbose config to avoid synchronous file reads on every render
   const [verboseConfig] = useState(() => verboseFromCLI ?? getGlobalConfig().verbose)
@@ -286,6 +290,7 @@ export function REPL({
             tools,
             verbose,
             maxThinkingTokens: 0,
+            permissionMode,
           },
           messageId: getLastAssistantMessageId(messages),
           setForkConvoWithMessagesOnTheNextRender,
@@ -317,12 +322,12 @@ export function REPL({
             getMaxThinkingTokens([...messages, ...newMessages]),
           ])
 
-        for await (const message of query(
-          [...messages, ...newMessages],
+        for await (const message of runAgentRuntime({
+          messages: [...messages, ...newMessages],
           systemPrompt,
           context,
           canUseTool,
-          {
+          toolUseContext: {
             options: {
               commands,
               forkNumber,
@@ -330,6 +335,7 @@ export function REPL({
               tools,
               verbose,
               safeMode: effectiveSafeMode,
+              permissionMode,
               maxThinkingTokens,
             },
             messageId: getLastAssistantMessageId([...messages, ...newMessages]),
@@ -339,7 +345,7 @@ export function REPL({
             setToolJSX,
           },
           getBinaryFeedbackResponse,
-        )) {
+        })) {
           setMessages(oldMessages => [...oldMessages, message])
         }
       } else {
@@ -412,31 +418,32 @@ export function REPL({
 
     // query the API
     try {
-      for await (const message of query(
-        [...messages, lastMessage],
+      for await (const message of runAgentRuntime({
+        messages: [...messages, lastMessage],
         systemPrompt,
         context,
         canUseTool,
-      {
-        options: {
-          commands,
-          forkNumber,
-          messageLogName,
-          tools,
-          verbose,
-          safeMode: effectiveSafeMode,
-          maxThinkingTokens,
+        toolUseContext: {
+          options: {
+            commands,
+            forkNumber,
+            messageLogName,
+            tools,
+            verbose,
+            safeMode: effectiveSafeMode,
+            permissionMode,
+            maxThinkingTokens,
+          },
+          messageId: getLastAssistantMessageId([...messages, lastMessage]),
+          agentId: 'lead',
+          readFileTimestamps: readFileTimestamps.current,
+          abortController: controllerToUse,
+          setToolJSX,
         },
-        messageId: getLastAssistantMessageId([...messages, lastMessage]),
-        agentId: 'lead',
-        readFileTimestamps: readFileTimestamps.current,
-        abortController: controllerToUse,
-        setToolJSX,
-      },
-      getBinaryFeedbackResponse,
-    )) {
-      setMessages(oldMessages => [...oldMessages, message])
-    }
+        getBinaryFeedbackResponse,
+      })) {
+        setMessages(oldMessages => [...oldMessages, message])
+      }
     } catch (e) {
       logError(e)
       setMessages(old => [
@@ -959,8 +966,8 @@ export function REPL({
   )
 
   return (
-    <PermissionProvider 
-      isBypassPermissionsModeAvailable={!effectiveSafeMode}
+    <PermissionProvider
+      onModeChange={setPermissionMode}
       children={
         <React.Fragment>
         <ModeIndicator />

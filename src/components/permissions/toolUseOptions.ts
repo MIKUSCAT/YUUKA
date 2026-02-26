@@ -1,7 +1,6 @@
 import { type Option } from '@inkjs/ui'
 import chalk from 'chalk'
-import { type ToolUseConfirm, toolUseConfirmGetPrefix } from './PermissionRequest'
-import { isUnsafeCompoundCommand } from '@utils/commands'
+import { type ToolUseConfirm } from './PermissionRequest'
 import { getTheme } from '@utils/theme'
 import { type OptionSubtree } from '@components/CustomSelect/select'
 
@@ -30,16 +29,9 @@ export function toolUseOptions({
     ]
   }
 
-  const prefix = toolUseConfirmGetPrefix(toolUseConfirm)
-  const canUsePrefix =
-    !isUnsafeCompoundCommand(command) &&
-    toolUseConfirm.commandPrefix &&
-    !toolUseConfirm.commandPrefix.commandInjectionDetected &&
-    prefix !== null
-
-  const sessionLabel = canUsePrefix
-    ? `Yes, allow ${chalk.bold(prefix)} commands this session`
-    : `Yes, allow this exact command this session`
+  void command
+  void toolUseConfirm
+  const sessionLabel = `Yes, allow this exact command this session`
 
   return [
     {

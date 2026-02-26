@@ -28,6 +28,7 @@ import {
 } from '@services/teamManager'
 import { normalizeAgentName, normalizeTeamName } from '@services/teamPaths'
 import { TaskExecutionProgress } from './runAgentTaskExecution'
+import type { PermissionMode } from '@yuuka-types/PermissionMode'
 
 const inputSchema = z.object({
   description: z
@@ -119,6 +120,7 @@ export const TaskTool = {
       abortController,
       options: {
         safeMode = false,
+        permissionMode = 'default',
         forkNumber = 0,
         messageLogName = 'task',
         verbose = false,
@@ -202,6 +204,7 @@ export const TaskTool = {
         subagent_type,
         model_name,
         safeMode,
+        permissionMode: permissionMode as PermissionMode,
         verbose,
         forkNumber,
         messageLogName,
@@ -479,7 +482,7 @@ export const TaskTool = {
   },
 
   isReadOnly() {
-    return true // for now...
+    return false
   },
   isConcurrencySafe() {
     return true // Task tool supports concurrent execution in official implementation

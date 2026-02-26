@@ -7,7 +7,6 @@ import { getTheme } from '@utils/theme'
 import { usePermissionRequestLogging } from '@components/permissions/hooks'
 import {
   type ToolUseConfirm,
-  toolUseConfirmGetPrefix,
 } from '@components/permissions/PermissionRequest'
 import { PermissionRequestTitle } from '@components/permissions/PermissionRequestTitle'
 import { logUnaryPermissionEvent } from '@components/permissions/utils'
@@ -15,7 +14,6 @@ import { Select } from '@components/CustomSelect/select'
 import { toolUseOptions } from '@components/permissions/toolUseOptions'
 import {
   isHighRiskBashCommand,
-  isUnsafeCompoundCommand,
 } from '@utils/commands'
 import { logError } from '@utils/log'
 
@@ -95,13 +93,6 @@ export function BashPermissionRequest({
                   toolUseConfirm.onAllow('temporary')
                   break
                 }
-                const prefix = toolUseConfirmGetPrefix(toolUseConfirm)
-                const canUsePrefix =
-                  !isUnsafeCompoundCommand(command) &&
-                  toolUseConfirm.commandPrefix &&
-                  !toolUseConfirm.commandPrefix.commandInjectionDetected &&
-                  prefix !== null
-
                 logUnaryPermissionEvent(
                   'tool_use_single',
                   toolUseConfirm,
@@ -111,7 +102,7 @@ export function BashPermissionRequest({
                 saveSessionPermission(
                   toolUseConfirm.tool,
                   toolUseConfirm.input,
-                  canUsePrefix ? prefix : null,
+                  null,
                 )
                   .then(() => {
                     toolUseConfirm.onAllow('session')

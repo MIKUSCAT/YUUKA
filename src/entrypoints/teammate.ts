@@ -167,6 +167,7 @@ export async function runTeammateTask(taskFilePath: string): Promise<number> {
         name: initialTask.agentName,
         agent_id: initialTask.agentName,
         safeMode: initialTask.safeMode,
+        permissionMode: initialTask.permissionMode,
         forkNumber: initialTask.forkNumber,
         messageLogName: initialTask.messageLogName,
         verbose: initialTask.verbose,

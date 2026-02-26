@@ -232,7 +232,7 @@ Hard rule:
     return true
   },
   isReadOnly() {
-    return true
+    return false
   },
   isConcurrencySafe() {
     return true

@@ -47,10 +47,10 @@ export function ModeIndicator({
         {currentMode === 'plan' && (
           <Box marginTop={1}>
             <Text color="cyan" dimColor>
-              Available tools: {permissionContext.allowedTools.join(', ')}
+              Plan mode allows planning/collaboration tools and read-only tools.
             </Text>
             <Text color="yellow" dimColor>
-              Use exit_plan_mode tool when ready to execute
+              Press Alt+P to leave plan mode before execution.
             </Text>
           </Box>
         )}

@@ -33,6 +33,38 @@ const SAFE_COMMANDS = new Set([
 // In-memory approvals that reset each session ("this conversation" whitelist)
 const SESSION_ALLOWED_TOOLS = new Set<string>()
 
+const PLAN_EXPLICITLY_ALLOWED_TOOLS = new Set<string>([
+  'Task',
+  'TaskBatch',
+  'TaskStatus',
+  'TaskList',
+  'TaskCreate',
+  'TaskUpdate',
+  'SendMessage',
+  'TodoWrite',
+])
+
+const PLAN_EXPLICITLY_BLOCKED_TOOLS = new Set<string>([
+  BashTool.name,
+  FileEditTool.name,
+  FileWriteTool.name,
+  NotebookEditTool.name,
+  'MultiEdit',
+  'DocWrite',
+  'MemoryWrite',
+  'TeamCreate',
+  'TeamDelete',
+  'mcp',
+])
+
+const ACCEPT_EDITS_AUTO_APPROVE_TOOL_NAMES = new Set<string>([
+  FileEditTool.name,
+  FileWriteTool.name,
+  NotebookEditTool.name,
+  'MultiEdit',
+  'DocWrite',
+])
+
 function normalizePermissionMode(rawMode: unknown): PermissionMode {
   if (
     typeof rawMode === 'string' &&
@@ -43,9 +75,27 @@ function normalizePermissionMode(rawMode: unknown): PermissionMode {
   return 'default'
 }
 
-function modeAllowsTool(mode: PermissionMode, toolName: string): boolean {
+function modeAllowsTool(mode: PermissionMode, tool: Tool): boolean {
+  const toolName = tool.name
+  if (mode === 'plan') {
+    if (PLAN_EXPLICITLY_BLOCKED_TOOLS.has(toolName)) {
+      return false
+    }
+    if (PLAN_EXPLICITLY_ALLOWED_TOOLS.has(toolName)) {
+      return true
+    }
+    try {
+      return tool.isReadOnly()
+    } catch {
+      return false
+    }
+  }
   const allowedTools = MODE_CONFIGS[mode].allowedTools
   return allowedTools.includes('*') || allowedTools.includes(toolName)
+}
+
+function isAcceptEditsAutoApproveTool(tool: Tool): boolean {
+  return ACCEPT_EDITS_AUTO_APPROVE_TOOL_NAMES.has(tool.name)
 }
 
 function createPermissionDeniedMessage(toolName: string): string {
@@ -121,7 +171,7 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
   const permissionMode = normalizePermissionMode(context.options?.permissionMode)
   const modeConfig = MODE_CONFIGS[permissionMode]
 
-  if (!modeAllowsTool(permissionMode, tool.name)) {
+  if (!modeAllowsTool(permissionMode, tool)) {
     return {
       result: false,
       message: `Tool ${tool.name} is not available in ${permissionMode} mode.`,
@@ -149,7 +199,7 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
     }
   }
 
-  if (modeConfig.restrictions.bypassValidation) {
+  if (permissionMode === 'acceptEdits' && isAcceptEditsAutoApproveTool(tool)) {
     return { result: true }
   }
 
@@ -159,6 +209,9 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
 
   // Non-safe default mode stays permissive except high-risk bash commands handled above.
   if (!context.options?.safeMode && permissionMode === 'default') {
+    return { result: true }
+  }
+  if (!context.options?.safeMode && permissionMode === 'acceptEdits' && tool !== BashTool) {
     return { result: true }
   }
 
