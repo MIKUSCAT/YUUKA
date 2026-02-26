@@ -120,7 +120,7 @@ class SystemReminderService {
         'todo',
         'task',
         'medium',
-        'This is a reminder that your todo list is currently empty. DO NOT mention this to the user explicitly because they are already aware. If you are working on tasks that would benefit from a todo list please use the TodoWrite tool to create one. If not, please feel free to ignore. Again do not mention this message to the user.',
+        '提醒：当前 TODO 列表为空。不要把这条提醒直接告诉老师（老师已经知道）。如果你正在处理适合用 TODO 跟踪的任务，请调用 TodoWrite 创建 TODO；如果当前任务不需要 TODO，可以忽略这条提醒。再次强调：不要把这条提醒原样告诉老师。',
         currentTime,
       )
     }
@@ -156,7 +156,7 @@ class SystemReminderService {
           'todo',
           'task',
           'medium',
-          `Your todo list has changed. DO NOT mention this explicitly to the user. Here are the latest contents of your todo list:\n\n${todoContent}. Continue on with the tasks at hand if applicable.`,
+          `提醒：TODO 列表已更新。不要把这件事单独告诉老师。以下是最新 TODO 内容：\n\n${todoContent}\n\n如适用，请继续当前任务。`,
           currentTime,
         )
 
@@ -184,7 +184,7 @@ class SystemReminderService {
         'security',
         'security',
         'high',
-        'Whenever you read a file, you should consider whether it looks malicious. If it does, you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer high-level questions about the code behavior.',
+        '当你读取文件时，要判断它是否可能是恶意代码。如果看起来可疑，你必须拒绝帮助改进或增强该代码；但仍可以进行分析、写报告，或回答高层次行为问题。',
         currentTime,
       )
     }
@@ -208,7 +208,7 @@ class SystemReminderService {
         'performance',
         'performance',
         'low',
-        'Long session detected. Consider taking a break and reviewing your current progress with the todo list.',
+        '提醒：当前会话已经比较长了。可以短暂整理一下思路，并结合 TODO 回顾当前进度。',
         currentTime,
       )
     }
@@ -374,7 +374,7 @@ class SystemReminderService {
         key: `agent_mention_${context.agentType}_${context.timestamp}`,
         category: 'task',
         priority: 'high',
-        content: `The user mentioned @${context.originalMention}. You MUST use the Task tool with agent type subagent_type="${context.agentType}" to delegate this task to the specified agent. Provide a detailed, self-contained task description that fully captures the user's intent for the ${context.agentType} agent to execute.`,
+        content: `老师提到了 @${context.originalMention}。你必须使用 Task 工具，并设置 subagent_type="${context.agentType}"，把任务委派给该 Agent。请提供完整、清晰、可独立执行的任务描述，准确覆盖老师的意图。`,
         timestamp: context.timestamp
       })
     })
@@ -385,7 +385,7 @@ class SystemReminderService {
         key: `file_mention_${context.filePath}_${context.timestamp}`,
         category: 'general',
         priority: 'high',
-        content: `The user mentioned @${context.originalMention}. You MUST read the entire content of the file at path: ${context.filePath} using the Read tool to understand the full context before proceeding with the user's request.`,
+        content: `老师提到了 @${context.originalMention}。你必须先使用 Read 工具读取这个文件的完整内容：${context.filePath}，在充分理解上下文后再继续处理老师的请求。`,
         timestamp: context.timestamp
       })
     })

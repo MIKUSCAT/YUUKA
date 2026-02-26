@@ -989,29 +989,30 @@ async function* checkPermissionsAndCallTool(
  * so the model knows WHEN and HOW to use each tool.
  */
 async function collectToolPrompts(tools: Tool[]): Promise<string[]> {
-  const prompts: string[] = []
-
-  await Promise.all(
+  const promptResults = await Promise.all(
     tools.map(async tool => {
       try {
-        if (typeof tool.prompt !== 'function') return
+        if (typeof tool.prompt !== 'function') return null
 
         const enabled = typeof tool.isEnabled === 'function'
           ? await tool.isEnabled()
           : true
-        if (!enabled) return
+        if (!enabled) return null
 
         const prompt = await tool.prompt()
-        if (prompt && prompt.trim().length > 0) {
-          prompts.push(prompt)
+        if (!prompt || prompt.trim().length === 0) {
+          return null
         }
+        return prompt
       } catch {
         // Skip tools whose prompt() throws
+        return null
       }
     }),
   )
 
-  return prompts
+  // Preserve the original tool order so prompt priority stays stable across runs.
+  return promptResults.filter((prompt): prompt is string => Boolean(prompt))
 }
 
 function formatError(error: unknown): string {

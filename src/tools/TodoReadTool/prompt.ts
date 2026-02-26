@@ -1,14 +1,14 @@
 export const DESCRIPTION =
-  'Reads the current todo list for task tracking in the current session/agent.'
+  '读取当前会话/Agent 的 TODO 列表（只读），用于查看任务进度与校对更新前状态。'
 
-export const PROMPT = `Use this tool to read the current todo list.
+export const PROMPT = `使用 TodoRead 工具读取当前 TODO 列表（只读）。
 
-When to use:
-- The user asks to see the todo list or progress
-- You want to verify the current todo state before updating it
+适用场景：
+- 老师要看 TODO 列表或当前进度
+- 调用 TodoWrite 前，需要先确认当前 TODO 状态
+- 你担心直接写入会覆盖掉已有项目时
 
-Notes:
-- This tool is read-only and does not modify any state.
-- To create/update todos, use TodoWrite.
+说明：
+- 这个工具是只读的，不会修改任何状态。
+- 创建/更新 TODO 请使用 \`TodoWrite\`。
 `
-

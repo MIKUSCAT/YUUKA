@@ -15,18 +15,20 @@ import { TREE_END } from '@constants/figures'
 let lastUpdatedTodos: TodoItem[] = []
 
 const TodoItemSchema = z.object({
-  content: z.string().min(1).describe('The task description or content'),
+  content: z.string().min(1).describe('TODO 项内容（任务描述）'),
   status: z
     .enum(['pending', 'in_progress', 'completed'])
-    .describe('Current status of the task'),
+    .describe('任务状态（pending / in_progress / completed）'),
   priority: z
     .enum(['high', 'medium', 'low'])
-    .describe('Priority level of the task'),
-  id: z.string().min(1).describe('Unique identifier for the task'),
+    .describe('任务优先级（high / medium / low）'),
+  id: z.string().min(1).describe('任务唯一 ID（稳定且不可重复）'),
 })
 
 const inputSchema = z.strictObject({
-  todos: z.array(TodoItemSchema).describe('The updated todo list'),
+  todos: z
+    .array(TodoItemSchema)
+    .describe('完整 TODO 列表（整表写入，会覆盖当前列表）'),
 })
 
 function validateTodos(todos: TodoItem[]): ValidationResult {
@@ -95,11 +97,11 @@ function generateTodoSummary(todos: TodoItem[]): string {
   }
 
   // Enhanced summary with statistics
-  let summary = `Updated ${stats.total} todo(s)`
+  let summary = `已更新 ${stats.total} 个 TODO`
   if (stats.total > 0) {
-    summary += ` (${stats.pending} pending, ${stats.inProgress} in progress, ${stats.completed} completed)`
+    summary += `（${stats.pending} 待处理，${stats.inProgress} 进行中，${stats.completed} 已完成）`
   }
-  summary += '. Continue tracking your progress with the todo list.'
+  summary += '。请继续用 TODO 跟踪进度。'
 
   return summary
 }
@@ -130,13 +132,13 @@ export const TodoWriteTool = {
   },
   renderResultForAssistant(result) {
     // Match official implementation - return static confirmation message
-    return 'Todos have been modified successfully. Ensure that you continue to use the todo list to track your progress. Please proceed with the current tasks if applicable'
+    return 'TodoWrite 已成功更新 TODO 列表。请继续用 TODO 跟踪进度，并根据当前任务继续执行。'
   },
   renderToolUseMessage(input, { verbose }) {
     const todos = input.todos || []
     const total = todos.length
     const completed = todos.filter((t: any) => t.status === 'completed').length
-    return `${completed}/${total} tasks`
+    return `${completed}/${total} 项已完成`
   },
   renderToolUseRejectedMessage() {
     return <FallbackToolUseRejectedMessage />
@@ -154,7 +156,7 @@ export const TodoWriteTool = {
       if (currentTodos.length === 0) {
         return (
           <Box flexDirection="column">
-            <Text color={theme.secondaryText}>{TREE_END} (No content)</Text>
+            <Text color={theme.secondaryText}>{TREE_END} (暂无内容)</Text>
           </Box>
         )
       }

@@ -21,7 +21,7 @@ export function formatSystemPromptWithContext(
     context,
   })
   if (runtimeHeaders.length > 0) {
-    enhancedPrompt.push('\n---\n# Runtime Resources\n')
+    enhancedPrompt.push('\n---\n# 运行时资源\n')
     enhancedPrompt.push(...runtimeHeaders)
     enhancedPrompt.push('\n---\n')
   }
@@ -57,7 +57,7 @@ export function formatSystemPromptWithContext(
   }
 
   enhancedPrompt.push(
-    `\nAs you answer the user's questions, you can use the following context:\n`,
+    `\n在回答老师问题时，可以参考以下上下文：\n`,
   )
 
   const filteredContext = Object.fromEntries(

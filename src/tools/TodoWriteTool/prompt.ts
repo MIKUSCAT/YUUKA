@@ -1,63 +1,57 @@
 export const DESCRIPTION =
-  'Creates and manages todo items for task tracking and progress management in the current session.'
+  '创建或更新当前会话/Agent 的 TODO 列表（整表写入），用于任务跟踪与进度管理。'
 
-export const PROMPT = `Use this tool to create and manage todo items for tracking tasks and progress. This tool provides comprehensive todo management:
+export const PROMPT = `使用 TodoWrite 工具创建和更新 TODO 列表，用来跟踪任务与进度。
 
-## When to Use This Tool
+## 核心规则（必须遵守）
 
-Use this tool proactively in these scenarios:
+- **TodoWrite 接收的是完整 todos 数组，会覆盖当前 TODO 列表。**
+- 如果不确定当前列表内容，先调用 \`TodoRead\`，再调用 \`TodoWrite\`。
+- 不要在普通文本里写“[创建TODO…] / [更新TODO…]”来代替工具调用；需要更新 TODO 时，必须真正调用 \`TodoWrite\`。
+- 同一时间最多只能有 **1 个** \`in_progress\`（否则会校验失败）。
+- 完成任务时，先调用 \`TodoWrite\` 更新状态，再发最终文字回复。
 
-1. **Complex multi-step tasks** - When a task requires 3 or more distinct steps or actions
-2. **Non-trivial and complex tasks** - Tasks that require careful planning or multiple operations
-3. **User explicitly requests todo list** - When the user directly asks you to use the todo list
-4. **User provides multiple tasks** - When users provide a list of things to be done (numbered or comma-separated)
-5. **After receiving new instructions** - Immediately capture user requirements as todos
-6. **When you start working on a task** - Mark it as in_progress BEFORE beginning work. Ideally you should only have one todo as in_progress at a time
-7. **After completing a task** - Mark it as completed and add any new follow-up tasks discovered during implementation
+## 何时使用这个工具
 
-## When NOT to Use This Tool
+请主动在这些场景使用：
 
-Skip using this tool when:
-1. There is only a single, straightforward task
-2. The task is trivial and tracking it provides no organizational benefit
-3. The task can be completed in less than 3 trivial steps
-4. The task is purely conversational or informational
+1. **复杂多步骤任务**：任务需要 3 步或更多步骤
+2. **需要规划的任务**：需要分解、跟踪或随时调整步骤
+3. **老师明确要求 TODO**：老师要求你列计划、看进度、维护任务列表
+4. **一次收到多个任务**：老师给了编号列表/多条需求
+5. **收到新指令后**：及时写入 TODO，避免遗漏
+6. **开始执行前**：把当前要做的项标为 \`in_progress\`
+7. **完成后**：立即标记 \`completed\`，并补上新发现的后续事项
 
-## Task States and Management
+## 何时可以不使用
 
-1. **Task States**: Use these states to track progress:
-   - pending: Task not yet started
-   - in_progress: Currently working on (limit to ONE task at a time)
-   - completed: Task finished successfully
+以下情况通常可以不使用：
+1. 只有一个非常简单、很快就能完成的任务
+2. 纯聊天/纯解释，不涉及执行步骤和进度跟踪
+3. 跟踪 TODO 不会带来实际帮助的微小操作
 
-2. **Task Management**:
-   - Update task status in real-time as you work
-   - Mark tasks complete IMMEDIATELY after finishing (don't batch completions)
-   - Only have ONE task in_progress at any time
-   - Complete current tasks before starting new ones
-   - Remove tasks that are no longer relevant from the list entirely
+## 状态与管理规范
 
-3. **Task Completion Requirements**:
-   - ONLY mark a task as completed when you have FULLY accomplished it
-   - If you encounter errors, blockers, or cannot finish, keep the task as in_progress
-   - When blocked, create a new task describing what needs to be resolved
-   - Never mark a task as completed if:
-     - Tests are failing
-     - Implementation is partial
-     - You encountered unresolved errors
-     - You couldn't find necessary files or dependencies
+1. **状态枚举**（只能用这些值）：
+   - \`pending\`：未开始
+   - \`in_progress\`：进行中（同一时间最多 1 个）
+   - \`completed\`：已完成
 
-4. **Task Breakdown**:
-   - Create specific, actionable items
-   - Break complex tasks into smaller, manageable steps
-   - Use clear, descriptive task names
+2. **更新时机**：
+   - 边做边更新，不要最后一次性批量改状态
+   - 做完立刻标记 \`completed\`
+   - 被卡住时，不要误标完成；可以新增一个 TODO 记录阻塞点
 
-## Tool Capabilities
+3. **拆分原则**：
+   - 写具体、可执行的事项
+   - 大任务拆成小步骤
+   - 名称清晰，方便回看
 
-- **Create new todos**: Add tasks with content, priority, and status
-- **Update existing todos**: Modify any aspect of a todo (status, priority, content)
-- **Delete todos**: Remove completed or irrelevant tasks
-- **Batch operations**: Update multiple todos in a single operation
-- **Clear all todos**: Reset the entire todo list
+## 使用方式说明（重要）
 
-When in doubt, use this tool. Being proactive with task management demonstrates attentiveness and ensures you complete all requirements successfully.`
+- 本工具通过提交一份“完整 TODO 列表”来实现创建/更新/删除（整表覆盖）。
+- 想删除某项：在提交的新数组里移除它。
+- 想修改某项：保留同一个 \`id\`，修改对应字段。
+- 想新增某项：新增一个唯一 \`id\` 的条目。
+
+拿不准时，优先：\`TodoRead -> TodoWrite\`。`

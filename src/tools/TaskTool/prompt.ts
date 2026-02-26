@@ -44,49 +44,51 @@ export async function getPrompt(safeMode: boolean): Promise<string> {
 
 ---
 
-Launch a new agent to handle complex, multi-step tasks autonomously.
+使用 Task 工具启动一个 Agent，让它自主处理复杂、多步骤任务。
 
-Available agent types and the tools they have access to:
+可用 Agent 类型（以及它们可使用的工具）：
 ${agentDescriptions}
 
-When using the Task tool, you must specify the agent type parameter subagent_type.
-You may optionally pass team_name and name to route the task through process teammates when process mode is enabled.
-Use wait_for_completion=false when you need true parallel orchestration (launch first, coordinate while running, then check with TaskStatus).
-When team_name is used, teammates should coordinate via SendMessage and shared task board tools (TaskCreate/TaskList/TaskUpdate).
+使用 Task 工具时，必须填写 Agent 类型参数 \`subagent_type\`。
+如果启用了进程模式，可以额外传 \`team_name\` 和 \`name\`，把任务路由到 TEAM/AGENT 进程。
+如果需要真正的并行编排（先启动、边跑边协调、再查状态），请使用 \`wait_for_completion=false\`。
+使用 \`team_name\` 时，队友应通过 \`SendMessage\` 和共享任务板工具（\`TaskCreate/TaskList/TaskUpdate\`）协作。
 
-When to use the Agent tool:
-- When you are instructed to execute custom slash commands. Use the Agent tool with the slash command invocation as the entire prompt. The slash command can take arguments. For example: Task(description="Check the file", prompt="/check-file path/to/file.py")
+## 何时使用 Task 工具
+- 当任务明显适合某个 Agent（研究、审查、专项处理）时，直接调用
+- 当需要执行自定义斜杠命令时，把斜杠命令作为完整 prompt 交给 Task 工具（可带参数）
+- 例如：\`Task(description="检查文件", prompt="/check-file path/to/file.py")\`
 
-When NOT to use the Agent tool:
-- If you want to read a specific file path, use the ${FileReadTool.name} or ${GlobTool.name} tool instead of the Agent tool, to find the match more quickly
-- If you are searching for a specific class definition like "class Foo", use the ${GlobTool.name} tool instead, to find the match more quickly
-- If you are searching for code within a specific file or set of 2-3 files, use the ${FileReadTool.name} tool instead of the Agent tool, to find the match more quickly
-- Other tasks that are not related to the agent descriptions above
+## 何时不要使用 Task 工具
+- 如果只是读取一个明确文件路径，优先用 ${FileReadTool.name} / ${GlobTool.name}，更快
+- 如果只是搜索某个类定义（如 \`class Foo\`），优先用 ${GlobTool.name}
+- 如果只在 2-3 个文件里找代码，优先用 ${FileReadTool.name}
+- 与上述 Agent 描述无关的简单任务，不要硬用 Task 工具
 
-Usage notes:
-1. Launch multiple agents concurrently whenever possible, to maximize performance; to do that, use a single message with multiple tool uses
-2. If you need the lead to keep coordinating while teammates run, use Task(wait_for_completion=false) for true parallel launch, then use TaskStatus / SendMessage / shared task tools during execution
-3. If you already know all independent subtasks and just want a deterministic batch result, prefer TaskBatch
-4. In one parallel orchestration turn, use exactly one TEAM and create multiple AGENTs inside it
-5. After detached launch, keep task_id/team_name/agent_name and use TaskStatus to check or wait later
-6. When the teammate is done, summarize key outcomes to the user in plain text.
-7. Teammates run in TEAM process mode; they can coordinate during execution via SendMessage and shared Task board tools.
-8. The agent's outputs should generally be trusted
-9. Clearly tell the agent whether you expect it to write code or just to do research (search, file reads, web fetches, etc.), since it is not aware of the user's intent
-10. If the agent description mentions that it should be used proactively, then you should try your best to use it without the user having to ask for it first. Use your judgement.
+## 使用注意事项
+1. 能并行就并行：在同一条消息里发起多个工具调用，可以同时启动多个 Agent
+2. 如果需要 lead 一边协调一边等队友跑，使用 \`Task(wait_for_completion=false)\`，然后用 \`TaskStatus / SendMessage / 共享任务工具\` 协调
+3. 如果已经明确所有独立子任务且只想要稳定汇总结果，优先用 \`TaskBatch\`
+4. 一轮并行编排里只使用一个 TEAM，并在该 TEAM 内创建多个 AGENT
+5. 分离启动后要保存 \`task_id/team_name/agent_name\`，后续用 \`TaskStatus\` 查询/等待
+6. 队友完成后，要用自然语言向老师总结关键结果
+7. 队友运行在 TEAM 进程模式中，可通过 \`SendMessage\` 和共享任务板协作
+8. 一般情况下可以信任 Agent 输出，但关键结论要做必要验算
+9. 调用前要明确告诉 Agent 预期是“写代码”还是“做研究/搜索/读文件/抓网页”等
+10. 如果某个 Agent 描述写了“应主动使用”，在合适场景下就主动调用，不必等老师点名
 
-Example usage:
+## 示例
 
 <example_agent_descriptions>
-"code-reviewer": use this agent after you are done writing a signficant piece of code
-"greeting-responder": use this agent when to respond to user greetings with a friendly joke
+"code-reviewer": 在完成一段较重要代码后使用
+"greeting-responder": 在回复老师问候时使用（带一点友好玩笑）
 </example_agent_description>
 
 <example>
-user: "Please write a function that checks if a number is prime"
-assistant: Sure let me write a function that checks if a number is prime
-assistant: First let me use the ${FileWriteTool.name} tool to write a function that checks if a number is prime
-assistant: I'm going to use the ${FileWriteTool.name} tool to write the following code:
+user: "请写一个判断质数的函数"
+assistant: 好的，我来写一个判断质数的函数。
+assistant: 我先用 ${FileWriteTool.name} 工具写代码。
+assistant: 我将用 ${FileWriteTool.name} 写入以下代码：
 <code>
 function isPrime(n) {
   if (n <= 1) return false
@@ -97,17 +99,16 @@ function isPrime(n) {
 }
 </code>
 <commentary>
-Since a signficant piece of code was written and the task was completed, now use the code-reviewer agent to review the code
+已经完成一段较重要代码，可以再调用 code-reviewer 做一次审查
 </commentary>
-assistant: Now let me use the code-reviewer agent to review the code
-assistant: Uses the Task tool to launch the with the code-reviewer agent
+assistant: 现在我用 Task 工具调用 code-reviewer 来审查这段代码。
 </example>
 
 <example>
-user: "Hello"
+user: "你好"
 <commentary>
-Since the user is greeting, use the greeting-responder agent to respond with a friendly joke
+老师是在打招呼，可以调用 greeting-responder 用轻松一点的方式回复
 </commentary>
-assistant: "I'm going to use the Task tool to launch the with the greeting-responder agent"
+assistant: "我将用 Task 工具调用 greeting-responder 来回复。"
 </example>`
 }

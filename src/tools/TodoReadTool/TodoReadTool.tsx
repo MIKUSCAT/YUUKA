@@ -13,17 +13,17 @@ const inputSchema = z
     status: z
       .array(z.enum(['pending', 'in_progress', 'completed']))
       .optional()
-      .describe('Optional: filter by status'),
+      .describe('可选：按状态过滤'),
     priority: z
       .array(z.enum(['high', 'medium', 'low']))
       .optional()
-      .describe('Optional: filter by priority'),
+      .describe('可选：按优先级过滤'),
     query: z
       .string()
       .optional()
-      .describe('Optional: case-insensitive search in todo content'),
+      .describe('可选：按 TODO 内容模糊搜索（不区分大小写）'),
   })
-  .describe('Read todos with optional filters')
+  .describe('读取 TODO（支持可选过滤条件）')
 
 type TodoReadInput = z.infer<typeof inputSchema>
 
@@ -60,7 +60,7 @@ function formatTodosForAssistant(result: TodoReadResult): string {
   })
 
   return [
-    `Todo summary: ${summary.completed}/${summary.total} completed (${summary.in_progress} in_progress, ${summary.pending} pending)`,
+    `TODO 摘要：${summary.completed}/${summary.total} 已完成（${summary.in_progress} 进行中，${summary.pending} 待处理）`,
     ...lines,
   ].join('\n')
 }
@@ -121,7 +121,7 @@ export const TodoReadTool = {
     if (input.priority?.length)
       parts.push(`priority=${input.priority.join('|')}`)
     if (input.query?.trim()) parts.push(`query=${JSON.stringify(input.query.trim())}`)
-    return parts.length ? parts.join(', ') : '(all)'
+    return parts.length ? parts.join(', ') : '全部'
   },
   renderToolUseRejectedMessage() {
     return <FallbackToolUseRejectedMessage />
@@ -134,7 +134,7 @@ export const TodoReadTool = {
       return (
         <Box flexDirection="row">
           <Text color={theme.secondaryText}>{TREE_END} </Text>
-          <Text color={theme.secondaryText}>(No todos)</Text>
+          <Text color={theme.secondaryText}>(暂无 TODO)</Text>
         </Box>
       )
     }
@@ -144,9 +144,9 @@ export const TodoReadTool = {
         <Box flexDirection="row">
           <Text color={theme.secondaryText}>{TREE_END} </Text>
           <Text color={theme.secondaryText}>
-            {output.summary.completed}/{output.summary.total} completed ·{' '}
-            {output.summary.in_progress} in progress · {output.summary.pending}{' '}
-            pending
+            {output.summary.completed}/{output.summary.total} 已完成 ·{' '}
+            {output.summary.in_progress} 进行中 · {output.summary.pending}{' '}
+            待处理
           </Text>
         </Box>
         {todos.map(todo => {
