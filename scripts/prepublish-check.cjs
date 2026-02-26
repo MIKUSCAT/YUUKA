@@ -15,11 +15,13 @@ if (missingFiles.length > 0) {
   process.exit(1);
 }
 
-// Check cli.cjs is executable
-const cliStats = fs.statSync('cli.cjs');
-if (!(cliStats.mode & 0o100)) {
-  console.error('ERROR: cli.cjs is not executable');
-  process.exit(1);
+// Check cli.cjs is executable (skip on Windows where file mode bits are not meaningful)
+if (process.platform !== 'win32') {
+  const cliStats = fs.statSync('cli.cjs');
+  if (!(cliStats.mode & 0o100)) {
+    console.error('ERROR: cli.cjs is not executable');
+    process.exit(1);
+  }
 }
 
 // Check package.json
