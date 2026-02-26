@@ -16,3 +16,20 @@ export const TASK_DASH = '⎯'
 
 // 圆点动画 Spinner（8帧，现代感）
 export const SPINNER_FRAMES = ['⣾', '⣽', '⣻', '⢿', '⡿', '⣟', '⣯', '⣷'] as const
+
+// 圆角面板符号
+export const BOX_TOP_LEFT = '╭'
+export const BOX_TOP_RIGHT = '╮'
+export const BOX_BOTTOM_LEFT = '╰'
+export const BOX_BOTTOM_RIGHT = '╯'
+export const BOX_HORIZONTAL = '─'
+export const BOX_VERTICAL = '│'
+
+// 任务状态图标
+export const CHECK_MARK = '✓'
+export const PENDING_CIRCLE = '○'
+export const SUB_CONNECTOR = '└'
+
+// 进度条
+export const PROGRESS_FILLED = '█'
+export const PROGRESS_EMPTY = '░'

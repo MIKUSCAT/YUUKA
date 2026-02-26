@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { Box, Text } from 'ink'
 import { getTheme } from '@utils/theme'
 import { formatDuration } from '@utils/format'
-import { TASK_DASH, SPINNER_FRAMES } from '@constants/figures'
+import { SPINNER_FRAMES } from '@constants/figures'
 import { useInterval } from '@hooks/useInterval'
 
 export interface TaskProgressPayload {
@@ -137,24 +137,30 @@ export function TaskProgressMessage({
   // Status indicator: spinning braille when active, ✓ when completed
   const indicator = isActive ? SPINNER_FRAMES[spinnerIdx] : '✓'
 
-  // Kode-style single-line compact format:
-  // ⎯ [agent-type] ⣾ Read · N tool uses · Nk tokens · Ns
-  const parts: string[] = []
+  // 列宽对齐
+  const namePad = agentType.length < 18
+    ? agentType + ' '.repeat(18 - agentType.length)
+    : agentType.slice(0, 18)
+
+  // 中间信息部分
+  const midParts: string[] = []
   if (actionLabel) {
-    parts.push(actionLabel)
+    midParts.push(actionLabel)
   } else {
-    parts.push(status)
+    midParts.push(status)
   }
-  if (toolCount != null && toolCount > 0) parts.push(`${toolCount} tool uses`)
-  if (tokenLabel) parts.push(tokenLabel)
-  if (elapsed) parts.push(elapsed)
+  if (toolCount != null && toolCount > 0) midParts.push(`${toolCount} tools`)
+  if (tokenLabel) midParts.push(tokenLabel)
+  const midText = midParts.join(' · ')
 
   return (
     <Box flexDirection="row">
-      <Text color={theme.yuuka}>  {TASK_DASH} </Text>
-      <Text bold>[{agentType}]</Text>
-      <Text color={isActive ? theme.yuuka : theme.success}> {indicator}</Text>
-      <Text color={theme.secondaryText}> {parts.join(' · ')}</Text>
+      <Text>{'  '}</Text>
+      <Text color={isActive ? theme.yuuka : theme.success}>{indicator}</Text>
+      <Text>{' '}</Text>
+      <Text bold={isActive}>{namePad}</Text>
+      <Text color={theme.secondaryText}>{midText}</Text>
+      {elapsed && <Text color={theme.secondaryText}>{'     '}{elapsed}</Text>}
     </Box>
   )
 }

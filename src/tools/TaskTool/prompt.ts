@@ -30,7 +30,21 @@ export async function getPrompt(safeMode: boolean): Promise<string> {
   }).join('\n')
   
   // Keep wording stable so agent behavior is predictable across sessions
-  return `Launch a new agent to handle complex, multi-step tasks autonomously. 
+  return `## 并行执行规则（CRITICAL）
+
+当有 2 个以上独立子任务时：
+- 优先使用 TaskBatch 一次性启动，保证进程级真并行
+- 禁止逐个调用 Task 来执行可并行的工作
+- TaskBatch 保证每个任务运行在独立的 OS 进程中
+
+决策框架：
+1. 任务之间无数据依赖？→ TaskBatch
+2. 需要边协调边执行？→ 多个 Task(wait_for_completion=false) + TaskStatus
+3. 只有一个任务？→ Task
+
+---
+
+Launch a new agent to handle complex, multi-step tasks autonomously.
 
 Available agent types and the tools they have access to:
 ${agentDescriptions}
@@ -86,7 +100,7 @@ function isPrime(n) {
 Since a signficant piece of code was written and the task was completed, now use the code-reviewer agent to review the code
 </commentary>
 assistant: Now let me use the code-reviewer agent to review the code
-assistant: Uses the Task tool to launch the with the code-reviewer agent 
+assistant: Uses the Task tool to launch the with the code-reviewer agent
 </example>
 
 <example>

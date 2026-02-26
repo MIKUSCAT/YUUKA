@@ -17,6 +17,7 @@ import type { GeminiContent, GeminiGenerateContentResponse, GeminiPart } from '.
 import { setSessionState, getSessionState } from '@utils/sessionState'
 import { GeminiHttpError } from './transport'
 import { applyGroundingCitations, extractGeminiGrounding, type GroundingSource } from './grounding'
+import { acquireApiSlot, releaseApiSlot } from '@utils/apiSemaphore'
 
 const NO_CONTENT_TEXTS = new Set([
   '(no content)',
@@ -484,15 +485,21 @@ export async function queryGeminiLLM(options: {
             : baseContents
 
         if (!options.stream) {
-          const resp = await transport.generateContent({
-            model: resolved.model,
-            contents: requestContents,
-            config: {
-              ...resolved.config,
-              abortSignal: options.signal,
-              ...(systemInstruction ? { systemInstruction } : {}),
-            },
-          })
+          await acquireApiSlot(options.signal)
+          let resp: GeminiGenerateContentResponse
+          try {
+            resp = await transport.generateContent({
+              model: resolved.model,
+              contents: requestContents,
+              config: {
+                ...resolved.config,
+                abortSignal: options.signal,
+                ...(systemInstruction ? { systemInstruction } : {}),
+              },
+            })
+          } finally {
+            releaseApiSlot()
+          }
 
           const assistantMessage = geminiResponseToAssistantMessage(resp, {
             model: resolved.model,
@@ -521,15 +528,22 @@ export async function queryGeminiLLM(options: {
           return assistantMessage
         }
 
-        const stream = await transport.generateContentStream({
-          model: resolved.model,
-          contents: requestContents,
-          config: {
-            ...resolved.config,
-            abortSignal: options.signal,
-            ...(systemInstruction ? { systemInstruction } : {}),
-          },
-        })
+        await acquireApiSlot(options.signal)
+        let stream: AsyncIterable<GeminiGenerateContentResponse>
+        try {
+          stream = await transport.generateContentStream({
+            model: resolved.model,
+            contents: requestContents,
+            config: {
+              ...resolved.config,
+              abortSignal: options.signal,
+              ...(systemInstruction ? { systemInstruction } : {}),
+            },
+          })
+        } catch (e) {
+          releaseApiSlot()
+          throw e
+        }
 
         const chunks: GeminiGenerateContentResponse[] = []
         let lastUsage: GeminiGenerateContentResponse['usageMetadata'] | undefined
@@ -559,6 +573,7 @@ export async function queryGeminiLLM(options: {
             }
           }
         }
+        releaseApiSlot()
 
         const aggregatedParts = aggregateStreamParts(chunks)
         const synthetic: GeminiGenerateContentResponse = {
@@ -596,6 +611,7 @@ export async function queryGeminiLLM(options: {
 
         return assistantMessage
       } catch (error) {
+        releaseApiSlot() // 确保出错时释放信号量
         const meta = isRetryableGeminiError(error)
         if (attempt >= MAX_ATTEMPTS || !meta.retryable || options.signal.aborted || isAbortError(error)) {
           throw error

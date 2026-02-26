@@ -1,7 +1,23 @@
-import React from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { Box, Text } from 'ink'
 import { getTheme } from '@utils/theme'
 import { formatDuration } from '@utils/format'
+import { useInterval } from '@hooks/useInterval'
+import { useTerminalSize } from '@hooks/useTerminalSize'
+import {
+  BOX_TOP_LEFT,
+  BOX_TOP_RIGHT,
+  BOX_BOTTOM_LEFT,
+  BOX_BOTTOM_RIGHT,
+  BOX_HORIZONTAL,
+  BOX_VERTICAL,
+  CHECK_MARK,
+  PENDING_CIRCLE,
+  SUB_CONNECTOR,
+  SPINNER_FRAMES,
+  PROGRESS_FILLED,
+  PROGRESS_EMPTY,
+} from '@constants/figures'
 import type { TaskProgressPayload } from './TaskProgressMessage'
 
 export interface TaskProgressItem {
@@ -21,17 +37,27 @@ interface Props {
   items: TaskProgressItem[]
 }
 
+// ── 常量 ──────────────────────────────────────────
+
+const NAME_WIDTH = 18
+const STATUS_WIDTH = 20
+const TIME_WIDTH = 6
+
 function truncate(text: string, max: number): string {
-  return text.length > max ? `${text.slice(0, max)}…` : text
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text
+}
+
+function pad(text: string, width: number): string {
+  if (text.length >= width) return text.slice(0, width)
+  return text + ' '.repeat(width - text.length)
+}
+
+function padStart(text: string, width: number): string {
+  if (text.length >= width) return text.slice(0, width)
+  return ' '.repeat(width - text.length) + text
 }
 
 type BoardState = 'open' | 'in_progress' | 'completed'
-
-const PREFIX_WIDTH = '[PROGRESS]'.length
-
-function prefixCell(prefix: string): string {
-  return prefix.padEnd(PREFIX_WIDTH, ' ')
-}
 
 function normalizeTaskState(progress: TaskProgressPayload | null): BoardState {
   const rawState = String(progress?.taskState || '').trim().toLowerCase()
@@ -60,26 +86,6 @@ function normalizeTaskState(progress: TaskProgressPayload | null): BoardState {
   return 'open'
 }
 
-function summarizeStates(items: TaskProgressItem[]) {
-  const total = items.length
-  const completed = items.filter(item => normalizeTaskState(item.progress) === 'completed').length
-  const inProgress = items.filter(item => normalizeTaskState(item.progress) === 'in_progress').length
-  const open = Math.max(0, total - completed - inProgress)
-  return { total, completed, inProgress, open }
-}
-
-function statusIcon(state: BoardState): string {
-  if (state === 'completed') return '●'
-  if (state === 'in_progress') return '◐'
-  return '○'
-}
-
-function stateLabel(state: BoardState): string {
-  if (state === 'completed') return 'completed'
-  if (state === 'in_progress') return 'in_progress'
-  return 'open'
-}
-
 function groupByAgent(items: TaskProgressItem[]) {
   const byAgent = new Map<string, TaskProgressItem[]>()
   for (const item of items) {
@@ -92,123 +98,235 @@ function groupByAgent(items: TaskProgressItem[]) {
   return Array.from(byAgent.entries())
 }
 
+// ── 子组件 ────────────────────────────────────────
+
+function AgentRow({
+  agentName,
+  state,
+  statusText,
+  elapsedMs,
+  subStatus,
+  panelWidth,
+}: {
+  agentName: string
+  state: BoardState
+  statusText: string
+  elapsedMs: number | null
+  subStatus: string | null
+  panelWidth: number
+}) {
+  const theme = getTheme()
+  const [spinnerIdx, setSpinnerIdx] = useState(0)
+  const isActive = state === 'in_progress'
+
+  useInterval(() => {
+    if (isActive) {
+      setSpinnerIdx(i => (i + 1) % SPINNER_FRAMES.length)
+    }
+  }, 120)
+
+  // 本地计时
+  const baseMs = useRef(typeof elapsedMs === 'number' ? elapsedMs : 0)
+  const mountTime = useRef(Date.now())
+  const [localElapsed, setLocalElapsed] = useState(
+    typeof elapsedMs === 'number' ? elapsedMs : 0,
+  )
+
+  useEffect(() => {
+    if (typeof elapsedMs === 'number') {
+      baseMs.current = elapsedMs
+      mountTime.current = Date.now()
+      setLocalElapsed(elapsedMs)
+    }
+  }, [elapsedMs])
+
+  useEffect(() => {
+    if (!isActive) return
+    const id = setInterval(() => {
+      setLocalElapsed(baseMs.current + (Date.now() - mountTime.current))
+    }, 1000)
+    return () => clearInterval(id)
+  }, [isActive])
+
+  const icon = isActive
+    ? SPINNER_FRAMES[spinnerIdx]
+    : state === 'completed'
+      ? CHECK_MARK
+      : PENDING_CIRCLE
+  const iconColor = isActive
+    ? theme.yuuka
+    : state === 'completed'
+      ? theme.success
+      : theme.secondaryText
+
+  const elapsed = localElapsed > 0 ? formatDuration(localElapsed) : '—'
+  const nameStr = pad(truncate(agentName, NAME_WIDTH - 1), NAME_WIDTH)
+  const statusStr = pad(truncate(statusText, STATUS_WIDTH - 1), STATUS_WIDTH)
+  const timeStr = padStart(elapsed, TIME_WIDTH)
+
+  // 内容宽度 = panelWidth - 2(边框) - 4(内边距)
+  const contentWidth = panelWidth - 6
+
+  return (
+    <>
+      <Box flexDirection="row">
+        <Text color={theme.secondaryText}>{BOX_VERTICAL}</Text>
+        <Text>{'  '}</Text>
+        <Text color={iconColor}>{icon}</Text>
+        <Text>{' '}</Text>
+        <Text bold={isActive}>{nameStr}</Text>
+        <Text color={theme.secondaryText}>{statusStr}</Text>
+        <Text color={theme.secondaryText}>{timeStr}</Text>
+        <Text>
+          {' '.repeat(Math.max(0, contentWidth - 3 - NAME_WIDTH - STATUS_WIDTH - TIME_WIDTH))}
+        </Text>
+        <Text color={theme.secondaryText}>{BOX_VERTICAL}</Text>
+      </Box>
+      {subStatus && isActive && (
+        <Box flexDirection="row">
+          <Text color={theme.secondaryText}>{BOX_VERTICAL}</Text>
+          <Text>{'    '}</Text>
+          <Text color={theme.secondaryText}>
+            {SUB_CONNECTOR} {truncate(subStatus, contentWidth - 6)}
+          </Text>
+          <Text>
+            {' '.repeat(Math.max(0, contentWidth - 6 - Math.min(subStatus.length, contentWidth - 6)))}
+          </Text>
+          <Text color={theme.secondaryText}>{BOX_VERTICAL}</Text>
+        </Box>
+      )}
+    </>
+  )
+}
+
+function ProgressBar({
+  completed,
+  total,
+  panelWidth,
+}: {
+  completed: number
+  total: number
+  panelWidth: number
+}) {
+  const theme = getTheme()
+  // 进度条宽度 = panelWidth - 2(边框) - 4(内边距)
+  const barWidth = Math.max(8, panelWidth - 6)
+  const ratio = total > 0 ? completed / total : 0
+  const filledCount = Math.round(ratio * barWidth)
+  const emptyCount = barWidth - filledCount
+  const bar = PROGRESS_FILLED.repeat(filledCount) + PROGRESS_EMPTY.repeat(emptyCount)
+
+  return (
+    <Box flexDirection="row">
+      <Text color={theme.secondaryText}>{BOX_VERTICAL}</Text>
+      <Text>{'  '}</Text>
+      <Text color={theme.yuuka}>{bar.slice(0, filledCount)}</Text>
+      <Text color={theme.secondaryText} dimColor>{bar.slice(filledCount)}</Text>
+      <Text>{'  '}</Text>
+      <Text color={theme.secondaryText}>{BOX_VERTICAL}</Text>
+    </Box>
+  )
+}
+
+// ── 主组件 ────────────────────────────────────────
+
 export function TaskProgressGroup({ items }: Props) {
   const theme = getTheme()
+  const { columns } = useTerminalSize()
+  const panelWidth = Math.min(columns - 2, 60)
+
   const teamName = items[0]?.teamName || items[0]?.progress?.teamName || 'default-team'
-  const teamStats = summarizeStates(items)
   const agents = groupByAgent(items)
+
+  // 统计
+  const total = items.length
+  const completed = items.filter(item => normalizeTaskState(item.progress) === 'completed').length
+
+  // ── 顶部边框 ──
+  const headerLabel = ` ${teamName} `
+  const doneLabel = ` ${completed}/${total} done `
+  const topBarFill = Math.max(0, panelWidth - 2 - headerLabel.length - doneLabel.length)
+  const topLeftLine = BOX_HORIZONTAL.repeat(Math.min(3, topBarFill))
+  const topRightLine = BOX_HORIZONTAL.repeat(Math.max(0, topBarFill - 3))
+
+  // ── 底部边框 ──
+  const bottomLine = BOX_HORIZONTAL.repeat(Math.max(0, panelWidth - 2))
+
+  // ── 空行 ──
+  const emptyLine = (
+    <Box flexDirection="row">
+      <Text color={theme.secondaryText}>{BOX_VERTICAL}</Text>
+      <Text>{' '.repeat(Math.max(0, panelWidth - 2))}</Text>
+      <Text color={theme.secondaryText}>{BOX_VERTICAL}</Text>
+    </Box>
+  )
 
   return (
     <Box flexDirection="column">
+      {/* 顶部圆角边框 */}
       <Box flexDirection="row">
-        <Text color={theme.secondaryText}>{prefixCell('[TEAM]')} </Text>
-        <Text bold>{teamName}</Text>
-        <Text color={theme.secondaryText}>
-          {' '}
-          open:{teamStats.open} in_progress:{teamStats.inProgress} completed:
-          {teamStats.completed}
-        </Text>
+        <Text color={theme.secondaryText}>{BOX_TOP_LEFT}{topLeftLine}</Text>
+        <Text color={theme.yuuka} bold>{headerLabel}</Text>
+        <Text color={theme.secondaryText}>{topRightLine}</Text>
+        <Text color={theme.secondaryText}>{doneLabel}</Text>
+        <Text color={theme.secondaryText}>{BOX_TOP_RIGHT}</Text>
       </Box>
 
+      {emptyLine}
+
+      {/* Agent 行 */}
       {agents.map(([agentName, agentItems], agentIndex) => {
-        const isLastAgent = agentIndex === agents.length - 1
-        const agentStats = summarizeStates(agentItems)
+        // 取该 agent 下最"活跃"的任务来展示
+        const bestItem =
+          agentItems.find(i => normalizeTaskState(i.progress) === 'in_progress') ||
+          agentItems.find(i => normalizeTaskState(i.progress) === 'completed') ||
+          agentItems[0]
+        const state = normalizeTaskState(bestItem.progress)
+
+        const statusText = bestItem.progress?.lastAction
+          ? bestItem.progress.lastAction
+          : bestItem.progress?.status || '等待中'
+
+        const elapsedMs =
+          typeof bestItem.progress?.elapsedMs === 'number' && bestItem.progress.elapsedMs > 0
+            ? bestItem.progress.elapsedMs
+            : null
+
+        // 子状态：最新事件
+        const latestEvent = (bestItem.events || [])
+          .filter(e => Boolean(e.content?.trim()))
+          .slice(-1)[0]
+        const subStatus = latestEvent?.content || null
+
         return (
-          <Box flexDirection="column" key={agentName}>
-            <Box flexDirection="row">
-              <Text color={theme.secondaryText}>{isLastAgent ? '└─' : '├─'}</Text>
-              <Text color={theme.secondaryText}>{prefixCell('[AGENT]')} </Text>
-              <Text bold>{agentName}</Text>
-              <Text color={theme.secondaryText}>
-                {' '}
-                open:{agentStats.open} in_progress:{agentStats.inProgress} completed:
-                {agentStats.completed}
-              </Text>
-            </Box>
-
-            {agentItems.map((item, taskIndex) => {
-              const isLastTask = taskIndex === agentItems.length - 1
-              const state = normalizeTaskState(item.progress)
-              const icon = statusIcon(state)
-              const taskLabel = item.taskId || item.progress?.taskId || '-'
-              const taskDesc = item.description || '未命名任务'
-              const elapsed =
-                typeof item.progress?.elapsedMs === 'number' && item.progress.elapsedMs > 0
-                  ? formatDuration(item.progress.elapsedMs)
-                  : null
-
-              const progressText = item.progress?.lastAction
-                ? truncate(item.progress.lastAction, 88)
-                : item.progress?.status
-                  ? truncate(item.progress.status, 88)
-                  : 'waiting...'
-
-              const eventNodes = (item.events || [])
-                .filter(event => Boolean(event.content?.trim()))
-                .slice(-4)
-
-              return (
-                <Box flexDirection="column" key={`${agentName}-${taskLabel}-${taskIndex}`}>
-                  <Box flexDirection="row">
-                    <Text color={theme.secondaryText}>
-                      {isLastAgent ? '   ' : '│  '}
-                      {isLastTask ? '└─' : '├─'}
-                    </Text>
-                    <Text color={theme.secondaryText}>{prefixCell('[TASK]')} </Text>
-                    <Text color={state === 'completed' ? theme.secondaryText : theme.yuuka}>
-                      {icon}{' '}
-                    </Text>
-                    <Text
-                      strikethrough={state === 'completed'}
-                      color={state === 'completed' ? theme.secondaryText : undefined}
-                    >
-                      {taskLabel} {taskDesc}
-                    </Text>
-                    <Text color={theme.secondaryText}> · {stateLabel(state)}</Text>
-                    {elapsed && <Text color={theme.secondaryText}> · {elapsed}</Text>}
-                  </Box>
-
-                  <Box flexDirection="row">
-                    <Text color={theme.secondaryText}>
-                      {isLastAgent ? '   ' : '│  '}
-                      {isLastTask ? '   ' : '│  '}
-                      {eventNodes.length === 0 ? '└─' : '├─'}
-                    </Text>
-                    <Text color={theme.secondaryText}>{prefixCell('[PROGRESS]')} </Text>
-                    <Text color={theme.secondaryText}>{progressText}</Text>
-                  </Box>
-
-                  {eventNodes.map((event, eventIndex) => {
-                    const isLastEvent = eventIndex === eventNodes.length - 1
-                    const prefix =
-                      event.type === 'message'
-                        ? '[MSG]'
-                        : event.type === 'status'
-                          ? '[STATUS]'
-                          : event.type === 'result'
-                            ? '[STATUS]'
-                            : '[PROGRESS]'
-                    return (
-                      <Box
-                        flexDirection="row"
-                        key={`${agentName}-${taskLabel}-event-${eventIndex}`}
-                      >
-                        <Text color={theme.secondaryText}>
-                          {isLastAgent ? '   ' : '│  '}
-                          {isLastTask ? '   ' : '│  '}
-                          {isLastEvent ? '└─' : '├─'}
-                        </Text>
-                        <Text color={theme.secondaryText}>{prefixCell(prefix)} </Text>
-                        <Text color={theme.secondaryText}>{truncate(event.content, 88)}</Text>
-                      </Box>
-                    )
-                  })}
-                </Box>
-              )
-            })}
-          </Box>
+          <React.Fragment key={agentName}>
+            <AgentRow
+              agentName={agentName}
+              state={state}
+              statusText={statusText}
+              elapsedMs={elapsedMs}
+              subStatus={subStatus}
+              panelWidth={panelWidth}
+            />
+            {/* agent 之间的呼吸空行 */}
+            {agentIndex < agents.length - 1 && emptyLine}
+          </React.Fragment>
         )
       })}
+
+      {emptyLine}
+
+      {/* 进度条 */}
+      <ProgressBar completed={completed} total={total} panelWidth={panelWidth} />
+
+      {emptyLine}
+
+      {/* 底部圆角边框 */}
+      <Box flexDirection="row">
+        <Text color={theme.secondaryText}>
+          {BOX_BOTTOM_LEFT}{bottomLine}{BOX_BOTTOM_RIGHT}
+        </Text>
+      </Box>
     </Box>
   )
 }

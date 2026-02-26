@@ -134,6 +134,12 @@ async function* runSingleTask(
   let lastElapsedMs: number | undefined
 
   try {
+    // 错开启动：每个任务延迟 index * 300ms，避免同时请求 API 触发 429
+    const staggerDelayMs = index * 300
+    if (staggerDelayMs > 0) {
+      await new Promise(r => setTimeout(r, staggerDelayMs))
+    }
+
     const validation = await TaskTool.validateInput?.(preparedTask as any, context)
     if (validation?.result === false) {
       throw new Error(validation.message || 'Task validation failed')
