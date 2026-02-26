@@ -8,6 +8,7 @@ import { getTheme } from '@utils/theme'
 import { TASK_DASH } from '@constants/figures'
 import { readTeamTask, type TeamTaskRecord } from '@services/teamManager'
 import { getTeamTaskPath, normalizeTeamName } from '@services/teamPaths'
+import { extractReportPathFromTaskText } from '@utils/taskResultSummary'
 
 const inputSchema = z.strictObject({
   team_name: z.string().describe('Team name'),
@@ -43,6 +44,7 @@ type Output = {
   token_count?: number
   error?: string
   result_text?: string
+  report_path?: string
   progress_count: number
   last_progress?: {
     status?: string
@@ -53,6 +55,11 @@ type Output = {
     created_at?: number
   }
   retrieval_status: 'success' | 'timeout'
+}
+
+function truncate(text: string, max = 100): string {
+  if (text.length <= max) return text
+  return `${text.slice(0, max - 3)}...`
 }
 
 function isFinalStatus(status: TeamTaskRecord['status']): boolean {
@@ -80,6 +87,7 @@ function buildOutput(task: TeamTaskRecord, retrievalStatus: Output['retrieval_st
     token_count: task.tokenCount,
     error: task.error,
     result_text: task.resultText,
+    report_path: extractReportPathFromTaskText(task.resultText || '') || undefined,
     progress_count: task.progress?.length ?? 0,
     last_progress: lastProgress
       ? {
@@ -182,11 +190,24 @@ Patterns:
           ? theme.warning
           : theme.secondaryText
     return (
-      <Box flexDirection="row">
-        <Text color={theme.yuuka}> {TASK_DASH} </Text>
-        <Text color={color}>
-          {output.agent_name} · {output.status} · task_id={output.task_id}
-        </Text>
+      <Box flexDirection="column">
+        <Box flexDirection="row">
+          <Text color={theme.yuuka}> {TASK_DASH} </Text>
+          <Text color={color}>
+            {output.agent_name} · {output.status} · task_id={output.task_id}
+          </Text>
+        </Box>
+        {output.status === 'completed' && output.report_path && (
+          <Box marginLeft={3}>
+            <Text color={theme.secondaryText}>REPORT_PATH: </Text>
+            <Text color={theme.success}>{truncate(output.report_path, 120)}</Text>
+          </Box>
+        )}
+        {(output.status === 'failed' || output.status === 'cancelled') && output.error && (
+          <Box marginLeft={3}>
+            <Text color={theme.warning}>{truncate(output.error, 120)}</Text>
+          </Box>
+        )}
       </Box>
     )
   },

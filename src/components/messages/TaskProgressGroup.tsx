@@ -19,6 +19,7 @@ import {
   PROGRESS_EMPTY,
 } from '@constants/figures'
 import type { TaskProgressPayload } from './TaskProgressMessage'
+import { summarizeTaskResultText } from '@utils/taskResultSummary'
 
 export interface TaskProgressItem {
   description: string
@@ -55,6 +56,12 @@ function pad(text: string, width: number): string {
 function padStart(text: string, width: number): string {
   if (text.length >= width) return text.slice(0, width)
   return ' '.repeat(width - text.length) + text
+}
+
+function normalizeInline(text: string | null | undefined): string | null {
+  if (!text) return null
+  const normalized = text.replace(/\s+/g, ' ').trim()
+  return normalized || null
 }
 
 type BoardState = 'open' | 'in_progress' | 'completed'
@@ -182,7 +189,7 @@ function AgentRow({
         </Text>
         <Text color={theme.secondaryText}>{BOX_VERTICAL}</Text>
       </Box>
-      {subStatus && isActive && (
+      {subStatus && (isActive || state === 'completed') && (
         <Box flexDirection="row">
           <Text color={theme.secondaryText}>{BOX_VERTICAL}</Text>
           <Text>{'    '}</Text>
@@ -291,7 +298,20 @@ export function TaskProgressGroup({ items }: Props) {
             : null
 
         // 子状态：当前操作详情
-        const subStatus = bestItem.progress?.lastAction || null
+        const parsedFinal = summarizeTaskResultText(bestItem.progress?.eventContent || '')
+        let subStatus = bestItem.progress?.lastAction || null
+        if (state === 'completed') {
+          if (parsedFinal.reportPath) {
+            subStatus = `REPORT_PATH: ${parsedFinal.reportPath}`
+          } else if (parsedFinal.errorSummary) {
+            subStatus = parsedFinal.errorSummary
+          } else if (
+            bestItem.progress?.eventType === 'result' ||
+            bestItem.progress?.eventType === 'status'
+          ) {
+            subStatus = normalizeInline(bestItem.progress?.eventContent) || subStatus
+          }
+        }
 
         return (
           <React.Fragment key={agentName}>

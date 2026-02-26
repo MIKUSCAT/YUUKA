@@ -162,6 +162,24 @@ async function sleepWithAbort(ms: number, signal: AbortSignal): Promise<boolean>
   })
 }
 
+function wrapGeminiRequestError(
+  error: unknown,
+  meta: {
+    stage: 'llm' | 'tools-only'
+    model: string
+    modelKey: string
+    attempt: number
+    maxAttempts: number
+  },
+): Error {
+  const raw =
+    error instanceof Error ? error.message : typeof error === 'string' ? error : String(error)
+  const message = `Gemini ${meta.stage} request failed (modelKey=${meta.modelKey}, model=${meta.model}, attempt=${meta.attempt}/${meta.maxAttempts}): ${raw}`
+  const wrapped = new Error(message)
+  ;(wrapped as any).cause = error
+  return wrapped
+}
+
 function getProjectSettings(): { settings: GeminiSettings; path: string } {
   const ensured = ensureGlobalGeminiSettings()
   const settingsPath = ensured.settingsPath || getGlobalGeminiSettingsPath()
@@ -614,7 +632,13 @@ export async function queryGeminiLLM(options: {
         releaseApiSlot() // 确保出错时释放信号量
         const meta = isRetryableGeminiError(error)
         if (attempt >= MAX_ATTEMPTS || !meta.retryable || options.signal.aborted || isAbortError(error)) {
-          throw error
+          throw wrapGeminiRequestError(error, {
+            stage: 'llm',
+            model: resolved.model,
+            modelKey,
+            attempt,
+            maxAttempts: MAX_ATTEMPTS,
+          })
         }
 
         const backoff = computeBackoffMs(attempt)
@@ -687,28 +711,63 @@ export async function queryGeminiToolsOnlyDetailed(options: {
     })
   }
 
-  const resp = await transport.generateContent({
-    model: resolved.model,
-    contents: [{ role: 'user', parts: [{ text: options.prompt }] }],
-    config: {
-      ...resolved.config,
-      abortSignal: options.signal,
-    },
-  })
+  const MAX_ATTEMPTS = 5
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const resp = await transport.generateContent({
+        model: resolved.model,
+        contents: [{ role: 'user', parts: [{ text: options.prompt }] }],
+        config: {
+          ...resolved.config,
+          abortSignal: options.signal,
+        },
+      })
 
-  const parts = resp.candidates?.[0]?.content?.parts ?? []
-  const rawText = parts
-    .map(p => (p as any).text)
-    .filter((t): t is string => typeof t === 'string')
-    .join('')
+      const parts = resp.candidates?.[0]?.content?.parts ?? []
+      const rawText = parts
+        .map(p => (p as any).text)
+        .filter((t): t is string => typeof t === 'string')
+        .join('')
 
-  const { sources, webSearchQueries, supports } = extractGeminiGrounding(resp as any)
-  const textWithCitations = applyGroundingCitations(rawText, supports)
+      const { sources, webSearchQueries, supports } = extractGeminiGrounding(resp as any)
+      const textWithCitations = applyGroundingCitations(rawText, supports)
 
-  return {
-    text: rawText.trim(),
-    textWithCitations: textWithCitations.trim(),
-    sources,
-    webSearchQueries,
+      return {
+        text: rawText.trim(),
+        textWithCitations: textWithCitations.trim(),
+        sources,
+        webSearchQueries,
+      }
+    } catch (error) {
+      const meta = isRetryableGeminiError(error)
+      const aborted = !!options.signal?.aborted || isAbortError(error)
+      if (attempt >= MAX_ATTEMPTS || !meta.retryable || aborted) {
+        throw wrapGeminiRequestError(error, {
+          stage: 'tools-only',
+          model: resolved.model,
+          modelKey: options.modelKey,
+          attempt,
+          maxAttempts: MAX_ATTEMPTS,
+        })
+      }
+
+      const backoff = computeBackoffMs(attempt)
+      if (options.signal) {
+        const wasAborted = await sleepWithAbort(backoff, options.signal)
+        if (wasAborted) {
+          throw wrapGeminiRequestError(new Error('aborted'), {
+            stage: 'tools-only',
+            model: resolved.model,
+            modelKey: options.modelKey,
+            attempt,
+            maxAttempts: MAX_ATTEMPTS,
+          })
+        }
+      } else {
+        await new Promise(resolve => setTimeout(resolve, backoff))
+      }
+    }
   }
+
+  throw new Error(`Gemini tools-only request failed unexpectedly (${options.modelKey})`)
 }

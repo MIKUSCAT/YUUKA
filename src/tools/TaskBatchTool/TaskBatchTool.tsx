@@ -14,6 +14,10 @@ import {
   encodeTaskProgress,
   parseTaskProgressText,
 } from '@components/messages/TaskProgressMessage'
+import {
+  formatTaskTerminalFailureText,
+  summarizeTaskResultText,
+} from '@utils/taskResultSummary'
 
 const DEFAULT_BATCH_CONCURRENCY = 4
 const MAX_BATCH_CONCURRENCY = 20
@@ -66,6 +70,8 @@ type TaskBatchItemResult = {
   agentType: string
   status: 'completed' | 'failed'
   output: string
+  reportPath?: string
+  errorSummary?: string
 }
 
 type TaskBatchOut = {
@@ -113,6 +119,11 @@ function resolveDefaultConcurrency(): number {
 
 function toErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+function truncate(text: string, max = 120): string {
+  if (text.length <= max) return text
+  return `${text.slice(0, max - 3)}...`
 }
 
 async function* runSingleTask(
@@ -190,7 +201,7 @@ async function* runSingleTask(
       lastElapsedMs,
     }
   } catch (error) {
-    const errorText = toErrorMessage(error)
+    const errorText = formatTaskTerminalFailureText('failed', toErrorMessage(error))
     const data: TextBlock[] = [{ type: 'text', text: errorText }] as TextBlock[]
     yield {
       index,
@@ -346,21 +357,30 @@ Hard rule:
       finished++
       const outputText =
         done.result.resultForAssistant || textBlocksToString(done.result.data)
-      const failed = done.hadRuntimeError || outputText.trim() === INTERRUPT_MESSAGE
+      const parsedSummary = summarizeTaskResultText(outputText)
+      const failed =
+        done.hadRuntimeError ||
+        parsedSummary.status === 'failed' ||
+        parsedSummary.status === 'cancelled' ||
+        outputText.trim() === INTERRUPT_MESSAGE
       const task = input.tasks[done.index]
       const finalAgentName =
         done.runtimeAgentName || task.name || `batch-${batchId}-${done.index + 1}`
       const finalTeamName = normalizeTeamName(done.runtimeTeamName || unifiedTeamName)
       const finalTaskId = done.runtimeTaskId || `seed-${done.index + 1}`
       const compactOutput = outputText.replace(/\s+/g, ' ').trim()
-      const finalEventContent =
-        compactOutput.length > 180 ? `${compactOutput.slice(0, 180)}...` : compactOutput
+      const finalEventContent = parsedSummary.reportPath
+        ? `REPORT_PATH: ${parsedSummary.reportPath}`
+        : parsedSummary.errorSummary ||
+          (compactOutput.length > 180 ? `${compactOutput.slice(0, 180)}...` : compactOutput)
       const entry: TaskBatchItemResult = {
         index: done.index + 1,
         description: task.description,
         agentType: task.subagent_type || 'general-purpose',
         status: failed ? 'failed' : 'completed',
         output: outputText,
+        ...(parsedSummary.reportPath ? { reportPath: parsedSummary.reportPath } : {}),
+        ...(parsedSummary.errorSummary ? { errorSummary: parsedSummary.errorSummary } : {}),
       }
       results[done.index] = entry
 
@@ -430,6 +450,8 @@ Hard rule:
   renderToolResultMessage(output: TaskBatchOut) {
     const theme = getTheme()
     const summaryColor = output.failed > 0 ? theme.warning : theme.success
+    const reportResults = output.results.filter(item => item.reportPath)
+    const failedResults = output.results.filter(item => item.status === 'failed')
     return (
       <Box flexDirection="column">
         <Box flexDirection="row">
@@ -440,6 +462,43 @@ Hard rule:
         {output.failed > 0 && (
           <Box flexDirection="row">
             <Text color={theme.warning}>Failed: {output.failed}</Text>
+          </Box>
+        )}
+        {reportResults.length > 0 && (
+          <Box flexDirection="column">
+            <Text color={theme.success}>Reports: {reportResults.length}</Text>
+            {reportResults.slice(0, 3).map(item => (
+              <Box key={`report-${item.index}`} marginLeft={2}>
+                <Text color={theme.secondaryText}>
+                  #{item.index} {truncate(item.reportPath || '', 90)}
+                </Text>
+              </Box>
+            ))}
+            {reportResults.length > 3 && (
+              <Box marginLeft={2}>
+                <Text color={theme.secondaryText}>
+                  ...and {reportResults.length - 3} more report paths
+                </Text>
+              </Box>
+            )}
+          </Box>
+        )}
+        {failedResults.length > 0 && (
+          <Box flexDirection="column">
+            {failedResults.slice(0, 3).map(item => (
+              <Box key={`failed-${item.index}`} marginLeft={2}>
+                <Text color={theme.warning}>
+                  #{item.index} {item.description}: {truncate(item.errorSummary || item.output.replace(/\s+/g, ' ').trim(), 90)}
+                </Text>
+              </Box>
+            ))}
+            {failedResults.length > 3 && (
+              <Box marginLeft={2}>
+                <Text color={theme.secondaryText}>
+                  ...and {failedResults.length - 3} more failed tasks
+                </Text>
+              </Box>
+            )}
           </Box>
         )}
       </Box>

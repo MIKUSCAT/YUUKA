@@ -4,11 +4,78 @@ import { resolve } from 'node:path'
 import { cwd as processCwd } from 'process'
 import { setCwd, setOriginalCwd } from '@utils/state'
 import { grantReadPermissionForOriginalDir } from '@utils/permissions/filesystem'
+import { getGlobalConfig } from '@utils/config'
+import { logError } from '@utils/log'
 
 type TeammateCliArgs = {
   cwd: string
   safe: boolean
   teammateTaskFile?: string
+}
+
+function mergeNoProxy(existing: string, additions: string[]): string {
+  const items = [...existing.split(','), ...additions]
+    .map(s => s.trim())
+    .filter(Boolean)
+  const seen = new Set<string>()
+  const result: string[] = []
+  for (const item of items) {
+    const key = item.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    result.push(item)
+  }
+  return result.join(',')
+}
+
+async function applyGlobalProxyFromConfigForTeammate(): Promise<void> {
+  try {
+    const globalConfig = getGlobalConfig()
+    const configuredProxy =
+      typeof globalConfig.proxy === 'string' ? globalConfig.proxy.trim() : ''
+
+    const proxyEnabled =
+      typeof globalConfig.proxyEnabled === 'boolean'
+        ? globalConfig.proxyEnabled
+        : true
+    const rawProxyPort = Number(globalConfig.proxyPort)
+    const proxyPort =
+      Number.isFinite(rawProxyPort) &&
+      rawProxyPort >= 1 &&
+      rawProxyPort <= 65535
+        ? Math.floor(rawProxyPort)
+        : 7890
+    const autoLocalProxy = `http://127.0.0.1:${proxyPort}`
+
+    const envProxy = String(
+      process.env['YUUKA_PROXY'] ||
+        process.env['HTTPS_PROXY'] ||
+        process.env['HTTP_PROXY'] ||
+        '',
+    ).trim()
+
+    const proxy = proxyEnabled ? autoLocalProxy : configuredProxy || envProxy
+    if (!proxy) return
+
+    if (!process.env['HTTP_PROXY']) process.env['HTTP_PROXY'] = proxy
+    if (!process.env['HTTPS_PROXY']) process.env['HTTPS_PROXY'] = proxy
+
+    const existingNoProxy =
+      String(process.env['NO_PROXY'] || process.env['no_proxy'] || '').trim()
+    const noProxy = mergeNoProxy(existingNoProxy, ['127.0.0.1', 'localhost', '::1'])
+    if (noProxy) process.env['NO_PROXY'] = noProxy
+
+    const { EnvHttpProxyAgent, setGlobalDispatcher } = await import('undici')
+    setGlobalDispatcher(
+      new EnvHttpProxyAgent({
+        httpProxy: proxy,
+        httpsProxy: proxy,
+        noProxy,
+      }),
+    )
+  } catch (error) {
+    logError(error)
+  }
 }
 
 function hasArgName(arg: string, name: string): boolean {
@@ -70,6 +137,7 @@ async function setupTeammateRuntime(cwd: string, safeMode: boolean): Promise<voi
   }
   await setCwd(cwd)
   grantReadPermissionForOriginalDir()
+  await applyGlobalProxyFromConfigForTeammate()
 
   if (safeMode) {
     if (

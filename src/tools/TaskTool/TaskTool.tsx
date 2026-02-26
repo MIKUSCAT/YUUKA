@@ -29,6 +29,10 @@ import {
 import { normalizeAgentName, normalizeTeamName } from '@services/teamPaths'
 import { TaskExecutionProgress } from './runAgentTaskExecution'
 import type { PermissionMode } from '@yuuka-types/PermissionMode'
+import {
+  formatTaskTerminalFailureText,
+  summarizeTaskResultText,
+} from '@utils/taskResultSummary'
 
 const inputSchema = z.object({
   description: z
@@ -407,10 +411,17 @@ export const TaskTool = {
             taskState.status === 'failed' ||
             taskState.status === 'cancelled'
           ) {
-            const text =
+            const rawText =
               taskState.status === 'completed'
                 ? taskState.resultText || ''
                 : taskState.error || `Task ended with status: ${taskState.status}`
+            const text =
+              taskState.status === 'completed'
+                ? rawText
+                : formatTaskTerminalFailureText(
+                    taskState.status === 'cancelled' ? 'cancelled' : 'failed',
+                    rawText,
+                  )
             yield createProgressOutput({
               agentType,
               description,
@@ -435,7 +446,10 @@ export const TaskTool = {
 
         if (child.exitCode !== null && !taskState) {
           yield createResultOutput(
-            `Teammate process exited early (code ${child.exitCode}).`,
+            formatTaskTerminalFailureText(
+              'failed',
+              `Teammate process exited early (code ${child.exitCode}).`,
+            ),
           )
           return
         }
@@ -465,8 +479,11 @@ export const TaskTool = {
               }
             })
             yield createResultOutput(
-              failedState.error ||
-                `Teammate process exited unexpectedly (code ${child.exitCode}).`,
+              formatTaskTerminalFailureText(
+                'failed',
+                failedState.error ||
+                  `Teammate process exited unexpectedly (code ${child.exitCode}).`,
+              ),
             )
             return
           }
@@ -476,7 +493,7 @@ export const TaskTool = {
       }
     } catch (error) {
       const errorText = error instanceof Error ? error.message : String(error)
-      yield createResultOutput(errorText)
+      yield createResultOutput(formatTaskTerminalFailureText('failed', errorText))
       return
     }
   },
@@ -597,6 +614,8 @@ export const TaskTool = {
 
     if (Array.isArray(content)) {
       const textBlocks = content.filter(block => block.type === 'text')
+      const combinedText = textBlocksToString(textBlocks)
+      const summary = summarizeTaskResultText(combinedText)
       const totalLength = textBlocks.reduce(
         (sum, block) => sum + block.text.length,
         0,
@@ -622,7 +641,19 @@ export const TaskTool = {
           <Box justifyContent="space-between" width="100%">
             <Box flexDirection="row">
               <Text color={theme.yuuka}> {TASK_DASH} </Text>
-              <Text color={theme.success}>Task completed</Text>
+              <Text
+                color={
+                  summary.status === 'failed' || summary.status === 'cancelled'
+                    ? theme.warning
+                    : theme.success
+                }
+              >
+                {summary.status === 'failed'
+                  ? 'Task failed'
+                  : summary.status === 'cancelled'
+                    ? 'Task cancelled'
+                    : 'Task completed'}
+              </Text>
               {textBlocks.length > 0 && (
                 <Text color={theme.secondaryText}>
                   {' '}
@@ -631,6 +662,17 @@ export const TaskTool = {
               )}
             </Box>
           </Box>
+          {summary.reportPath && (
+            <Box marginLeft={3}>
+              <Text color={theme.secondaryText}>REPORT_PATH: </Text>
+              <Text color={theme.success}>{summary.reportPath}</Text>
+            </Box>
+          )}
+          {!summary.reportPath && summary.errorSummary && (
+            <Box marginLeft={3}>
+              <Text color={theme.warning}>{summary.errorSummary}</Text>
+            </Box>
+          )}
         </Box>
       )
     }

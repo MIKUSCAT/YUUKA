@@ -8,6 +8,19 @@ import {
   TeamTaskProgress,
   updateTeamTask,
 } from '@services/teamManager'
+import { isLikelyGeminiNetworkFailureMessage } from '@utils/taskResultSummary'
+
+function enrichTeammateErrorMessage(message: string): string {
+  const normalized = String(message || '').trim()
+  if (!normalized) return 'Unknown teammate error'
+  if (!isLikelyGeminiNetworkFailureMessage(normalized)) {
+    return normalized
+  }
+  if (/Gemini\/网络请求失败/i.test(normalized)) {
+    return normalized
+  }
+  return `${normalized} (Gemini/网络请求失败；请检查网络、代理与 API 配置后重试)`
+}
 
 export async function runTeammateTask(taskFilePath: string): Promise<number> {
   const initialTask = readTeamTask(taskFilePath)
@@ -232,7 +245,9 @@ export async function runTeammateTask(taskFilePath: string): Promise<number> {
     return result.interrupted ? 130 : 0
   } catch (error) {
     isFinished = true
-    const message = error instanceof Error ? error.message : String(error)
+    const message = enrichTeammateErrorMessage(
+      error instanceof Error ? error.message : String(error),
+    )
     const wasAborted = abortController.signal.aborted || isCancelled
     updateTeamTask(taskFilePath, current => ({
       ...current,
