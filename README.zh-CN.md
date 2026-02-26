@@ -41,10 +41,11 @@ YUUKA 是一个基于 Gemini 驱动的编程 Agent，运行在你的终端中。
 - 读写和重构代码，提供上下文感知的建议
 - 实时运行 shell 命令并查看结果
 - 通过 `MemoryRead` / `MemoryWrite` 实现跨会话持久记忆
+- 跨进程 API 信号量，安全支持并行 Agent 执行
 
 **Agent 系统**
 - 使用 `@run-agent-name` 将任务委托给专门的子 Agent
-- 并行任务执行，分组树状进度显示
+- 并行任务执行，圆角面板进度显示与实时工具状态
 - 自定义 Agent：放入 `.yuuka/agents/`（项目级或全局）
 - MCP 集成，连接外部工具服务器
 

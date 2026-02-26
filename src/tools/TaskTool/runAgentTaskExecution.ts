@@ -82,6 +82,31 @@ function normalizePreview(text: string, maxLength = 200): string {
   return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text
 }
 
+function formatToolAction(name: string, input: Record<string, unknown>): string {
+  switch (name) {
+    case 'Read':
+      return `Reading ${input.file_path || ''}`
+    case 'Edit':
+      return `Editing ${input.file_path || ''}`
+    case 'Write':
+      return `Writing ${input.file_path || ''}`
+    case 'Bash':
+      return `$ ${normalizePreview(String(input.command || ''), 80)}`
+    case 'Grep':
+      return `Searching "${input.pattern || ''}"`
+    case 'Glob':
+      return `Finding ${input.pattern || ''}`
+    case 'WebFetch':
+      return `Fetching ${input.url || ''}`
+    case 'WebSearch':
+      return `Searching: ${input.query || ''}`
+    case 'Task':
+      return `Spawning ${input.description || input.subagent_type || 'agent'}`
+    default:
+      return name
+  }
+}
+
 function buildTeammateGuidance(teamName: string, teammateName: string): string {
   return `# Agent Teammate Communication
 
@@ -311,7 +336,7 @@ export async function* runAgentTaskExecutionStream(
             status: '调用工具',
             toolCount: toolUseCount,
             elapsedMs: Date.now() - startTime,
-            lastAction: content.name,
+            lastAction: formatToolAction(content.name, (content.input as Record<string, unknown>) || {}),
             teamName: normalizedTeamName,
             agentName: normalizedTeammateName,
             taskId: taskId,

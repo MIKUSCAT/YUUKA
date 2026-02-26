@@ -41,10 +41,11 @@ Built for developers who prefer the command line over the GUI.
 - Read, write, and refactor code with context-aware suggestions
 - Run shell commands and see results in real-time
 - Persistent memory across sessions via `MemoryRead` / `MemoryWrite`
+- Cross-process API rate-limit semaphore for safe parallel agent execution
 
 **Agent System**
 - Delegate tasks to specialized subagents with `@run-agent-name`
-- Parallel task execution with grouped tree-style progress display
+- Parallel task execution with rounded-panel progress display and live tool status
 - Custom agents in `.yuuka/agents/` (project or global)
 - MCP integration for external tool servers
 
