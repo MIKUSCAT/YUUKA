@@ -283,20 +283,15 @@ export function TaskProgressGroup({ items }: Props) {
           agentItems[0]
         const state = normalizeTaskState(bestItem.progress)
 
-        const statusText = bestItem.progress?.lastAction
-          ? bestItem.progress.lastAction
-          : bestItem.progress?.status || '等待中'
+        const statusText = bestItem.progress?.status || '等待中'
 
         const elapsedMs =
           typeof bestItem.progress?.elapsedMs === 'number' && bestItem.progress.elapsedMs > 0
             ? bestItem.progress.elapsedMs
             : null
 
-        // 子状态：最新事件
-        const latestEvent = (bestItem.events || [])
-          .filter(e => Boolean(e.content?.trim()))
-          .slice(-1)[0]
-        const subStatus = latestEvent?.content || null
+        // 子状态：当前操作详情
+        const subStatus = bestItem.progress?.lastAction || null
 
         return (
           <React.Fragment key={agentName}>
