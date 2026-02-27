@@ -11,6 +11,7 @@ import auth from './commands/auth'
 import memory from './commands/memory'
 import skills from './commands/skills'
 import status from './commands/status'
+import snapshot from './commands/snapshot'
 import { memoize } from 'lodash-es'
 import type { Message } from './query'
 
@@ -66,6 +67,7 @@ const COMMANDS = memoize((): Command[] => [
   mcp,
   model,
   resume,
+  snapshot,
   skills,
   status,
 ])

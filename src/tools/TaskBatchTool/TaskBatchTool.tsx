@@ -18,6 +18,11 @@ import {
   formatTaskTerminalFailureText,
   summarizeTaskResultText,
 } from '@utils/taskResultSummary'
+import { tryCreateAutoSnapshotFromContext } from '@utils/snapshotStore'
+import {
+  emitTaskDiagnosticEvent,
+  emitTaskSummaryEvent,
+} from '@utils/taskAutomation'
 
 const DEFAULT_BATCH_CONCURRENCY = 4
 const MAX_BATCH_CONCURRENCY = 20
@@ -126,11 +131,23 @@ function truncate(text: string, max = 120): string {
   return `${text.slice(0, max - 3)}...`
 }
 
+function computeStartupSpreadDelay(index: number, maxConcurrency: number): number {
+  if (index <= 0) return 0
+  const safeConcurrency = Math.max(1, Math.floor(maxConcurrency))
+  // Keep a small startup spread to reduce transient 429,
+  // but avoid linear delay growth that hurts true parallelism.
+  const slot = index % safeConcurrency
+  const base = slot * 80
+  const jitter = Math.floor(Math.random() * 35)
+  return base + jitter
+}
+
 async function* runSingleTask(
   index: number,
   task: TaskBatchInput['tasks'][number],
   batchId: string,
   unifiedTeamName: string,
+  maxConcurrency: number,
   context: any,
 ): AsyncGenerator<TaskBatchWorkerEvent, void, unknown> {
   const preparedTask = {
@@ -145,8 +162,33 @@ async function* runSingleTask(
   let lastElapsedMs: number | undefined
 
   try {
-    // 错开启动：每个任务延迟 index * 300ms，避免同时请求 API 触发 429
-    const staggerDelayMs = index * 300
+    yield {
+      index,
+      progress: {
+        type: 'progress' as const,
+        content: createAssistantMessage(
+          encodeTaskProgress({
+            agentType: task.subagent_type || 'general-purpose',
+            status: '启动中',
+            description: task.description,
+            model: task.model_name || 'task',
+            toolCount: 0,
+            elapsedMs: 0,
+            lastAction: `batch admitted worker ${preparedTask.name}`,
+            teamName: unifiedTeamName,
+            agentName: preparedTask.name,
+            taskId: `seed-${index + 1}`,
+            taskState: 'in_progress',
+            eventType: 'status',
+            eventContent: 'worker admitted',
+          }),
+        ),
+      },
+    }
+
+    // Small bounded spread (instead of index-based linear delay) keeps API safer
+    // while preserving high parallel throughput.
+    const staggerDelayMs = computeStartupSpreadDelay(index, maxConcurrency)
     if (staggerDelayMs > 0) {
       await new Promise(r => setTimeout(r, staggerDelayMs))
     }
@@ -288,6 +330,12 @@ Hard rule:
     return { result: true }
   },
   async *call(input: TaskBatchInput, context) {
+    const snapshotLabel = `taskbatch:${input.tasks.length}`.slice(0, 96)
+    const createAutoSnapshot = (reason: string) => {
+      tryCreateAutoSnapshotFromContext(context as any, reason, snapshotLabel)
+    }
+    createAutoSnapshot('taskbatch_before')
+
     const batchId = Date.now().toString(36)
     const defaultBatchConcurrency = Math.max(
       MIN_BATCH_PARALLELISM,
@@ -306,6 +354,12 @@ Hard rule:
       input.tasks.map(task => normalizeTeamName(task.team_name || fallbackTeamBase)),
     )
     if (normalizedTeams.size > 1) {
+      emitTaskDiagnosticEvent('TaskBatch', {
+        status: 'failed',
+        reason: 'multiple-team-name-detected',
+        total: input.tasks.length,
+      })
+      createAutoSnapshot('taskbatch_after_failed')
       throw new Error('TaskBatch detected multiple team_name values in one call')
     }
     const unifiedTeamName =
@@ -326,18 +380,18 @@ Hard rule:
         content: createAssistantMessage(
           encodeTaskProgress({
             agentType: task.subagent_type || 'general-purpose',
-            status: '启动中',
+            status: '排队中',
             description: task.description,
             model: task.model_name || 'task',
             toolCount: 0,
             elapsedMs: 0,
-            lastAction: `batch preparing worker ${seedAgentName}`,
+            lastAction: `batch queued worker ${seedAgentName}`,
             teamName: unifiedTeamName,
             agentName: seedAgentName,
             taskId: `seed-${i + 1}`,
-            taskState: 'in_progress',
+            taskState: 'open',
             eventType: 'status',
-            eventContent: 'worker spawned',
+            eventContent: 'queued by batch scheduler',
           }),
         ),
       }
@@ -345,7 +399,7 @@ Hard rule:
 
     let finished = 0
     const generators = input.tasks.map((task, index) =>
-      runSingleTask(index, task, batchId, unifiedTeamName, context),
+      runSingleTask(index, task, batchId, unifiedTeamName, maxConcurrency, context),
     )
 
     for await (const done of all(generators, maxConcurrency)) {
@@ -423,6 +477,26 @@ Hard rule:
       succeeded: normalizedResults.length - failedCount,
       failed: failedCount,
       results: normalizedResults,
+    }
+
+    if (failedCount > 0) {
+      emitTaskDiagnosticEvent('TaskBatch', {
+        status: 'failed',
+        total,
+        succeeded: data.succeeded,
+        failed: failedCount,
+        teamName: unifiedTeamName,
+      })
+      createAutoSnapshot('taskbatch_after_failed')
+    } else {
+      emitTaskSummaryEvent('TaskBatch', {
+        status: 'completed',
+        total,
+        succeeded: data.succeeded,
+        maxConcurrency,
+        teamName: unifiedTeamName,
+      })
+      createAutoSnapshot('taskbatch_after_completed')
     }
 
     yield {

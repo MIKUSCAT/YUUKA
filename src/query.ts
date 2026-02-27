@@ -182,6 +182,97 @@ function computeReconnectBackoffMs(attempt: number): number {
   return Math.min(cap, exp + jitter)
 }
 
+function extractAssistantTextContent(message: AssistantMessage): string {
+  const content = message.message.content
+  if (typeof content === 'string') {
+    return content
+  }
+  if (!Array.isArray(content)) {
+    return ''
+  }
+  return content
+    .filter(block => block?.type === 'text')
+    .map(block => (block as any).text || '')
+    .join('\n')
+}
+
+function hasToolUseBlock(message: AssistantMessage): boolean {
+  const content = message.message.content
+  return Array.isArray(content) && content.some(block => block?.type === 'tool_use')
+}
+
+function stripFencedCodeBlocks(text: string): string {
+  return text.replace(/```[\s\S]*?```/g, '')
+}
+
+const PSEUDO_TODO_PATTERNS: RegExp[] = [
+  /\[\s*(创建|更新|添加|维护|标记|开始)\s*TODO[^\]]*\]/i,
+  /\[\s*(先|然后)?\s*调用?\s*TodoWrite[^\]]*\]/i,
+  /\[\s*创建\s*待办[^\]]*\]/i,
+]
+
+function looksLikePseudoTodoAction(message: AssistantMessage): boolean {
+  if (hasToolUseBlock(message)) return false
+  const raw = extractAssistantTextContent(message)
+  if (!raw) return false
+  const text = stripFencedCodeBlocks(raw)
+  if (!text) return false
+  return PSEUDO_TODO_PATTERNS.some(pattern => pattern.test(text))
+}
+
+async function repairPseudoTodoActionIfNeeded(
+  assistantMessage: AssistantMessage,
+  baseMessages: Message[],
+  fullSystemPrompt: string[],
+  effectiveTools: Tool[],
+  toolUseContext: ExtendedToolUseContext,
+): Promise<AssistantMessage> {
+  const hasTodoWrite = effectiveTools.some(tool => tool.name === 'TodoWrite')
+  if (!hasTodoWrite) return assistantMessage
+  if (!looksLikePseudoTodoAction(assistantMessage)) return assistantMessage
+
+  const preview = extractAssistantTextContent(assistantMessage)
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 360)
+
+  const correctionReminder = createUserMessage(
+    `<system-reminder>
+检测到上一条候选回复出现了伪 TODO 动作文本（例如 [创建TODO...]），这会导致执行错误。
+请立刻纠偏并重新回答，严格遵守：
+1) 需要更新 TODO 时，必须真正调用 TodoWrite（必要时先调用 TodoRead）。
+2) 不要输出任何“[创建TODO...] / [更新TODO...] / [调用TodoWrite...]”伪动作文本。
+3) 如果当前阶段不应调用工具（例如仅确认是否开始深度研究），就只输出自然语言，不要伪动作文本。
+禁止复用的错误片段：${preview || '(空)'}
+</system-reminder>`,
+  )
+
+  try {
+    const repaired = await queryLLM(
+      normalizeMessagesForAPI([...baseMessages, assistantMessage, correctionReminder]),
+      fullSystemPrompt,
+      toolUseContext.options.maxThinkingTokens,
+      effectiveTools,
+      toolUseContext.abortController.signal,
+      {
+        safeMode: toolUseContext.options.safeMode ?? false,
+        model: toolUseContext.options.model || 'main',
+        prependCLISysprompt: true,
+        toolUseContext,
+      },
+    )
+
+    // 若纠偏后仍是伪 TODO 文本且没有工具调用，则保留原结果，避免额外漂移。
+    if (looksLikePseudoTodoAction(repaired) && !hasToolUseBlock(repaired)) {
+      return assistantMessage
+    }
+    return repaired
+  } catch (error) {
+    logError(error)
+    return assistantMessage
+  }
+}
+
 async function sleepWithAbort(ms: number, signal: AbortSignal): Promise<boolean> {
   if (signal.aborted) return true
   return await new Promise(resolve => {
@@ -557,6 +648,19 @@ export async function* query(
   // - 非并行安全工具（Bash/Edit/Write/...）只保留第一个，后续非并行安全调用会被裁掉
   // - 并行安全工具（Task/Read/WebSearch/...）即使出现在后面也会保留
   // 这样既能抑制高风险连发，又不影响并行任务启动。
+  assistantMessage = applyToolUseSerialGate(
+    assistantMessage,
+    effectiveTools,
+  )
+
+  assistantMessage = await repairPseudoTodoActionIfNeeded(
+    assistantMessage,
+    messages,
+    fullSystemPrompt,
+    effectiveTools,
+    effectiveToolUseContext,
+  )
+
   assistantMessage = applyToolUseSerialGate(
     assistantMessage,
     effectiveTools,

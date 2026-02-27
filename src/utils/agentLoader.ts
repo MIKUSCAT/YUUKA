@@ -1,7 +1,7 @@
 /**
  * Agent configuration loader
  * Loads agent configurations from markdown files with YAML frontmatter.
- * Uses `.yuuka/agents` directories.
+ * Uses global `~/.yuuka/agents` directory.
  */
 
 import { existsSync, readFileSync, readdirSync, statSync, watch, FSWatcher } from 'fs'
@@ -16,7 +16,7 @@ export interface AgentConfig {
   whenToUse: string          // Description of when to use this agent  
   tools: string[] | '*'      // Tool permissions
   systemPrompt: string       // System prompt content
-  location: 'built-in' | 'user' | 'project'
+  location: 'built-in' | 'user'
   color?: string            // Optional UI color
   model_name?: string       // Optional model override
 }
@@ -62,7 +62,7 @@ function parseTools(tools: any): string[] | '*' {
 /**
  * Scan a directory for agent configuration files
  */
-async function scanAgentDirectory(dirPath: string, location: 'user' | 'project'): Promise<AgentConfig[]> {
+async function scanAgentDirectory(dirPath: string, location: 'user'): Promise<AgentConfig[]> {
   if (!existsSync(dirPath)) {
     return []
   }

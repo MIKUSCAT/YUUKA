@@ -184,6 +184,7 @@ export async function getSystemPrompt(): Promise<string[]> {
 - \`/clear\` - 清屏
 - \`/compact\` - 压缩对话
 - \`/resume\` - 恢复会话
+- \`/snapshot\` - 保存/查看/恢复会话快照
 - \`/memory\` - 手动更新用户偏好记忆（YUUKA.md）；\`/memory forget <file_path>\` 可显式删除记忆
 
 输入 \`/\` 会弹出命令面板。如果老师问起 ${PRODUCT_NAME} 的功能，我会用 \`${PRODUCT_COMMAND} -h\` 查看帮助。

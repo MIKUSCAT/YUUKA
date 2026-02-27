@@ -16,7 +16,6 @@ import { randomUUID } from 'crypto'
 // Core constants aligned with the Claude Code agent architecture
 const AGENT_LOCATIONS = {
   USER: "user",
-  PROJECT: "project", 
   BUILT_IN: "built-in",
   ALL: "all"
 } as const
@@ -323,7 +322,7 @@ function getAgentDirectory(location: AgentLocation): string {
     throw new Error(`Cannot get directory path for ${location} agents`)
   }
 
-  // 全局模式：project/user 都统一写到 ~/.yuuka/agents
+  // 全局模式：统一写到 ~/.yuuka/agents
   return join(homedir(), FOLDER_CONFIG.FOLDER_NAME, FOLDER_CONFIG.AGENTS_DIR)
 }
 
@@ -1418,11 +1417,8 @@ function AgentListView({
 
   const displayAgents = useMemo(() => {
     if (currentLocation === "all") {
-      return [
-        ...customAgents.filter(a => a.location === "user"),
-        ...customAgents.filter(a => a.location === "project")
-      ]
-    } else if (currentLocation === "user" || currentLocation === "project") {
+      return customAgents
+    } else if (currentLocation === "user") {
       return customAgents.filter(a => a.location === currentLocation)
     }
     return customAgents
@@ -1672,20 +1668,11 @@ function AgentListView({
             <>
               {customAgents.filter(a => a.location === "user").length > 0 && (
                 <>
-                  <Text bold color={theme.secondary}>Personal:</Text>
+                  <Text bold color={theme.secondary}>Global:</Text>
                   {customAgents.filter(a => a.location === "user").map(a => renderAgent(a))}
                 </>
               )}
-              
-              {customAgents.filter(a => a.location === "project").length > 0 && (
-                <>
-                  <Box marginTop={customAgents.filter(a => a.location === "user").length > 0 ? 1 : 0}>
-                    <Text bold color={theme.secondary}>Project:</Text>
-                  </Box>
-                  {customAgents.filter(a => a.location === "project").map(a => renderAgent(a))}
-                </>
-              )}
-              
+
               {builtInAgents.length > 0 && (
                 <>
                   <Box marginTop={customAgents.length > 0 ? 1 : 0}>
@@ -2851,9 +2838,7 @@ function ViewAgent({ agent, tools, setModeState }: ViewAgentProps) {
   const hasAllTools = agent.tools === "*" || agentTools.includes("*")
   const locationPath = agent.location === 'user'
     ? `~/.yuuka/agents/${agent.agentType}.md`
-    : agent.location === 'project'
-      ? `~/.yuuka/agents/${agent.agentType}.md`
-      : '(built-in)'
+    : '(built-in)'
   const displayModel = getDisplayModelName((agent as any).model_name || null)
 
   // 明确处理ESC键返回

@@ -33,6 +33,11 @@ import {
   formatTaskTerminalFailureText,
   summarizeTaskResultText,
 } from '@utils/taskResultSummary'
+import { tryCreateAutoSnapshotFromContext } from '@utils/snapshotStore'
+import {
+  emitTaskDiagnosticEvent,
+  emitTaskSummaryEvent,
+} from '@utils/taskAutomation'
 
 const inputSchema = z.object({
   description: z
@@ -133,6 +138,11 @@ export const TaskTool = {
     } = toolUseContext as any
 
     const agentType = subagent_type || 'general-purpose'
+    const snapshotLabel = `${agentType}:${description}`.slice(0, 96)
+    const createAutoSnapshot = (reason: string) => {
+      tryCreateAutoSnapshotFromContext(toolUseContext as any, reason, snapshotLabel)
+    }
+    createAutoSnapshot('task_before')
     const timelineItems: string[] = []
     const pushTimeline = (value?: string) => {
       if (!value || typeof value !== 'string') return
@@ -270,6 +280,15 @@ export const TaskTool = {
       })
 
       if (wait_for_completion === false) {
+        emitTaskSummaryEvent('Task', {
+          status: 'launched',
+          teamName: resolvedTeamName,
+          agentName: teammateName,
+          taskId: task.id,
+          agentType,
+          description,
+        })
+        createAutoSnapshot('task_after_launch')
         yield createLaunchResultOutput({
           mode: 'launched',
           launched: true,
@@ -354,6 +373,16 @@ export const TaskTool = {
           const interruptedData: TextBlock[] = [
             { type: 'text', text: INTERRUPT_MESSAGE },
           ] as TextBlock[]
+          emitTaskDiagnosticEvent('Task', {
+            status: 'cancelled',
+            reason: 'aborted-by-user',
+            teamName: resolvedTeamName,
+            agentName: teammateName,
+            taskId: task.id,
+            agentType,
+            description,
+          })
+          createAutoSnapshot('task_after_cancelled')
           yield {
             type: 'result',
             data: interruptedData,
@@ -422,6 +451,35 @@ export const TaskTool = {
                     taskState.status === 'cancelled' ? 'cancelled' : 'failed',
                     rawText,
                   )
+            if (taskState.status === 'completed') {
+              const parsed = summarizeTaskResultText(text)
+              emitTaskSummaryEvent('Task', {
+                status: 'completed',
+                teamName: resolvedTeamName,
+                agentName: teammateName,
+                taskId: taskState.id,
+                agentType,
+                description,
+                reportPath: parsed.reportPath,
+                outputLength: text.length,
+              })
+              createAutoSnapshot('task_after_completed')
+            } else {
+              emitTaskDiagnosticEvent('Task', {
+                status: taskState.status,
+                teamName: resolvedTeamName,
+                agentName: teammateName,
+                taskId: taskState.id,
+                agentType,
+                description,
+                error: rawText,
+              })
+              createAutoSnapshot(
+                taskState.status === 'cancelled'
+                  ? 'task_after_cancelled'
+                  : 'task_after_failed',
+              )
+            }
             yield createProgressOutput({
               agentType,
               description,
@@ -445,6 +503,16 @@ export const TaskTool = {
         }
 
         if (child.exitCode !== null && !taskState) {
+          emitTaskDiagnosticEvent('Task', {
+            status: 'failed',
+            teamName: resolvedTeamName,
+            agentName: teammateName,
+            taskId: task.id,
+            agentType,
+            description,
+            error: `Teammate process exited early (code ${child.exitCode}).`,
+          })
+          createAutoSnapshot('task_after_failed')
           yield createResultOutput(
             formatTaskTerminalFailureText(
               'failed',
@@ -478,6 +546,18 @@ export const TaskTool = {
                 error: `Teammate process exited unexpectedly (code ${child.exitCode}).`,
               }
             })
+            emitTaskDiagnosticEvent('Task', {
+              status: 'failed',
+              teamName: resolvedTeamName,
+              agentName: teammateName,
+              taskId: task.id,
+              agentType,
+              description,
+              error:
+                failedState.error ||
+                `Teammate process exited unexpectedly (code ${child.exitCode}).`,
+            })
+            createAutoSnapshot('task_after_failed')
             yield createResultOutput(
               formatTaskTerminalFailureText(
                 'failed',
@@ -493,6 +573,13 @@ export const TaskTool = {
       }
     } catch (error) {
       const errorText = error instanceof Error ? error.message : String(error)
+      emitTaskDiagnosticEvent('Task', {
+        status: 'failed',
+        agentType,
+        description,
+        error: errorText,
+      })
+      createAutoSnapshot('task_after_failed')
       yield createResultOutput(formatTaskTerminalFailureText('failed', errorText))
       return
     }

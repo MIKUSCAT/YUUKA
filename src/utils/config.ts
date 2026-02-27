@@ -240,6 +240,8 @@ export type GlobalConfig = {
   memoryReadEnabled?: boolean
   memoryWriteEnabled?: boolean
   dangerousCommands?: string[]
+  autoTaskSummaryEnabled?: boolean
+  autoTaskDiagnosticsEnabled?: boolean
 
   // New model system
   modelProfiles?: ModelProfile[] // Model configuration list
@@ -270,6 +272,8 @@ export const DEFAULT_GLOBAL_CONFIG: GlobalConfig = {
   memoryReadEnabled: true,
   memoryWriteEnabled: true,
   dangerousCommands: [],
+  autoTaskSummaryEnabled: true,
+  autoTaskDiagnosticsEnabled: true,
 
   // New model system defaults
   modelProfiles: [],

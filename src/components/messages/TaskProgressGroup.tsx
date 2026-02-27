@@ -64,31 +64,39 @@ function normalizeInline(text: string | null | undefined): string | null {
   return normalized || null
 }
 
-type BoardState = 'open' | 'in_progress' | 'completed'
+type BoardState = 'open' | 'queued' | 'in_progress' | 'completed' | 'failed'
 
 function normalizeTaskState(progress: TaskProgressPayload | null): BoardState {
   const rawState = String(progress?.taskState || '').trim().toLowerCase()
   const rawStatus = String(progress?.status || '').trim()
 
-  if (rawState === 'completed' || rawState === 'failed' || rawState === 'cancelled') {
+  if (rawState === 'failed' || rawState === 'cancelled') {
+    return 'failed'
+  }
+  if (rawState === 'completed') {
     return 'completed'
   }
   if (rawState === 'in_progress' || rawState === 'running') {
     return 'in_progress'
   }
   if (rawState === 'open' || rawState === 'pending' || rawState === 'blocked') {
-    return 'open'
+    return 'queued'
   }
 
+  if (rawStatus === '已结束' || rawStatus === '失败') return 'failed'
   if (rawStatus === '已完成') return 'completed'
   if (
+    rawStatus === '重试中' ||
     rawStatus === '分析中' ||
     rawStatus === '调用工具' ||
-    rawStatus === '启动中' ||
-    rawStatus === '排队中' ||
-    rawStatus === '收到消息'
+    rawStatus === '收到消息' ||
+    rawStatus === '状态更新' ||
+    rawStatus === '队友消息'
   ) {
     return 'in_progress'
+  }
+  if (rawStatus === '排队中' || rawStatus === '启动中' || rawStatus === '等待中') {
+    return 'queued'
   }
   return 'open'
 }
@@ -125,6 +133,8 @@ function AgentRow({
   const theme = getTheme()
   const [spinnerIdx, setSpinnerIdx] = useState(0)
   const isActive = state === 'in_progress'
+  const isFailed = state === 'failed'
+  const isQueued = state === 'queued' || state === 'open'
 
   useInterval(() => {
     if (isActive) {
@@ -159,12 +169,16 @@ function AgentRow({
     ? SPINNER_FRAMES[spinnerIdx]
     : state === 'completed'
       ? CHECK_MARK
-      : PENDING_CIRCLE
+      : state === 'failed'
+        ? '✖'
+        : PENDING_CIRCLE
   const iconColor = isActive
     ? theme.yuuka
     : state === 'completed'
       ? theme.success
-      : theme.secondaryText
+      : state === 'failed'
+        ? theme.error
+        : theme.secondaryText
 
   const elapsed = localElapsed > 0 ? formatDuration(localElapsed) : '—'
   const nameStr = pad(truncate(agentName, NAME_WIDTH - 1), NAME_WIDTH)
@@ -173,6 +187,12 @@ function AgentRow({
 
   // 内容宽度 = panelWidth - 2(边框) - 4(内边距)
   const contentWidth = panelWidth - 6
+
+  const subStatusColor = isFailed
+    ? theme.error
+    : isQueued
+      ? theme.secondaryText
+      : theme.secondaryText
 
   return (
     <>
@@ -189,11 +209,11 @@ function AgentRow({
         </Text>
         <Text color={theme.secondaryText}>{BOX_VERTICAL}</Text>
       </Box>
-      {subStatus && (isActive || state === 'completed') && (
+      {subStatus && (isActive || state === 'completed' || state === 'failed' || isQueued) && (
         <Box flexDirection="row">
           <Text color={theme.secondaryText}>{BOX_VERTICAL}</Text>
           <Text>{'    '}</Text>
-          <Text color={theme.secondaryText}>
+          <Text color={subStatusColor}>
             {SUB_CONNECTOR} {truncate(subStatus, contentWidth - 6)}
           </Text>
           <Text>
@@ -247,7 +267,10 @@ export function TaskProgressGroup({ items }: Props) {
 
   // 统计
   const total = items.length
-  const completed = items.filter(item => normalizeTaskState(item.progress) === 'completed').length
+  const completed = items.filter(item => {
+    const state = normalizeTaskState(item.progress)
+    return state === 'completed' || state === 'failed'
+  }).length
 
   // ── 顶部边框 ──
   const headerLabel = ` ${teamName} `
@@ -290,7 +313,19 @@ export function TaskProgressGroup({ items }: Props) {
           agentItems[0]
         const state = normalizeTaskState(bestItem.progress)
 
-        const statusText = bestItem.progress?.status || '等待中'
+        const rawStatus = bestItem.progress?.status || ''
+        const stateHintText = `${bestItem.progress?.lastAction || ''} ${bestItem.progress?.eventContent || ''}`
+        const isRetrying = /重试|retry/i.test(`${rawStatus} ${stateHintText}`)
+        let statusText = rawStatus || '等待中'
+        if (state === 'queued') {
+          statusText = '排队中'
+        } else if (state === 'failed') {
+          statusText = '失败'
+        } else if (state === 'completed') {
+          statusText = '已完成'
+        } else if (isRetrying) {
+          statusText = '重试中'
+        }
 
         const elapsedMs =
           typeof bestItem.progress?.elapsedMs === 'number' && bestItem.progress.elapsedMs > 0
@@ -300,7 +335,7 @@ export function TaskProgressGroup({ items }: Props) {
         // 子状态：当前操作详情
         const parsedFinal = summarizeTaskResultText(bestItem.progress?.eventContent || '')
         let subStatus = bestItem.progress?.lastAction || null
-        if (state === 'completed') {
+        if (state === 'completed' || state === 'failed') {
           if (parsedFinal.reportPath) {
             subStatus = `REPORT_PATH: ${parsedFinal.reportPath}`
           } else if (parsedFinal.errorSummary) {
