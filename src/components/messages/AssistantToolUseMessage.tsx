@@ -10,6 +10,8 @@ import { ASSISTANT_PREFIX } from '@constants/figures'
 import { ThinkTool } from '@tools/ThinkTool/ThinkTool'
 import { TaskToolMessage } from './TaskToolMessage'
 
+const HIDDEN_TOOL_USE_NAMES = new Set(['Edit', 'Write', 'NotebookEdit'])
+
 type Props = {
   param: ToolUseBlockParam
   costUSD: number
@@ -43,6 +45,9 @@ export function AssistantToolUseMessage({
   const tool = tools.find(_ => _.name === param.name)
   if (!tool) {
     logError(`Tool ${param.name} not found`)
+    return null
+  }
+  if (HIDDEN_TOOL_USE_NAMES.has(tool.name)) {
     return null
   }
   const isQueued =

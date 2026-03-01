@@ -7,39 +7,26 @@ import {
   UnaryEvent,
   usePermissionRequestLogging,
 } from '@hooks/usePermissionRequestLogging'
-import { savePermission } from '@permissions'
+import { saveSessionPermission } from '@permissions'
 import { env } from '@utils/env'
 import { getTheme } from '@utils/theme'
 import { logUnaryEvent } from '@utils/unaryLogging'
 import {
   type ToolUseConfirm,
-  toolUseConfirmGetPrefix,
 } from '@components/permissions/PermissionRequest'
-import {
-  PermissionRequestTitle,
-  textColorForRiskScore,
-} from '@components/permissions/PermissionRequestTitle'
 import { FileEditToolDiff } from './FileEditToolDiff'
 import { useTerminalSize } from '@hooks/useTerminalSize'
-import { pathInOriginalCwd } from '@utils/permissions/filesystem'
 
-function getOptions(path: string) {
-  // Only show don't ask again option for edits in original working directory
-  const showDontAskAgainOptions = pathInOriginalCwd(path)
-    ? [
-        {
-          label: "Yes, and don't ask again this session",
-          value: 'yes-dont-ask-again',
-        },
-      ]
-    : []
-
+function getOptions() {
   return [
     {
       label: 'Yes',
       value: 'yes',
     },
-    ...showDontAskAgainOptions,
+    {
+      label: 'Yes, allow this tool this session',
+      value: 'yes-allow-session',
+    },
     {
       label: `No, and provide instructions (${chalk.bold.hex(getTheme().warning)('esc')})`,
       value: 'no',
@@ -78,17 +65,8 @@ export function FileEditPermissionRequest({
   return (
     <Box
       flexDirection="column"
-      borderStyle="round"
-      borderColor={textColorForRiskScore(toolUseConfirm.riskScore)}
       marginTop={1}
-      paddingLeft={1}
-      paddingRight={1}
-      paddingBottom={1}
     >
-      <PermissionRequestTitle
-        title="Edit file"
-        riskScore={toolUseConfirm.riskScore}
-      />
       <FileEditToolDiff
         file_path={file_path}
         new_string={new_string}
@@ -103,7 +81,7 @@ export function FileEditPermissionRequest({
           <Text bold>{basename(file_path)}</Text>?
         </Text>
         <Select
-          options={getOptions(file_path)}
+          options={getOptions()}
           onChange={newValue => {
             switch (newValue) {
               case 'yes':
@@ -123,7 +101,7 @@ export function FileEditPermissionRequest({
                 onDone()
                 toolUseConfirm.onAllow('temporary')
                 break
-              case 'yes-dont-ask-again':
+              case 'yes-allow-session':
                 extractLanguageName(file_path).then(language => {
                   logUnaryEvent({
                     completion_type: 'str_replace_single',
@@ -135,16 +113,18 @@ export function FileEditPermissionRequest({
                     },
                   })
                 })
-                savePermission(
+                onDone()
+                saveSessionPermission(
                   toolUseConfirm.tool,
                   toolUseConfirm.input,
-                  toolUseConfirmGetPrefix(toolUseConfirm),
-                ).then(() => {
-                  // Note: We call onDone before onAllow to hide the
-                  // permission request before we render the next message
-                  onDone()
-                  toolUseConfirm.onAllow('session')
-                })
+                  null,
+                )
+                  .then(() => {
+                    toolUseConfirm.onAllow('session')
+                  })
+                  .catch(() => {
+                    toolUseConfirm.onAllow('temporary')
+                  })
                 break
               case 'no':
                 extractLanguageName(file_path).then(language => {

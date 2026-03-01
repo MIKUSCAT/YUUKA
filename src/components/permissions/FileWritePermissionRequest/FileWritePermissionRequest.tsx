@@ -3,16 +3,11 @@ import React, { useMemo } from 'react'
 import { Select } from '@components/CustomSelect/select'
 import { basename, extname } from 'path'
 import { getTheme } from '@utils/theme'
-import {
-  PermissionRequestTitle,
-  textColorForRiskScore,
-} from '@components/permissions/PermissionRequestTitle'
 import { logUnaryEvent } from '@utils/unaryLogging'
 import { env } from '@utils/env'
-import { savePermission } from '@permissions'
+import { saveSessionPermission } from '@permissions'
 import {
   type ToolUseConfirm,
-  toolUseConfirmGetPrefix,
 } from '@components/permissions/PermissionRequest'
 import { existsSync } from 'fs'
 import chalk from 'chalk'
@@ -23,7 +18,6 @@ import {
 import { FileWriteToolDiff } from './FileWriteToolDiff'
 import { useTerminalSize } from '@hooks/useTerminalSize'
 import { logError } from '@utils/log'
-import { pathInOriginalCwd } from '@utils/permissions/filesystem'
 
 type Props = {
   toolUseConfirm: ToolUseConfirm
@@ -31,22 +25,16 @@ type Props = {
   verbose: boolean
 }
 
-function getOptions(filePath: string) {
-  const showSessionAllow = pathInOriginalCwd(filePath)
-    ? [
-        {
-          label: "Yes, and don't ask again this session",
-          value: 'yes-dont-ask-again',
-        },
-      ]
-    : []
-
+function getOptions() {
   return [
     {
       label: 'Yes',
       value: 'yes',
     },
-    ...showSessionAllow,
+    {
+      label: 'Yes, allow this tool this session',
+      value: 'yes-allow-session',
+    },
     {
       label: `No, and provide instructions (${chalk.bold.hex(getTheme().warning)('esc')})`,
       value: 'no',
@@ -77,17 +65,8 @@ export function FileWritePermissionRequest({
   return (
     <Box
       flexDirection="column"
-      borderStyle="round"
-      borderColor={textColorForRiskScore(toolUseConfirm.riskScore)}
       marginTop={1}
-      paddingLeft={1}
-      paddingRight={1}
-      paddingBottom={1}
     >
-      <PermissionRequestTitle
-        title={`${fileExists ? 'Edit' : 'Create'} file`}
-        riskScore={toolUseConfirm.riskScore}
-      />
       <Box flexDirection="column">
         <FileWriteToolDiff
           file_path={file_path}
@@ -102,13 +81,8 @@ export function FileWritePermissionRequest({
           Do you want to {fileExists ? 'make this edit to' : 'create'}{' '}
           <Text bold>{basename(file_path)}</Text>?
         </Text>
-        {!pathInOriginalCwd(file_path) && (
-          <Text dimColor>
-            Session allow is only available for writes inside the original working directory.
-          </Text>
-        )}
         <Select
-          options={getOptions(file_path)}
+          options={getOptions()}
           onChange={newValue => {
             switch (newValue) {
               case 'yes':
@@ -126,7 +100,7 @@ export function FileWritePermissionRequest({
                 onDone()
                 toolUseConfirm.onAllow('temporary')
                 break
-              case 'yes-dont-ask-again':
+              case 'yes-allow-session':
                 extractLanguageName(file_path).then(language => {
                   logUnaryEvent({
                     completion_type: 'write_file_single',
@@ -139,10 +113,10 @@ export function FileWritePermissionRequest({
                   })
                 })
                 onDone()
-                savePermission(
+                saveSessionPermission(
                   toolUseConfirm.tool,
                   toolUseConfirm.input,
-                  toolUseConfirmGetPrefix(toolUseConfirm),
+                  null,
                 )
                   .then(() => {
                     toolUseConfirm.onAllow('session')

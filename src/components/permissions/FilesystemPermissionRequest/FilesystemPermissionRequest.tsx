@@ -26,9 +26,8 @@ import { FileReadTool } from '@tools/FileReadTool/FileReadTool'
 import { NotebookEditTool } from '@tools/NotebookEditTool/NotebookEditTool'
 import { NotebookReadTool } from '@tools/NotebookReadTool/NotebookReadTool'
 import { FallbackPermissionRequest } from '@components/permissions/FallbackPermissionRequest'
+import { saveSessionPermission } from '@permissions'
 import {
-  grantWritePermissionForOriginalDir,
-  pathInOriginalCwd,
   toAbsolutePath,
 } from '@utils/permissions/filesystem'
 import { getCwd } from '@utils/state'
@@ -77,6 +76,10 @@ function pathFromToolUse(toolUseConfirm: ToolUseConfirm): string | null {
   return null
 }
 
+function shouldUseFramelessStyle(toolUseConfirm: ToolUseConfirm): boolean {
+  return toolUseConfirm.tool === NotebookEditTool
+}
+
 export function FilesystemPermissionRequest({
   toolUseConfirm,
   onDone,
@@ -103,21 +106,13 @@ export function FilesystemPermissionRequest({
   )
 }
 
-function getDontAskAgainOptions(toolUseConfirm: ToolUseConfirm, path: string) {
-  if (toolUseConfirm.tool.isReadOnly()) {
-    // "Always allow" is not an option for read-only tools,
-    // because they always have write permission in the project directory.
-    return []
-  }
-  // Only show don't ask again option for edits in original working directory
-  return pathInOriginalCwd(path)
-    ? [
-        {
-          label: "Yes, and don't ask again for file edits this session",
-          value: 'yes-dont-ask-again',
-        },
-      ]
-    : []
+function getSessionAllowOptions() {
+  return [
+    {
+      label: 'Yes, allow this tool this session',
+      value: 'yes-allow-session',
+    },
+  ]
 }
 
 type Props = {
@@ -129,7 +124,7 @@ type Props = {
 
 function FilesystemPermissionRequestImpl({
   toolUseConfirm,
-  path,
+  path: _path,
   onDone,
   verbose,
 }: Props): React.ReactNode {
@@ -139,6 +134,7 @@ function FilesystemPermissionRequestImpl({
     ? 'Read'
     : 'Edit'
   const title = `${userFacingReadOrWrite} ${isMultiFile(toolUseConfirm) ? 'files' : 'file'}`
+  const frameless = shouldUseFramelessStyle(toolUseConfirm)
 
   const unaryEvent = useMemo<UnaryEvent>(
     () => ({
@@ -149,6 +145,96 @@ function FilesystemPermissionRequestImpl({
   )
 
   usePermissionRequestLogging(toolUseConfirm, unaryEvent)
+
+  const details = (
+    <Box flexDirection="column" paddingX={2} paddingY={1}>
+      <Text>
+        {userFacingName}(
+        {toolUseConfirm.tool.renderToolUseMessage(
+          toolUseConfirm.input as never,
+          { verbose },
+        )}
+        )
+      </Text>
+    </Box>
+  )
+
+  const actions = (
+    <Box flexDirection="column">
+      <Text>Do you want to proceed?</Text>
+      <Select
+        options={[
+          {
+            label: 'Yes',
+            value: 'yes',
+          },
+          ...getSessionAllowOptions(),
+          {
+            label: `No, and provide instructions (${chalk.bold.hex(getTheme().warning)('esc')})`,
+            value: 'no',
+          },
+        ]}
+        onChange={newValue => {
+          switch (newValue) {
+            case 'yes':
+              logUnaryEvent({
+                completion_type: 'tool_use_single',
+                event: 'accept',
+                metadata: {
+                  language_name: 'none',
+                  message_id: toolUseConfirm.assistantMessage.message.id,
+                  platform: env.platform,
+                },
+              })
+              onDone()
+              toolUseConfirm.onAllow('temporary')
+              break
+            case 'yes-allow-session':
+              logUnaryEvent({
+                completion_type: 'tool_use_single',
+                event: 'accept',
+                metadata: {
+                  language_name: 'none',
+                  message_id: toolUseConfirm.assistantMessage.message.id,
+                  platform: env.platform,
+                },
+              })
+              onDone()
+              saveSessionPermission(toolUseConfirm.tool, toolUseConfirm.input, null)
+                .then(() => {
+                  toolUseConfirm.onAllow('session')
+                })
+                .catch(() => {
+                  toolUseConfirm.onAllow('temporary')
+                })
+              break
+            case 'no':
+              logUnaryEvent({
+                completion_type: 'tool_use_single',
+                event: 'reject',
+                metadata: {
+                  language_name: 'none',
+                  message_id: toolUseConfirm.assistantMessage.message.id,
+                  platform: env.platform,
+                },
+              })
+              onDone()
+              toolUseConfirm.onReject()
+              break
+          }
+        }}
+      />
+    </Box>
+  )
+
+  if (frameless) {
+    return (
+      <Box flexDirection="column" marginTop={1}>
+        {details}
+        {actions}
+      </Box>
+    )
+  }
 
   return (
     <Box
@@ -164,77 +250,8 @@ function FilesystemPermissionRequestImpl({
         title={title}
         riskScore={toolUseConfirm.riskScore}
       />
-      <Box flexDirection="column" paddingX={2} paddingY={1}>
-        <Text>
-          {userFacingName}(
-          {toolUseConfirm.tool.renderToolUseMessage(
-            toolUseConfirm.input as never,
-            { verbose },
-          )}
-          )
-        </Text>
-      </Box>
-
-      <Box flexDirection="column">
-        <Text>Do you want to proceed?</Text>
-        <Select
-          options={[
-            {
-              label: 'Yes',
-              value: 'yes',
-            },
-            ...getDontAskAgainOptions(toolUseConfirm, path),
-            {
-              label: `No, and provide instructions (${chalk.bold.hex(getTheme().warning)('esc')})`,
-              value: 'no',
-            },
-          ]}
-          onChange={newValue => {
-            switch (newValue) {
-              case 'yes':
-                logUnaryEvent({
-                  completion_type: 'tool_use_single',
-                  event: 'accept',
-                  metadata: {
-                    language_name: 'none',
-                    message_id: toolUseConfirm.assistantMessage.message.id,
-                    platform: env.platform,
-                  },
-                })
-                onDone()
-                toolUseConfirm.onAllow('temporary')
-                break
-              case 'yes-dont-ask-again':
-                logUnaryEvent({
-                  completion_type: 'tool_use_single',
-                  event: 'accept',
-                  metadata: {
-                    language_name: 'none',
-                    message_id: toolUseConfirm.assistantMessage.message.id,
-                    platform: env.platform,
-                  },
-                })
-                grantWritePermissionForOriginalDir()
-                onDone()
-                toolUseConfirm.onAllow('session')
-                break
-              case 'no':
-                logUnaryEvent({
-                  completion_type: 'tool_use_single',
-                  event: 'reject',
-                  metadata: {
-                    language_name: 'none',
-                    message_id: toolUseConfirm.assistantMessage.message.id,
-                    platform: env.platform,
-                  },
-                })
-                onDone()
-                toolUseConfirm.onReject()
-                break
-            }
-          }}
-        />
-      </Box>
+      {details}
+      {actions}
     </Box>
   )
 }
