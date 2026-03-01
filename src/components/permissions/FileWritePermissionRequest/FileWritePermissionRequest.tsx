@@ -1,7 +1,7 @@
 import { Box, Text } from 'ink'
 import React, { useMemo } from 'react'
 import { Select } from '@components/CustomSelect/select'
-import { basename, extname, relative } from 'path'
+import { basename, extname } from 'path'
 import { getTheme } from '@utils/theme'
 import { logUnaryEvent } from '@utils/unaryLogging'
 import { env } from '@utils/env'
@@ -16,7 +16,6 @@ import {
   usePermissionRequestLogging,
 } from '@hooks/usePermissionRequestLogging'
 import { logError } from '@utils/log'
-import { getCwd } from '@utils/state'
 
 type Props = {
   toolUseConfirm: ToolUseConfirm
@@ -44,15 +43,12 @@ function getOptions() {
 export function FileWritePermissionRequest({
   toolUseConfirm,
   onDone,
-  verbose,
+  verbose: _verbose,
 }: Props): React.ReactNode {
-  const { file_path, content } = toolUseConfirm.input as {
+  const { file_path } = toolUseConfirm.input as {
     file_path: string
-    content: string
   }
   const fileExists = useMemo(() => existsSync(file_path), [file_path])
-  const contentLineCount = countLines(content)
-  const displayPath = verbose ? file_path : relative(getCwd(), file_path)
   const unaryEvent = useMemo<UnaryEvent>(
     () => ({
       completion_type: 'write_file_single',
@@ -64,19 +60,6 @@ export function FileWritePermissionRequest({
 
   return (
     <Box flexDirection="column" marginTop={1}>
-      <Box flexDirection="column" marginBottom={1}>
-        <Text bold>{fileExists ? 'Write Request (Update)' : 'Write Request (Create)'}</Text>
-        <Text>
-          Target: <Text bold>{basename(file_path)}</Text>
-        </Text>
-        <Text dimColor>{displayPath}</Text>
-        <Text dimColor>
-          Content summary: {contentLineCount} lines ({fileExists ? 'overwrite existing file' : 'new file'})
-        </Text>
-        <Text dimColor>
-          Confirm this operation: Yes / No / Allow this session.
-        </Text>
-      </Box>
       <Box flexDirection="column">
         <Text>
           Confirm {fileExists ? 'update' : 'create'} for{' '}
@@ -148,11 +131,6 @@ export function FileWritePermissionRequest({
       </Box>
     </Box>
   )
-}
-
-function countLines(value: string): number {
-  if (!value) return 0
-  return value.split('\n').length
 }
 
 async function extractLanguageName(file_path: string): Promise<string> {

@@ -31,25 +31,26 @@ export function FileEditToolUpdatedMessage({
     (count, hunk) => count + hunk.lines.filter(_ => _.startsWith('-')).length,
     0,
   )
+  const addedLinesLabel = `${numAdditions} line${numAdditions === 1 ? '' : 's'}`
+  const removedLinesLabel = `${numRemovals} line${numRemovals === 1 ? '' : 's'}`
 
   return (
     <Box flexDirection="column">
       <Text>
         <Text color={theme.secondaryText}>{TREE_END} </Text>
-        <Text color={theme.success}>Updated </Text>
-        <Text bold>{verbose ? filePath : relative(getCwd(), filePath)}</Text>
-        {numAdditions > 0 || numRemovals > 0 ? ' with ' : ''}
-        {numAdditions > 0 ? (
+        {numAdditions > 0 || numRemovals > 0 ? (
           <>
-            <Text bold color={theme.success}>+{numAdditions}</Text>{' '}
+            <Text color={theme.success}>Added </Text>
+            <Text bold color={theme.success}>{addedLinesLabel}</Text>
+            <Text>, removed </Text>
+            <Text bold color={theme.error}>{removedLinesLabel}</Text>
           </>
-        ) : null}
-        {numAdditions > 0 && numRemovals > 0 ? '' : null}
-        {numRemovals > 0 ? (
+        ) : (
           <>
-            <Text bold color={theme.error}>-{numRemovals}</Text>
+            <Text color={theme.success}>Updated </Text>
+            <Text bold>{verbose ? filePath : relative(getCwd(), filePath)}</Text>
           </>
-        ) : null}
+        )}
       </Text>
       {patches.length > 0 &&
         intersperse(

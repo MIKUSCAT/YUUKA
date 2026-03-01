@@ -10,7 +10,7 @@ import { ASSISTANT_PREFIX } from '@constants/figures'
 import { ThinkTool } from '@tools/ThinkTool/ThinkTool'
 import { TaskToolMessage } from './TaskToolMessage'
 
-const HIDDEN_TOOL_USE_NAMES = new Set(['Edit', 'Write', 'NotebookEdit'])
+const HIDDEN_TOOL_USE_NAMES = new Set(['NotebookEdit'])
 
 type Props = {
   param: ToolUseBlockParam
