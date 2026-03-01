@@ -1,7 +1,7 @@
 import { Select } from '@components/CustomSelect/select'
 import chalk from 'chalk'
 import { Box, Text } from 'ink'
-import { basename, extname } from 'path'
+import { basename, extname, relative } from 'path'
 import React, { useMemo } from 'react'
 import {
   UnaryEvent,
@@ -14,8 +14,7 @@ import { logUnaryEvent } from '@utils/unaryLogging'
 import {
   type ToolUseConfirm,
 } from '@components/permissions/PermissionRequest'
-import { FileEditToolDiff } from './FileEditToolDiff'
-import { useTerminalSize } from '@hooks/useTerminalSize'
+import { getCwd } from '@utils/state'
 
 function getOptions() {
   return [
@@ -45,12 +44,21 @@ export function FileEditPermissionRequest({
   onDone,
   verbose,
 }: Props): React.ReactNode {
-  const { columns } = useTerminalSize()
   const { file_path, new_string, old_string } = toolUseConfirm.input as {
     file_path: string
     new_string: string
     old_string: string
   }
+  const displayPath = verbose ? file_path : relative(getCwd(), file_path)
+  const oldLineCount = countLines(old_string)
+  const newLineCount = countLines(new_string)
+  const lineDelta = newLineCount - oldLineCount
+  const deltaLabel =
+    lineDelta === 0
+      ? 'line count unchanged'
+      : lineDelta > 0
+        ? `+${lineDelta} lines`
+        : `${lineDelta} lines`
 
   const unaryEvent = useMemo<UnaryEvent>(
     () => ({
@@ -63,21 +71,23 @@ export function FileEditPermissionRequest({
   usePermissionRequestLogging(toolUseConfirm, unaryEvent)
 
   return (
-    <Box
-      flexDirection="column"
-      marginTop={1}
-    >
-      <FileEditToolDiff
-        file_path={file_path}
-        new_string={new_string}
-        old_string={old_string}
-        verbose={verbose}
-        useBorder={false}
-        width={columns - 12}
-      />
+    <Box flexDirection="column" marginTop={1}>
+      <Box flexDirection="column" marginBottom={1}>
+        <Text bold>Edit Request</Text>
+        <Text>
+          Target: <Text bold>{basename(file_path)}</Text>
+        </Text>
+        <Text dimColor>{displayPath}</Text>
+        <Text dimColor>
+          Change summary: {oldLineCount} to {newLineCount} lines ({deltaLabel})
+        </Text>
+        <Text dimColor>
+          Confirm this operation: Yes / No / Allow this session.
+        </Text>
+      </Box>
       <Box flexDirection="column">
         <Text>
-          Do you want to make this edit to{' '}
+          Confirm edit for{' '}
           <Text bold>{basename(file_path)}</Text>?
         </Text>
         <Select
@@ -149,6 +159,11 @@ export function FileEditPermissionRequest({
       </Box>
     </Box>
   )
+}
+
+function countLines(value: string): number {
+  if (!value) return 0
+  return value.split('\n').length
 }
 
 async function extractLanguageName(file_path: string): Promise<string> {
