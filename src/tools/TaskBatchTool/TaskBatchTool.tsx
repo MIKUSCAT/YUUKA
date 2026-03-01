@@ -25,8 +25,7 @@ import {
 } from '@utils/taskAutomation'
 
 const DEFAULT_BATCH_CONCURRENCY = 4
-const MAX_BATCH_CONCURRENCY = 20
-const MIN_BATCH_PARALLELISM = 2
+const DEFAULT_PARALLEL_AGENT_MODEL = 'gemini-3-flash-preview'
 
 const taskItemSchema = z.object({
   description: z
@@ -61,9 +60,8 @@ const inputSchema = z.object({
     .number()
     .int()
     .min(1)
-    .max(MAX_BATCH_CONCURRENCY)
     .optional()
-    .describe('Optional concurrency cap for this batch'),
+    .describe('Optional concurrency cap for this batch (unset = run all tasks in parallel)'),
 })
 
 type TaskBatchInput = z.infer<typeof inputSchema>
@@ -114,12 +112,20 @@ function textBlocksToString(data: TextBlock[]): string {
 
 function clampConcurrency(value: number): number {
   if (!Number.isFinite(value) || value <= 0) return DEFAULT_BATCH_CONCURRENCY
-  return Math.min(MAX_BATCH_CONCURRENCY, Math.max(1, Math.floor(value)))
+  return Math.max(1, Math.floor(value))
 }
 
-function resolveDefaultConcurrency(): number {
-  const configured = Number(getGlobalConfig().maxToolUseConcurrency)
-  return clampConcurrency(configured)
+function resolveDefaultConcurrency(totalTasks: number): number {
+  return Math.max(1, Math.floor(totalTasks))
+}
+
+function resolveTaskModelName(modelName?: string): string {
+  const explicit = String(modelName ?? '').trim()
+  if (explicit) {
+    return explicit
+  }
+  const configured = String(getGlobalConfig().parallelAgentModel ?? '').trim()
+  return configured || DEFAULT_PARALLEL_AGENT_MODEL
 }
 
 function toErrorMessage(error: unknown): string {
@@ -133,7 +139,7 @@ function truncate(text: string, max = 120): string {
 
 function computeStartupSpreadDelay(index: number, maxConcurrency: number): number {
   if (index <= 0) return 0
-  const safeConcurrency = Math.max(1, Math.floor(maxConcurrency))
+  const safeConcurrency = Math.max(1, Math.floor(Math.min(maxConcurrency, 8)))
   // Keep a small startup spread to reduce transient 429,
   // but avoid linear delay growth that hurts true parallelism.
   const slot = index % safeConcurrency
@@ -150,6 +156,7 @@ async function* runSingleTask(
   maxConcurrency: number,
   context: any,
 ): AsyncGenerator<TaskBatchWorkerEvent, void, unknown> {
+  const effectiveModelName = resolveTaskModelName(task.model_name)
   const preparedTask = {
     ...task,
     team_name: unifiedTeamName,
@@ -171,7 +178,7 @@ async function* runSingleTask(
             agentType: task.subagent_type || 'general-purpose',
             status: '启动中',
             description: task.description,
-            model: task.model_name || 'task',
+            model: effectiveModelName,
             toolCount: 0,
             elapsedMs: 0,
             lastAction: `batch admitted worker ${preparedTask.name}`,
@@ -272,10 +279,10 @@ export const TaskBatchTool = {
 
 Input:
 - tasks: array of Task payloads (description, prompt, optional model_name/subagent_type/team_name/name)
-- max_concurrency: optional batch concurrency cap (default: max(global maxToolUseConcurrency, 2), fallback 4)
+- max_concurrency: optional batch concurrency cap (default: run all tasks in parallel)
 
 Behavior:
-- Runs multiple Task invocations concurrently (up to max_concurrency)
+- Runs multiple Task invocations concurrently
 - Collects each subtask final result and returns a summary
 - If you need live TEAM coordination while tasks are running, prefer multiple Task(wait_for_completion=false) launches + TaskStatus instead of TaskBatch waiting to the end
 
@@ -337,10 +344,7 @@ Hard rule:
     createAutoSnapshot('taskbatch_before')
 
     const batchId = Date.now().toString(36)
-    const defaultBatchConcurrency = Math.max(
-      MIN_BATCH_PARALLELISM,
-      resolveDefaultConcurrency(),
-    )
+    const defaultBatchConcurrency = resolveDefaultConcurrency(input.tasks.length)
     const maxConcurrency = clampConcurrency(
       input.max_concurrency ?? defaultBatchConcurrency,
     )
@@ -382,7 +386,7 @@ Hard rule:
             agentType: task.subagent_type || 'general-purpose',
             status: '排队中',
             description: task.description,
-            model: task.model_name || 'task',
+            model: resolveTaskModelName(task.model_name),
             toolCount: 0,
             elapsedMs: 0,
             lastAction: `batch queued worker ${seedAgentName}`,
@@ -445,7 +449,7 @@ Hard rule:
             agentType: task.subagent_type || 'general-purpose',
             status: failed ? '已结束' : '已完成',
             description: task.description,
-            model: task.model_name || 'task',
+            model: resolveTaskModelName(task.model_name),
             toolCount: done.lastToolCount ?? 0,
             elapsedMs: done.lastElapsedMs,
             lastAction: failed ? 'task failed' : 'task completed',
@@ -461,12 +465,6 @@ Hard rule:
         ),
       }
 
-      yield {
-        type: 'progress' as const,
-        content: createAssistantMessage(
-          `TaskBatch 进度 ${finished}/${total}: #${entry.index} ${entry.description}（${entry.status}）`,
-        ),
-      }
     }
 
     const normalizedResults = results.filter(Boolean) as TaskBatchItemResult[]
@@ -509,10 +507,7 @@ Hard rule:
     return JSON.stringify(output, null, 2)
   },
   renderToolUseMessage(input: TaskBatchInput) {
-    const defaultBatchConcurrency = Math.max(
-      MIN_BATCH_PARALLELISM,
-      resolveDefaultConcurrency(),
-    )
+    const defaultBatchConcurrency = resolveDefaultConcurrency(input.tasks.length)
     const maxConcurrency = clampConcurrency(
       input.max_concurrency ?? defaultBatchConcurrency,
     )
