@@ -342,6 +342,8 @@ export function geminiResponseToAssistantMessage(
   response: {
     candidates?: Array<{ content?: { parts?: any[] } }>
     usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number }
+    responseId?: string
+    traceId?: string
   },
   options: { model: string; durationMs: number },
 ): AssistantMessage {
@@ -409,12 +411,19 @@ export function geminiResponseToAssistantMessage(
 
   const inputTokens = response.usageMetadata?.promptTokenCount ?? 0
   const outputTokens = response.usageMetadata?.candidatesTokenCount ?? 0
+  const responseId =
+    typeof response.responseId === 'string' && response.responseId.trim()
+      ? response.responseId.trim()
+      : typeof response.traceId === 'string' && response.traceId.trim()
+        ? response.traceId.trim()
+        : undefined
 
   return {
     type: 'assistant',
     uuid: randomUUID(),
     durationMs: options.durationMs,
     costUSD: 0,
+    ...(responseId ? { responseId } : {}),
     message: {
       id: randomUUID(),
       model: options.model,

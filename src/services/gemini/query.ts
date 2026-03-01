@@ -29,6 +29,9 @@ const NO_CONTENT_TEXTS = new Set([
   '(No content)',
   '（模型没有输出可见内容，请重试）',
 ])
+const RETRY_MAX_ATTEMPTS = 3
+const RETRY_INITIAL_DELAY_MS = 5000
+const RETRY_MAX_DELAY_MS = 30000
 
 type ThoughtSummary = {
   subject: string
@@ -191,11 +194,12 @@ function isRetryableGeminiError(error: unknown): { retryable: boolean; reason: s
 }
 
 function computeBackoffMs(attempt: number): number {
-  const base = 300
-  const cap = 5000
-  const exp = Math.min(cap, Math.floor(base * Math.pow(2, Math.max(0, attempt - 1))))
-  const jitter = Math.floor(Math.random() * 200)
-  return Math.min(cap, exp + jitter)
+  const currentDelay = Math.min(
+    RETRY_MAX_DELAY_MS,
+    Math.floor(RETRY_INITIAL_DELAY_MS * Math.pow(2, Math.max(0, attempt - 1))),
+  )
+  const jitter = currentDelay * 0.3 * (Math.random() * 2 - 1)
+  return Math.max(0, Math.floor(currentDelay + jitter))
 }
 
 async function sleepWithAbort(ms: number, signal: AbortSignal): Promise<boolean> {
@@ -542,9 +546,8 @@ export async function queryGeminiLLM(options: {
       ],
     }
 
-    const MAX_ATTEMPTS = 10
     const userPromptId = randomUUID()
-    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    for (let attempt = 1; attempt <= RETRY_MAX_ATTEMPTS; attempt++) {
       if (options.signal.aborted) {
         // 不再发新请求，直接返回空内容（上层会显示“Interrupted by user”）
         return geminiResponseToAssistantMessage(
@@ -705,13 +708,18 @@ export async function queryGeminiLLM(options: {
       } catch (error) {
         releaseApiSlot() // 确保出错时释放信号量
         const meta = isRetryableGeminiError(error)
-        if (attempt >= MAX_ATTEMPTS || !meta.retryable || options.signal.aborted || isAbortError(error)) {
+        if (
+          attempt >= RETRY_MAX_ATTEMPTS ||
+          !meta.retryable ||
+          options.signal.aborted ||
+          isAbortError(error)
+        ) {
           throw wrapGeminiRequestError(error, {
             stage: 'llm',
             model: resolved.model,
             modelKey,
             attempt,
-            maxAttempts: MAX_ATTEMPTS,
+            maxAttempts: RETRY_MAX_ATTEMPTS,
           })
         }
 
@@ -719,7 +727,7 @@ export async function queryGeminiLLM(options: {
         setSessionState('currentThought', null)
         setSessionState(
           'currentError',
-          `网络波动，重试 ${attempt}/${MAX_ATTEMPTS}（${meta.reason}，等待 ${backoff}ms）`,
+          `网络波动，重试 ${attempt}/${RETRY_MAX_ATTEMPTS}（${meta.reason}，等待 ${backoff}ms）`,
         )
         const aborted = await sleepWithAbort(backoff, options.signal)
         if (aborted) {
@@ -785,9 +793,8 @@ export async function queryGeminiToolsOnlyDetailed(options: {
     })
   }
 
-  const MAX_ATTEMPTS = 5
   const userPromptId = randomUUID()
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+  for (let attempt = 1; attempt <= RETRY_MAX_ATTEMPTS; attempt++) {
     try {
       const resp = await transport.generateContent({
         model: resolved.model,
@@ -817,13 +824,13 @@ export async function queryGeminiToolsOnlyDetailed(options: {
     } catch (error) {
       const meta = isRetryableGeminiError(error)
       const aborted = !!options.signal?.aborted || isAbortError(error)
-      if (attempt >= MAX_ATTEMPTS || !meta.retryable || aborted) {
+      if (attempt >= RETRY_MAX_ATTEMPTS || !meta.retryable || aborted) {
         throw wrapGeminiRequestError(error, {
           stage: 'tools-only',
           model: resolved.model,
           modelKey: options.modelKey,
           attempt,
-          maxAttempts: MAX_ATTEMPTS,
+          maxAttempts: RETRY_MAX_ATTEMPTS,
         })
       }
 
@@ -836,7 +843,7 @@ export async function queryGeminiToolsOnlyDetailed(options: {
             model: resolved.model,
             modelKey: options.modelKey,
             attempt,
-            maxAttempts: MAX_ATTEMPTS,
+            maxAttempts: RETRY_MAX_ATTEMPTS,
           })
         }
       } else {

@@ -26,6 +26,7 @@ import {
 } from './utils/debugLogger'
 import { getModelManager } from '@utils/model'
 import {
+  CANCEL_MESSAGE,
   createAssistantMessage,
   createProgressMessage,
   createToolResultStopMessage,
@@ -45,6 +46,15 @@ import { TOOL_NAME as SKILL_TOOL_NAME } from '@tools/SkillTool/constants'
 import { PermissionMode } from '@yuuka-types/PermissionMode'
 import { getGlobalConfig } from '@utils/config'
 import { ensureBuiltinRuntimeHooksRegistered } from '@utils/runtimeHooks'
+import {
+  ensureGlobalGeminiSettings,
+  getGlobalGeminiSettingsPath,
+  readGeminiSettingsFile,
+} from '@utils/geminiSettings'
+import {
+  getGeminiCliAuthContext,
+  recordGeminiCliConversationInteractionBestEffort,
+} from '@services/gemini/codeAssistAuth'
 
 // Extended ToolUseContext for query functions
 interface ExtendedToolUseContext extends ToolUseContext {
@@ -180,6 +190,70 @@ function computeReconnectBackoffMs(attempt: number): number {
   const exp = Math.min(cap, Math.floor(base * Math.pow(2, Math.max(0, attempt - 1))))
   const jitter = Math.floor(Math.random() * 300)
   return Math.min(cap, exp + jitter)
+}
+
+function isGeminiCliOauthSelected(): boolean {
+  try {
+    const ensured = ensureGlobalGeminiSettings()
+    const settingsPath = ensured.settingsPath || getGlobalGeminiSettingsPath()
+    const settings = readGeminiSettingsFile(settingsPath)
+    return (settings.security?.auth?.selectedType ?? 'gemini-api-key') === 'gemini-cli-oauth'
+  } catch {
+    return false
+  }
+}
+
+function extractToolResultBlock(message: UserMessage): any | null {
+  const content = message?.message?.content
+  if (!Array.isArray(content) || content.length === 0) return null
+  const block = content[0] as any
+  if (!block || block.type !== 'tool_result') return null
+  return block
+}
+
+function shouldRecordGeminiCliConversationInteraction(
+  toolUseMessages: ToolUseBlock[],
+  orderedToolResults: UserMessage[],
+): boolean {
+  if (toolUseMessages.length === 0) return false
+  if (orderedToolResults.length !== toolUseMessages.length) return false
+
+  return orderedToolResults.every(message => {
+    const block = extractToolResultBlock(message)
+    if (!block) return false
+    if (block.is_error === true) return false
+    const content = String(block.content ?? '')
+    if (content === CANCEL_MESSAGE) return false
+    return true
+  })
+}
+
+function maybeRecordGeminiCliConversationInteraction(options: {
+  traceId?: string
+  toolUseMessages: ToolUseBlock[]
+  orderedToolResults: UserMessage[]
+}): void {
+  const traceId = String(options.traceId ?? '').trim()
+  if (!traceId) return
+  if (!shouldRecordGeminiCliConversationInteraction(options.toolUseMessages, options.orderedToolResults)) {
+    return
+  }
+  if (!isGeminiCliOauthSelected()) return
+
+  void (async () => {
+    try {
+      const { accessToken, projectId } = await getGeminiCliAuthContext()
+      await recordGeminiCliConversationInteractionBestEffort({
+        accessToken,
+        projectId,
+        traceId,
+        status: 'no_error',
+        interaction: 'unknown',
+      })
+    } catch {
+      // best-effort
+    }
+  })()
 }
 
 function extractAssistantTextContent(message: AssistantMessage): string {
@@ -739,6 +813,12 @@ export async function* query(
       tu => tu.id === (b.message.content[0] as ToolUseBlock).id,
     )
     return aIndex - bIndex
+  })
+
+  maybeRecordGeminiCliConversationInteraction({
+    traceId: assistantMessage.responseId,
+    toolUseMessages,
+    orderedToolResults,
   })
 
   // Recursive query

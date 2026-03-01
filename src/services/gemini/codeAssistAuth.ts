@@ -34,11 +34,14 @@ const CODE_ASSIST_METADATA = {
 
 const EXPIRY_SKEW_MS = 60_000
 const DEFAULT_OAUTH_CALLBACK_HOST = '127.0.0.1'
+const FREE_TIER_ID = 'free-tier'
+const LEGACY_TIER_ID = 'legacy-tier'
 const ACTION_STATUS_NO_ERROR = 1
 const ACTION_STATUS_ERROR_UNKNOWN = 2
 const ACTION_STATUS_CANCELLED = 3
 const ACTION_STATUS_EMPTY = 4
 const INITIATION_METHOD_COMMAND = 2
+const CONVERSATION_INTERACTION_UNKNOWN = 0
 
 function normalizeUserAgentModel(model?: string): string {
   const trimmed = String(model ?? '').trim()
@@ -67,6 +70,16 @@ export type GeminiCliOAuthCreds = {
   // 额外缓存：不影响 gemini-cli 读取
   project_id?: string
   user_email?: string
+}
+
+class ValidationRequiredGeminiCliError extends Error {
+  readonly validationUrl?: string
+
+  constructor(message: string, validationUrl?: string) {
+    super(message)
+    this.name = 'ValidationRequiredGeminiCliError'
+    this.validationUrl = validationUrl
+  }
 }
 
 export function getGlobalGeminiOauthCredsPath(): string {
@@ -443,6 +456,36 @@ function extractProjectId(value: unknown): string | undefined {
   return undefined
 }
 
+function findValidationRequired(loadRes: any): { reasonMessage?: string; validationUrl?: string } | null {
+  if (loadRes?.currentTier) return null
+  const ineligibleTiers = Array.isArray(loadRes?.ineligibleTiers) ? loadRes.ineligibleTiers : []
+  for (const tier of ineligibleTiers) {
+    const reasonCode = String(tier?.reasonCode ?? '')
+    const validationUrl = typeof tier?.validationUrl === 'string' ? tier.validationUrl.trim() : ''
+    if (reasonCode === 'VALIDATION_REQUIRED' && validationUrl) {
+      const reasonMessage =
+        typeof tier?.reasonMessage === 'string' ? tier.reasonMessage.trim() : ''
+      return {
+        reasonMessage: reasonMessage || undefined,
+        validationUrl,
+      }
+    }
+  }
+  return null
+}
+
+function ensureLoadCodeAssistUsable(loadRes: any): void {
+  const validation = findValidationRequired(loadRes)
+  if (!validation) return
+  const message =
+    validation.reasonMessage && validation.validationUrl
+      ? `账号需要验证：${validation.reasonMessage}（请打开并完成验证：${validation.validationUrl}）`
+      : validation.validationUrl
+        ? `账号需要验证：请打开并完成验证 ${validation.validationUrl}`
+        : '账号需要验证，请按官方流程完成验证后重试。'
+  throw new ValidationRequiredGeminiCliError(message, validation.validationUrl)
+}
+
 async function tryLoadCodeAssist(accessToken: string): Promise<string | undefined> {
   const envProjectId =
     process.env['GOOGLE_CLOUD_PROJECT'] || process.env['GOOGLE_CLOUD_PROJECT_ID'] || undefined
@@ -453,6 +496,7 @@ async function tryLoadCodeAssist(accessToken: string): Promise<string | undefine
       duetProject: envProjectId,
     },
   })
+  ensureLoadCodeAssistUsable(data)
 
   if (!data || !data.currentTier) return undefined
   return extractProjectId(data.cloudaicompanionProject)
@@ -465,7 +509,7 @@ function getDefaultTierId(loadRes: any): string {
       return tier.id
     }
   }
-  return 'LEGACY'
+  return LEGACY_TIER_ID
 }
 
 async function tryOnboardUser(accessToken: string): Promise<string | undefined> {
@@ -478,9 +522,10 @@ async function tryOnboardUser(accessToken: string): Promise<string | undefined> 
       duetProject: envProjectId,
     },
   })
+  ensureLoadCodeAssistUsable(loadRes)
   const tierId = getDefaultTierId(loadRes)
 
-  const isFreeTier = tierId === 'FREE'
+  const isFreeTier = tierId === FREE_TIER_ID
   const metadata: any = isFreeTier
     ? CODE_ASSIST_METADATA
     : {
@@ -591,11 +636,58 @@ export async function recordGeminiCliConversationOfferedBestEffort(options: {
   }
 }
 
+export async function recordGeminiCliConversationInteractionBestEffort(options: {
+  accessToken: string
+  projectId: string
+  traceId?: string
+  status?: 'no_error' | 'error' | 'cancelled' | 'empty'
+  interaction?: 'unknown'
+}): Promise<void> {
+  const traceId = String(options.traceId ?? '').trim()
+  if (!traceId) return
+
+  const statusCode =
+    options.status === 'cancelled'
+      ? ACTION_STATUS_CANCELLED
+      : options.status === 'empty'
+        ? ACTION_STATUS_EMPTY
+        : options.status === 'error'
+          ? ACTION_STATUS_ERROR_UNKNOWN
+          : ACTION_STATUS_NO_ERROR
+
+  const interactionCode = CONVERSATION_INTERACTION_UNKNOWN
+
+  const request = {
+    project: options.projectId,
+    metadata: CODE_ASSIST_METADATA,
+    metrics: [
+      {
+        timestamp: new Date().toISOString(),
+        conversationInteraction: {
+          traceId,
+          status: statusCode,
+          interaction: interactionCode,
+          isAgentic: true,
+        },
+      },
+    ],
+  }
+
+  try {
+    await postCodeAssist(options.accessToken, '/v1internal:recordCodeAssistMetrics', request)
+  } catch {
+    // best-effort
+  }
+}
+
 export async function fetchGeminiCliProjectId(accessToken: string): Promise<string> {
   try {
     const pid = await tryLoadCodeAssist(accessToken)
     if (pid) return pid
-  } catch {
+  } catch (error) {
+    if (error instanceof ValidationRequiredGeminiCliError) {
+      throw error
+    }
     // fallback
   }
 
