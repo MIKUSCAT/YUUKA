@@ -17,6 +17,7 @@ type Props = {
   verbose: boolean
   width: number
   useBorder?: boolean
+  showFilePathHeader?: boolean
 }
 
 export function FileWriteToolDiff({
@@ -25,6 +26,7 @@ export function FileWriteToolDiff({
   verbose,
   width,
   useBorder = true,
+  showFilePathHeader = true,
 }: Props): React.ReactNode {
   const fileExists = useMemo(() => existsSync(file_path), [file_path])
   const oldContent = useMemo(() => {
@@ -53,9 +55,11 @@ export function FileWriteToolDiff({
       flexDirection="column"
       paddingX={1}
     >
-      <Box paddingBottom={1}>
-        <Text bold>{verbose ? file_path : relative(getCwd(), file_path)}</Text>
-      </Box>
+      {showFilePathHeader ? (
+        <Box paddingBottom={1}>
+          <Text bold>{verbose ? file_path : relative(getCwd(), file_path)}</Text>
+        </Box>
+      ) : null}
       {hunks ? (
         intersperse(
           hunks.map(_ => (

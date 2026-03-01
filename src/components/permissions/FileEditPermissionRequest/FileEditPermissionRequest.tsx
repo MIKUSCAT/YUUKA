@@ -72,6 +72,7 @@ export function FileEditPermissionRequest({
           verbose={verbose}
           width={columns - 8}
           useBorder={false}
+          showFilePathHeader={false}
         />
         <Text>
           Confirm edit for{' '}

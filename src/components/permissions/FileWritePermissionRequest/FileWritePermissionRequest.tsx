@@ -71,6 +71,7 @@ export function FileWritePermissionRequest({
           verbose={verbose}
           width={columns - 8}
           useBorder={false}
+          showFilePathHeader={false}
         />
         <Text>
           Confirm {fileExists ? 'update' : 'create'} for{' '}

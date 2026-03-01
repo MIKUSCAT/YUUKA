@@ -15,6 +15,7 @@ type Props = {
   old_string: string
   verbose: boolean
   useBorder?: boolean
+  showFilePathHeader?: boolean
   width: number
 }
 
@@ -24,6 +25,7 @@ export function FileEditToolDiff({
   old_string,
   verbose,
   useBorder = true,
+  showFilePathHeader = true,
   width,
 }: Props): React.ReactNode {
   const file = useMemo(
@@ -49,11 +51,13 @@ export function FileEditToolDiff({
         flexDirection="column"
         paddingX={1}
       >
-        <Box paddingBottom={1}>
-          <Text bold>
-            {verbose ? file_path : relative(getCwd(), file_path)}
-          </Text>
-        </Box>
+        {showFilePathHeader ? (
+          <Box paddingBottom={1}>
+            <Text bold>
+              {verbose ? file_path : relative(getCwd(), file_path)}
+            </Text>
+          </Box>
+        ) : null}
         {intersperse(
           patch.map(_ => (
             <StructuredDiff
