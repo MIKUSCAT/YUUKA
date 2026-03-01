@@ -73,10 +73,12 @@ export function FileWritePermissionRequest({
           useBorder={false}
           showFilePathHeader={false}
         />
-        <Text>
-          Confirm {fileExists ? 'update' : 'create'} for{' '}
-          <Text bold>{basename(file_path)}</Text>?
-        </Text>
+        <Box marginTop={1}>
+          <Text>
+            Confirm {fileExists ? 'update' : 'create'} for{' '}
+            <Text bold>{basename(file_path)}</Text>?
+          </Text>
+        </Box>
         <Select
           options={getOptions()}
           onChange={newValue => {

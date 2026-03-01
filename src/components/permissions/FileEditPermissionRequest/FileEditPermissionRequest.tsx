@@ -74,10 +74,12 @@ export function FileEditPermissionRequest({
           useBorder={false}
           showFilePathHeader={false}
         />
-        <Text>
-          Confirm edit for{' '}
-          <Text bold>{basename(file_path)}</Text>?
-        </Text>
+        <Box marginTop={1}>
+          <Text>
+            Confirm edit for{' '}
+            <Text bold>{basename(file_path)}</Text>?
+          </Text>
+        </Box>
         <Select
           options={getOptions()}
           onChange={newValue => {
