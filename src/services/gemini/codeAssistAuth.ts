@@ -23,7 +23,8 @@ const OAUTH_TOKEN_URL = 'https://oauth2.googleapis.com/token'
 const GOOGLE_USERINFO_URL = 'https://www.googleapis.com/oauth2/v2/userinfo'
 
 export const CODE_ASSIST_ENDPOINT = 'https://cloudcode-pa.googleapis.com'
-export const GEMINI_CLI_USER_AGENT = 'GeminiCLI/0.1.5 (Windows; AMD64)'
+const DEFAULT_GEMINI_CLI_VERSION = '1.1.0'
+const USER_AGENT_MODEL_FALLBACK = 'unknown'
 
 const CODE_ASSIST_METADATA = {
   ideType: 'IDE_UNSPECIFIED',
@@ -33,6 +34,22 @@ const CODE_ASSIST_METADATA = {
 
 const EXPIRY_SKEW_MS = 60_000
 const DEFAULT_OAUTH_CALLBACK_HOST = '127.0.0.1'
+
+function normalizeUserAgentModel(model?: string): string {
+  const trimmed = String(model ?? '').trim()
+  if (!trimmed) return USER_AGENT_MODEL_FALLBACK
+  if (trimmed.startsWith('models/')) return trimmed.slice('models/'.length)
+  return trimmed
+}
+
+export function getGeminiCliUserAgent(model?: string): string {
+  const version =
+    String(
+      process.env['YUUKA_VERSION'] ?? process.env['npm_package_version'] ?? DEFAULT_GEMINI_CLI_VERSION,
+    ).trim() || DEFAULT_GEMINI_CLI_VERSION
+  const normalizedModel = normalizeUserAgentModel(model)
+  return `GeminiCLI/${version}/${normalizedModel} (${process.platform}; ${process.arch})`
+}
 
 export type GeminiCliOAuthCreds = {
   access_token?: string
@@ -351,7 +368,7 @@ async function postCodeAssist(accessToken: string, path: string, body: unknown):
     headers: {
       Authorization: `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
-      'User-Agent': GEMINI_CLI_USER_AGENT,
+      'User-Agent': getGeminiCliUserAgent(),
     },
     body: JSON.stringify(body),
   })
@@ -374,8 +391,14 @@ function extractProjectId(value: unknown): string | undefined {
 }
 
 async function tryLoadCodeAssist(accessToken: string): Promise<string | undefined> {
+  const envProjectId =
+    process.env['GOOGLE_CLOUD_PROJECT'] || process.env['GOOGLE_CLOUD_PROJECT_ID'] || undefined
   const data = await postCodeAssist(accessToken, '/v1internal:loadCodeAssist', {
-    metadata: CODE_ASSIST_METADATA,
+    cloudaicompanionProject: envProjectId,
+    metadata: {
+      ...CODE_ASSIST_METADATA,
+      duetProject: envProjectId,
+    },
   })
 
   if (!data || !data.currentTier) return undefined
@@ -393,13 +416,16 @@ function getDefaultTierId(loadRes: any): string {
 }
 
 async function tryOnboardUser(accessToken: string): Promise<string | undefined> {
-  const loadRes = await postCodeAssist(accessToken, '/v1internal:loadCodeAssist', {
-    metadata: CODE_ASSIST_METADATA,
-  })
-  const tierId = getDefaultTierId(loadRes)
-
   const envProjectId =
     process.env['GOOGLE_CLOUD_PROJECT'] || process.env['GOOGLE_CLOUD_PROJECT_ID'] || undefined
+  const loadRes = await postCodeAssist(accessToken, '/v1internal:loadCodeAssist', {
+    cloudaicompanionProject: envProjectId,
+    metadata: {
+      ...CODE_ASSIST_METADATA,
+      duetProject: envProjectId,
+    },
+  })
+  const tierId = getDefaultTierId(loadRes)
 
   const isFreeTier = tierId === 'FREE'
   const metadata: any = isFreeTier

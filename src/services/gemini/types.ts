@@ -48,14 +48,19 @@ export type GeminiTool =
 export type GeminiGenerateContentConfig = {
   abortSignal?: AbortSignal
   systemInstruction?: GeminiContent
+  cachedContent?: string
   tools?: GeminiTool[]
   toolConfig?: Record<string, unknown>
+  labels?: Record<string, string>
+  safetySettings?: Record<string, unknown>[]
   generationConfig?: Record<string, unknown>
+  sessionId?: string
 }
 
 export type GeminiGenerateContentParameters = {
   model: string
   contents: GeminiContent[]
+  userPromptId?: string
   config?: GeminiGenerateContentConfig
 }
 

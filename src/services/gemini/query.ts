@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import {
   ensureGlobalGeminiSettings,
   getGlobalGeminiSettingsPath,
@@ -486,6 +487,7 @@ export async function queryGeminiLLM(options: {
     }
 
     const MAX_ATTEMPTS = 10
+    const userPromptId = randomUUID()
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       if (options.signal.aborted) {
         // 不再发新请求，直接返回空内容（上层会显示“Interrupted by user”）
@@ -509,6 +511,7 @@ export async function queryGeminiLLM(options: {
             resp = await transport.generateContent({
               model: resolved.model,
               contents: requestContents,
+              userPromptId,
               config: {
                 ...resolved.config,
                 abortSignal: options.signal,
@@ -552,6 +555,7 @@ export async function queryGeminiLLM(options: {
           stream = await transport.generateContentStream({
             model: resolved.model,
             contents: requestContents,
+            userPromptId,
             config: {
               ...resolved.config,
               abortSignal: options.signal,
@@ -712,11 +716,13 @@ export async function queryGeminiToolsOnlyDetailed(options: {
   }
 
   const MAX_ATTEMPTS = 5
+  const userPromptId = randomUUID()
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
       const resp = await transport.generateContent({
         model: resolved.model,
         contents: [{ role: 'user', parts: [{ text: options.prompt }] }],
+        userPromptId,
         config: {
           ...resolved.config,
           abortSignal: options.signal,

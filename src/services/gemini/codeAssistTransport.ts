@@ -4,7 +4,7 @@ import type {
   GeminiGenerateContentParameters,
   GeminiGenerateContentResponse,
 } from './types'
-import { GEMINI_CLI_USER_AGENT } from './codeAssistAuth'
+import { getGeminiCliUserAgent } from './codeAssistAuth'
 import { GeminiHttpError } from './transport'
 import { fetch } from 'undici'
 
@@ -70,14 +70,26 @@ function buildRequestBody(
   if (cfg.systemInstruction !== undefined) {
     body.systemInstruction = cfg.systemInstruction
   }
+  if (cfg.cachedContent !== undefined) {
+    body.cachedContent = cfg.cachedContent
+  }
   if (cfg.tools !== undefined) {
     body.tools = cfg.tools
   }
   if (cfg.toolConfig !== undefined) {
     body.toolConfig = cfg.toolConfig
   }
+  if (cfg.labels !== undefined) {
+    body.labels = cfg.labels
+  }
+  if (cfg.safetySettings !== undefined) {
+    body.safetySettings = cfg.safetySettings
+  }
   if (cfg.generationConfig !== undefined) {
     body.generationConfig = cfg.generationConfig
+  }
+  if (cfg.sessionId !== undefined) {
+    body.session_id = cfg.sessionId
   }
 
   return body
@@ -182,11 +194,11 @@ export class CodeAssistTransport {
     this.endpoint = options.endpoint.trim().replace(/\/+$/, '')
   }
 
-  private buildHeaders(): Headers {
+  private buildHeaders(model: string): Headers {
     const headers = new Headers(this.options.headers ?? {})
     headers.set('Content-Type', 'application/json')
     headers.set('Authorization', `Bearer ${this.options.accessToken}`)
-    headers.set('User-Agent', GEMINI_CLI_USER_AGENT)
+    headers.set('User-Agent', getGeminiCliUserAgent(model))
     return headers
   }
 
@@ -194,7 +206,7 @@ export class CodeAssistTransport {
     return {
       model: normalizeCodeAssistModel(request.model),
       project: this.options.projectId,
-      user_prompt_id: randomUUID(),
+      user_prompt_id: request.userPromptId || randomUUID(),
       request: buildRequestBody(request),
     }
   }
@@ -203,7 +215,7 @@ export class CodeAssistTransport {
     request: GeminiGenerateContentParameters,
   ): Promise<GeminiGenerateContentResponse> {
     const url = new URL(`${this.endpoint}/v1internal:generateContent`)
-    const headers = this.buildHeaders()
+    const headers = this.buildHeaders(request.model)
     const managed = createManagedAbortController({
       upstream: request.config?.abortSignal,
       requestTimeoutMs: REQUEST_TIMEOUT_MS,
@@ -249,7 +261,7 @@ export class CodeAssistTransport {
     request: GeminiGenerateContentParameters,
   ): Promise<AsyncGenerator<GeminiGenerateContentResponse>> {
     const url = new URL(`${this.endpoint}/v1internal:streamGenerateContent?alt=sse`)
-    const headers = this.buildHeaders()
+    const headers = this.buildHeaders(request.model)
 
     async function* emptyIterator(): AsyncGenerator<GeminiGenerateContentResponse> {
       return
