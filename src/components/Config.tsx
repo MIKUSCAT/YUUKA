@@ -143,14 +143,29 @@ export function Config({ onClose }: Props): React.ReactNode {
       value: globalConfig.maxToolUseConcurrency ?? 4,
       onChange(maxToolUseConcurrency: number) {
         const normalized = Math.floor(maxToolUseConcurrency)
-        if (!Number.isFinite(normalized) || normalized < 1 || normalized > 20) {
-          throw new Error('Please enter an integer between 1 and 20')
+        if (!Number.isFinite(normalized) || normalized < 1) {
+          throw new Error('Please enter a positive integer')
         }
         const config = { ...getGlobalConfig(), maxToolUseConcurrency: normalized }
         saveGlobalConfig(config)
         setGlobalConfig(config)
       },
       type: 'number',
+    },
+    {
+      id: 'parallelAgentModel',
+      label: 'Parallel Agent Model',
+      value: globalConfig.parallelAgentModel ?? 'gemini-3-flash-preview',
+      onChange(parallelAgentModel: string) {
+        const normalized = parallelAgentModel.trim()
+        if (!normalized) {
+          throw new Error('Please enter a model name')
+        }
+        const config = { ...getGlobalConfig(), parallelAgentModel: normalized }
+        saveGlobalConfig(config)
+        setGlobalConfig(config)
+      },
+      type: 'string',
     },
     {
       id: 'stream',

@@ -366,6 +366,7 @@ function PromptInput({
           messageLogName,
           tools,
           verbose,
+          autoMode,
           permissionMode: currentMode,
           maxThinkingTokens: 0,
         },

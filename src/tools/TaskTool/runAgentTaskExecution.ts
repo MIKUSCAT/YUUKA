@@ -22,6 +22,9 @@ import { setSessionState, getSessionState } from '@utils/sessionState'
 import { runAgentRuntime } from '@utils/agentRuntime'
 import { getTaskTools } from './prompt'
 import type { PermissionMode } from '@yuuka-types/PermissionMode'
+import { getGlobalConfig } from '@utils/config'
+
+const DEFAULT_PARALLEL_AGENT_MODEL = 'gemini-3-flash-preview'
 
 export interface TaskExecutionProgress {
   agentType: string
@@ -184,7 +187,13 @@ export async function* runAgentTaskExecutionStream(
   const startTime = Date.now()
   const agentType = subagent_type || 'general-purpose'
   let effectivePrompt = prompt
-  let effectiveModel = model_name || 'task'
+  const configuredParallelModel = String(
+    getGlobalConfig().parallelAgentModel ?? '',
+  ).trim()
+  let effectiveModel =
+    (typeof model_name === 'string' && model_name.trim()) ||
+    configuredParallelModel ||
+    DEFAULT_PARALLEL_AGENT_MODEL
   let toolFilter: string[] | '*' | null = null
   const normalizedTeamName = team_name ? normalizeTeamName(team_name) : undefined
   const normalizedTeammateName =
@@ -264,6 +273,7 @@ export async function* runAgentTaskExecutionStream(
 
   const queryOptions = {
     safeMode,
+    autoMode: true,
     permissionMode,
     forkNumber,
     messageLogName,

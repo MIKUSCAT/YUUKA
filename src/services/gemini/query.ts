@@ -9,6 +9,7 @@ import {
 } from '@utils/geminiSettings'
 import type { AssistantMessage, UserMessage } from '@query'
 import type { Tool } from '@tool'
+import { getModelManager } from '@utils/model'
 import {
   getGeminiCliAuthContext,
   CODE_ASSIST_ENDPOINT,
@@ -276,6 +277,67 @@ function getGeminiApiKeyAuth(
   }
 }
 
+type GeminiAuthMode = 'gemini-api-key' | 'gemini-cli-oauth'
+
+function resolveGeminiAuthMode(settings: GeminiSettings): GeminiAuthMode {
+  const raw = String(settings.security?.auth?.selectedType ?? '')
+    .trim()
+    .toLowerCase()
+
+  if (
+    raw === 'gemini-cli-oauth' ||
+    raw === 'gemini_cli_oauth' ||
+    raw === 'oauth' ||
+    raw === 'google-oauth' ||
+    raw === 'google_oauth'
+  ) {
+    return 'gemini-cli-oauth'
+  }
+  return 'gemini-api-key'
+}
+
+async function createGeminiTransport(
+  settings: GeminiSettings,
+  path: string,
+): Promise<{
+  authMode: GeminiAuthMode
+  transport: GeminiTransport | CodeAssistTransport
+  oauthContext: { accessToken: string; projectId: string } | null
+}> {
+  const authMode = resolveGeminiAuthMode(settings)
+  if (authMode === 'gemini-cli-oauth') {
+    try {
+      const { accessToken, projectId } = await getGeminiCliAuthContext()
+      return {
+        authMode,
+        oauthContext: { accessToken, projectId },
+        transport: new CodeAssistTransport({
+          endpoint: CODE_ASSIST_ENDPOINT,
+          accessToken,
+          projectId,
+        }),
+      }
+    } catch (error) {
+      const raw =
+        error instanceof Error ? error.message : typeof error === 'string' ? error : String(error)
+      throw new Error(
+        `Gemini OAuth 不可用：${raw}\n请先运行 /auth 完成 Google OAuth 登录，或切换到 gemini-api-key。`,
+      )
+    }
+  }
+
+  const auth = getGeminiApiKeyAuth(settings, path)
+  return {
+    authMode,
+    oauthContext: null,
+    transport: new GeminiTransport({
+      baseUrl: auth.baseUrl,
+      apiKey: auth.apiKey,
+      apiKeyAuthMode: auth.apiKeyAuthMode,
+    }),
+  }
+}
+
 function getModelName(settings: GeminiSettings): string {
   const name = settings.model?.name ?? ''
   return normalizeGeminiModelName(name)
@@ -286,6 +348,20 @@ function resolveModelKey(model: string | 'main' | 'task' | 'reasoning' | 'quick'
     return model
   }
   return 'main'
+}
+
+function resolveRequestedModelName(
+  model: string | 'main' | 'task' | 'reasoning' | 'quick',
+  settings: GeminiSettings,
+): string {
+  if (model === 'main' || model === 'task' || model === 'reasoning' || model === 'quick') {
+    const pointerModel = getModelManager().getModelName(model)
+    if (pointerModel && pointerModel.trim()) {
+      return pointerModel.trim()
+    }
+    return getModelName(settings)
+  }
+  return String(model ?? '').trim() || getModelName(settings)
 }
 
 function aggregateStreamParts(chunks: GeminiGenerateContentResponse[]): GeminiPart[] {
@@ -488,11 +564,10 @@ export async function queryGeminiLLM(options: {
 
   try {
     const { settings, path } = getProjectSettings()
-    const selectedType =
-      settings.security?.auth?.selectedType ?? 'gemini-api-key'
 
     // modelKey 用于 quick/web-search/web-fetch 等配置差异
     const modelKey = resolveModelKey(options.model)
+    const requestedModelName = resolveRequestedModelName(options.model, settings)
 
     // 给 main 对话声明函数工具
     const functionDeclarations =
@@ -500,28 +575,11 @@ export async function queryGeminiLLM(options: {
 
     const resolved = resolveGeminiModelConfig(
       modelKey,
-      { model: { name: settings.model?.name } },
+      { model: { name: requestedModelName } },
       { functionDeclarations },
     )
 
-    let transport: GeminiTransport | CodeAssistTransport
-    let oauthContext: { accessToken: string; projectId: string } | null = null
-    if (selectedType === 'gemini-cli-oauth') {
-      const { accessToken, projectId } = await getGeminiCliAuthContext()
-      oauthContext = { accessToken, projectId }
-      transport = new CodeAssistTransport({
-        endpoint: CODE_ASSIST_ENDPOINT,
-        accessToken,
-        projectId,
-      })
-    } else {
-      const auth = getGeminiApiKeyAuth(settings, path)
-      transport = new GeminiTransport({
-        baseUrl: auth.baseUrl,
-        apiKey: auth.apiKey,
-        apiKeyAuthMode: auth.apiKeyAuthMode,
-      })
-    }
+    const { transport, oauthContext } = await createGeminiTransport(settings, path)
 
     const systemInstruction =
       options.systemPrompt.length > 0
@@ -772,26 +830,9 @@ export async function queryGeminiToolsOnlyDetailed(options: {
   signal?: AbortSignal
 }): Promise<GeminiToolsOnlyResult> {
   const { settings, path } = getProjectSettings()
-  const selectedType =
-    settings.security?.auth?.selectedType ?? 'gemini-api-key'
 
   const resolved = resolveGeminiModelConfig(options.modelKey, { model: { name: settings.model?.name } })
-  let transport: GeminiTransport | CodeAssistTransport
-  if (selectedType === 'gemini-cli-oauth') {
-    const { accessToken, projectId } = await getGeminiCliAuthContext()
-    transport = new CodeAssistTransport({
-      endpoint: CODE_ASSIST_ENDPOINT,
-      accessToken,
-      projectId,
-    })
-  } else {
-    const auth = getGeminiApiKeyAuth(settings, path)
-    transport = new GeminiTransport({
-      baseUrl: auth.baseUrl,
-      apiKey: auth.apiKey,
-      apiKeyAuthMode: auth.apiKeyAuthMode,
-    })
-  }
+  const { transport } = await createGeminiTransport(settings, path)
 
   const userPromptId = randomUUID()
   for (let attempt = 1; attempt <= RETRY_MAX_ATTEMPTS; attempt++) {

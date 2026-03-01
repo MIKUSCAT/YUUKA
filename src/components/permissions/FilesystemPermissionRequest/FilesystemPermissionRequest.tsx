@@ -1,6 +1,7 @@
 import { Box, Text } from 'ink'
 import React, { useMemo } from 'react'
 import { Select } from '@components/CustomSelect/select'
+import { relative } from 'path'
 import { getTheme } from '@utils/theme'
 import {
   PermissionRequestTitle,
@@ -124,7 +125,7 @@ type Props = {
 
 function FilesystemPermissionRequestImpl({
   toolUseConfirm,
-  path: _path,
+  path,
   onDone,
   verbose,
 }: Props): React.ReactNode {
@@ -135,6 +136,7 @@ function FilesystemPermissionRequestImpl({
     : 'Edit'
   const title = `${userFacingReadOrWrite} ${isMultiFile(toolUseConfirm) ? 'files' : 'file'}`
   const frameless = shouldUseFramelessStyle(toolUseConfirm)
+  const displayPath = verbose ? path : relative(getCwd(), path)
 
   const unaryEvent = useMemo<UnaryEvent>(
     () => ({
@@ -230,6 +232,13 @@ function FilesystemPermissionRequestImpl({
   if (frameless) {
     return (
       <Box flexDirection="column" marginTop={1}>
+        <Box flexDirection="column" marginBottom={1}>
+          <Text bold>Notebook Edit Request</Text>
+          <Text dimColor>{displayPath}</Text>
+          <Text dimColor>
+            Review notebook changes, then choose: Yes / No / Allow this session.
+          </Text>
+        </Box>
         {details}
         {actions}
       </Box>

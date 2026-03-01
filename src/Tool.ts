@@ -29,6 +29,7 @@ export interface ToolUseContext {
     verbose?: boolean
     slowAndCapableModel?: string
     safeMode?: boolean
+    autoMode?: boolean
     permissionMode?: PermissionMode
     forkNumber?: number
     messageLogName?: string

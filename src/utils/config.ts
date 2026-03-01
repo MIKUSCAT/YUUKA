@@ -221,6 +221,7 @@ export type GlobalConfig = {
   verbose: boolean
   agentExecutionMode?: 'inline' | 'process'
   maxToolUseConcurrency?: number
+  parallelAgentModel?: string
   customApiKeyResponses?: {
     approved?: string[]
     rejected?: string[]
@@ -259,6 +260,7 @@ export const DEFAULT_GLOBAL_CONFIG: GlobalConfig = {
   verbose: false,
   agentExecutionMode: 'process',
   maxToolUseConcurrency: 4,
+  parallelAgentModel: 'gemini-3-flash-preview',
   proxyEnabled: true,
   proxyPort: 7890,
   primaryProvider: 'gemini' as ProviderType,
@@ -295,6 +297,7 @@ export const GLOBAL_CONFIG_KEYS = [
   'verbose',
   'agentExecutionMode',
   'maxToolUseConcurrency',
+  'parallelAgentModel',
   'proxyEnabled',
   'proxyPort',
   'proxy',
@@ -376,8 +379,13 @@ function extractGlobalConfigFromSettings(settings: GeminiSettings): GlobalConfig
   const rawToolUseConcurrency = Number((mergedConfig as any).maxToolUseConcurrency)
   mergedConfig.maxToolUseConcurrency =
     Number.isFinite(rawToolUseConcurrency) && rawToolUseConcurrency > 0
-      ? Math.min(20, Math.max(1, Math.floor(rawToolUseConcurrency)))
+      ? Math.max(1, Math.floor(rawToolUseConcurrency))
       : 4
+  const rawParallelAgentModel = String(
+    (mergedConfig as any).parallelAgentModel ?? '',
+  ).trim()
+  mergedConfig.parallelAgentModel =
+    rawParallelAgentModel || 'gemini-3-flash-preview'
 
   // 兼容 Gemini CLI 的字段：ui/theme、mcpServers 放在顶层
   if (settings.ui?.theme) {

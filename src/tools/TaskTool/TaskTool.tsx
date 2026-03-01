@@ -9,6 +9,7 @@ import {
   INTERRUPT_MESSAGE,
 } from '@utils/messages'
 import { getModelManager } from '@utils/model'
+import { getGlobalConfig } from '@utils/config'
 import { getTheme } from '@utils/theme'
 import { getOriginalCwd } from '@utils/state'
 import { getPrompt } from './prompt'
@@ -39,6 +40,17 @@ import {
   emitTaskSummaryEvent,
 } from '@utils/taskAutomation'
 
+const DEFAULT_PARALLEL_AGENT_MODEL = 'gemini-3-flash-preview'
+
+function resolveParallelAgentModel(modelName?: string): string {
+  const explicit = String(modelName ?? '').trim()
+  if (explicit) {
+    return explicit
+  }
+  const configured = String(getGlobalConfig().parallelAgentModel ?? '').trim()
+  return configured || DEFAULT_PARALLEL_AGENT_MODEL
+}
+
 const inputSchema = z.object({
   description: z
     .string()
@@ -48,7 +60,7 @@ const inputSchema = z.object({
     .string()
     .optional()
     .describe(
-      'Optional: Specific model name to use for this task. If not provided, uses the default task model pointer.',
+      'Optional: Specific model name to use for this task. If omitted, uses the parallel-agent default model from /config.',
     ),
   subagent_type: z
     .string()
@@ -138,6 +150,7 @@ export const TaskTool = {
     } = toolUseContext as any
 
     const agentType = subagent_type || 'general-purpose'
+    const resolvedModelName = resolveParallelAgentModel(model_name)
     const snapshotLabel = `${agentType}:${description}`.slice(0, 96)
     const createAutoSnapshot = (reason: string) => {
       tryCreateAutoSnapshotFromContext(toolUseContext as any, reason, snapshotLabel)
@@ -216,7 +229,7 @@ export const TaskTool = {
         description,
         prompt,
         subagent_type,
-        model_name,
+        model_name: resolvedModelName,
         safeMode,
         permissionMode: permissionMode as PermissionMode,
         verbose,
@@ -267,7 +280,7 @@ export const TaskTool = {
         agentType,
         description,
         status: '启动中',
-        model: model_name || 'task',
+        model: resolvedModelName,
         toolCount: 0,
         elapsedMs: 0,
         lastAction: `worker started · team=${resolvedTeamName} · agent=${teammateName}`,
@@ -331,7 +344,7 @@ export const TaskTool = {
           agentType,
           description,
           status: eventType === 'message' ? '队友消息' : '状态更新',
-          model: model_name || 'task',
+          model: resolvedModelName,
           toolCount: 0,
           elapsedMs: Date.now() - startTime,
           lastAction:
@@ -421,7 +434,7 @@ export const TaskTool = {
               agentType,
               description,
               status: progress.status,
-              model: progress.model || model_name || 'task',
+              model: progress.model || resolvedModelName,
               toolCount: progress.toolCount ?? 0,
               tokenCount: progress.tokenCount,
               elapsedMs: progress.elapsedMs ?? Date.now() - startTime,
@@ -484,7 +497,7 @@ export const TaskTool = {
               agentType,
               description,
               status: taskState.status === 'completed' ? '已完成' : '已结束',
-              model: model_name || 'task',
+              model: resolvedModelName,
               toolCount: taskState.toolUseCount ?? 0,
               tokenCount: taskState.tokenCount,
               elapsedMs:

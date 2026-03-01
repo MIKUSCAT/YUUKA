@@ -34,7 +34,7 @@ export type GeminiSettings = {
     theme?: string
   }
   performance?: {
-    maxConcurrentApiRequests?: number // 跨进程 API 并发槽位数，默认 2
+    maxConcurrentApiRequests?: number // 跨进程 API 并发槽位数；不填=不限
   }
   yuuka?: unknown
 }

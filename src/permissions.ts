@@ -199,7 +199,13 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
     }
   }
 
-  if (permissionMode === 'acceptEdits' && isAcceptEditsAutoApproveTool(tool)) {
+  const autoMode = context.options?.autoMode ?? false
+
+  if (
+    autoMode &&
+    permissionMode === 'acceptEdits' &&
+    isAcceptEditsAutoApproveTool(tool)
+  ) {
     return { result: true }
   }
 
@@ -208,10 +214,15 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
   }
 
   // Non-safe default mode stays permissive except high-risk bash commands handled above.
-  if (!context.options?.safeMode && permissionMode === 'default') {
+  if (!context.options?.safeMode && autoMode && permissionMode === 'default') {
     return { result: true }
   }
-  if (!context.options?.safeMode && permissionMode === 'acceptEdits' && tool !== BashTool) {
+  if (
+    !context.options?.safeMode &&
+    autoMode &&
+    permissionMode === 'acceptEdits' &&
+    tool !== BashTool
+  ) {
     return { result: true }
   }
 
@@ -242,6 +253,14 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
       if (!tool.needsPermissions(input)) {
         return { result: true }
       }
+
+      // Allow session/persistent permissions to bypass repeated prompts.
+      // For these tools, the permission key is just the tool name.
+      const permissionKey = getPermissionKey(tool, input, null)
+      if (allowedTools.includes(permissionKey)) {
+        return { result: true }
+      }
+
       return {
         result: false,
         message: createPermissionDeniedMessage(tool.name),

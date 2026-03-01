@@ -44,7 +44,6 @@ import { setSessionState } from '@utils/sessionState'
 import { setConversationScope } from '@utils/agentStorage'
 import { TOOL_NAME as SKILL_TOOL_NAME } from '@tools/SkillTool/constants'
 import { PermissionMode } from '@yuuka-types/PermissionMode'
-import { getGlobalConfig } from '@utils/config'
 import { ensureBuiltinRuntimeHooksRegistered } from '@utils/runtimeHooks'
 import {
   ensureGlobalGeminiSettings,
@@ -66,6 +65,7 @@ interface ExtendedToolUseContext extends ToolUseContext {
     tools: Tool[]
     verbose: boolean
     safeMode: boolean
+    autoMode?: boolean
     permissionMode?: PermissionMode
     maxThinkingTokens: number
     model?: string | import('./utils/config').ModelPointerType
@@ -115,18 +115,10 @@ export type ProgressMessage = {
 // Each array item is either a single message or a message-and-response pair
 export type Message = UserMessage | AssistantMessage | ProgressMessage
 
-const DEFAULT_TOOL_USE_CONCURRENCY = 4
-const MAX_TOOL_USE_CONCURRENCY_LIMIT = 20
+const UNBOUNDED_TOOL_USE_CONCURRENCY = Number.POSITIVE_INFINITY
 
 function getToolUseConcurrencyCap(): number {
-  const raw = Number(getGlobalConfig().maxToolUseConcurrency)
-  if (!Number.isFinite(raw) || raw <= 0) {
-    return DEFAULT_TOOL_USE_CONCURRENCY
-  }
-  return Math.min(
-    MAX_TOOL_USE_CONCURRENCY_LIMIT,
-    Math.max(1, Math.floor(raw)),
-  )
+  return UNBOUNDED_TOOL_USE_CONCURRENCY
 }
 
 function isAbortError(error: unknown): boolean {
@@ -844,7 +836,7 @@ async function* runToolsConcurrently(
   canUseTool: CanUseToolFn,
   toolUseContext: ExtendedToolUseContext,
   shouldSkipPermissionCheck?: boolean,
-  concurrencyCap: number = DEFAULT_TOOL_USE_CONCURRENCY,
+  concurrencyCap: number = UNBOUNDED_TOOL_USE_CONCURRENCY,
 ): AsyncGenerator<Message, void> {
   yield* all(
     toolUseMessages.map(toolUse =>

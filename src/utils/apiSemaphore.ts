@@ -12,7 +12,7 @@ import { homedir } from 'os'
 import { readGeminiSettingsFile, getGlobalGeminiSettingsPath } from './geminiSettings'
 
 const SEMAPHORE_DIR = join(homedir(), '.yuuka', '.api-semaphore')
-const DEFAULT_MAX_CONCURRENT = 2
+const DEFAULT_MAX_CONCURRENT = Number.POSITIVE_INFINITY
 const SLOT_STALE_MS = 120_000 // 120 秒未释放视为过期
 const ACQUIRE_RETRY_MS = 200
 
@@ -27,14 +27,14 @@ function ensureSemaphoreDir(): void {
 
 /**
  * 从 settings.json 读取 performance.maxConcurrentApiRequests，
- * 默认返回 2。
+ * 默认不限制并发（Infinity）。
  */
 export function getMaxConcurrentApiRequests(): number {
   try {
     const settings = readGeminiSettingsFile(getGlobalGeminiSettingsPath())
     const configured = (settings as any)?.performance?.maxConcurrentApiRequests
     if (typeof configured === 'number' && Number.isFinite(configured) && configured >= 1) {
-      return Math.floor(Math.min(configured, 20))
+      return Math.floor(configured)
     }
   } catch {
     // ignore
@@ -72,10 +72,13 @@ function cleanupStaleSlots(): void {
  * 支持 AbortSignal 中断等待。
  */
 export async function acquireApiSlot(signal?: AbortSignal): Promise<void> {
+  const maxSlots = getMaxConcurrentApiRequests()
+  if (!Number.isFinite(maxSlots)) {
+    return
+  }
+
   ensureSemaphoreDir()
   cleanupStaleSlots()
-
-  const maxSlots = getMaxConcurrentApiRequests()
 
   while (true) {
     if (signal?.aborted) return

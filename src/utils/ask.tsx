@@ -61,6 +61,7 @@ export async function ask({
         tools,
         verbose,
         safeMode,
+        autoMode: true,
         forkNumber: 0,
         messageLogName: messageLogName || 'unused',
         maxThinkingTokens: 0,
