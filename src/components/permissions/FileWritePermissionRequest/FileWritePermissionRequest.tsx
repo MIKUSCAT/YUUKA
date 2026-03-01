@@ -16,6 +16,8 @@ import {
   usePermissionRequestLogging,
 } from '@hooks/usePermissionRequestLogging'
 import { logError } from '@utils/log'
+import { FileWriteToolDiff } from './FileWriteToolDiff'
+import { useTerminalSize } from '@hooks/useTerminalSize'
 
 type Props = {
   toolUseConfirm: ToolUseConfirm
@@ -43,10 +45,12 @@ function getOptions() {
 export function FileWritePermissionRequest({
   toolUseConfirm,
   onDone,
-  verbose: _verbose,
+  verbose,
 }: Props): React.ReactNode {
-  const { file_path } = toolUseConfirm.input as {
+  const { columns } = useTerminalSize()
+  const { file_path, content } = toolUseConfirm.input as {
     file_path: string
+    content: string
   }
   const fileExists = useMemo(() => existsSync(file_path), [file_path])
   const unaryEvent = useMemo<UnaryEvent>(
@@ -61,6 +65,13 @@ export function FileWritePermissionRequest({
   return (
     <Box flexDirection="column" marginTop={1}>
       <Box flexDirection="column">
+        <FileWriteToolDiff
+          file_path={file_path}
+          content={content}
+          verbose={verbose}
+          width={columns - 8}
+          useBorder={false}
+        />
         <Text>
           Confirm {fileExists ? 'update' : 'create'} for{' '}
           <Text bold>{basename(file_path)}</Text>?

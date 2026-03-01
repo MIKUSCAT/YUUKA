@@ -14,6 +14,8 @@ import { logUnaryEvent } from '@utils/unaryLogging'
 import {
   type ToolUseConfirm,
 } from '@components/permissions/PermissionRequest'
+import { FileEditToolDiff } from './FileEditToolDiff'
+import { useTerminalSize } from '@hooks/useTerminalSize'
 
 function getOptions() {
   return [
@@ -41,10 +43,13 @@ type Props = {
 export function FileEditPermissionRequest({
   toolUseConfirm,
   onDone,
-  verbose: _verbose,
+  verbose,
 }: Props): React.ReactNode {
-  const { file_path } = toolUseConfirm.input as {
+  const { columns } = useTerminalSize()
+  const { file_path, old_string, new_string } = toolUseConfirm.input as {
     file_path: string
+    old_string: string
+    new_string: string
   }
 
   const unaryEvent = useMemo<UnaryEvent>(
@@ -60,6 +65,14 @@ export function FileEditPermissionRequest({
   return (
     <Box flexDirection="column" marginTop={1}>
       <Box flexDirection="column">
+        <FileEditToolDiff
+          file_path={file_path}
+          old_string={old_string}
+          new_string={new_string}
+          verbose={verbose}
+          width={columns - 8}
+          useBorder={false}
+        />
         <Text>
           Confirm edit for{' '}
           <Text bold>{basename(file_path)}</Text>?
