@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./YUUKA.jpeg" width="180" alt="YUUKA" />
+  <img src="https://raw.githubusercontent.com/MIKUSCAT/YUUKA/main/YUUKA.jpeg" width="180" alt="YUUKA" />
 </p>
 
 <h1 align="center">
@@ -11,9 +11,9 @@
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/yuuka"><img src="https://badge.fury.io/js/yuuka.svg" alt="npm version" /></a>
+  <a href="https://www.npmjs.com/package/@mikuscat/yuuka"><img src="https://badge.fury.io/js/%40mikuscat%2Fyuuka.svg" alt="npm version" /></a>
   <a href="https://opensource.org/licenses/Apache-2.0"><img src="https://img.shields.io/badge/License-Apache%202.0-4a86c8.svg" alt="License" /></a>
-  <img src="https://img.shields.io/node/v/yuuka?color=4a86c8" alt="node version" />
+  <img src="https://img.shields.io/node/v/%40mikuscat%2Fyuuka?color=4a86c8" alt="node version" />
 </p>
 
 <p align="center">
@@ -23,7 +23,7 @@
 <br/>
 
 <p align="center">
-  <img width="90%" alt="YUUKA — terminal AI agent" src="./screenshots/showcase.png" />
+  <img width="90%" alt="YUUKA — terminal AI agent" src="https://raw.githubusercontent.com/MIKUSCAT/YUUKA/main/screenshots/showcase.png" />
 </p>
 
 ---
@@ -62,7 +62,7 @@ Built for developers who prefer the command line over the GUI.
 ## Quick Start
 
 ```bash
-npm install -g yuuka
+npm install -g @mikuscat/yuuka
 yuuka                    # first run: use /auth to set API Key or Google OAuth client
 ```
 
@@ -131,7 +131,7 @@ For Google OAuth in `/auth`:
 ## Screenshots
 
 <p align="center">
-  <img width="90%" alt="YUUKA deep research" src="./screenshots/deep-research.png" />
+  <img width="90%" alt="YUUKA deep research" src="https://raw.githubusercontent.com/MIKUSCAT/YUUKA/main/screenshots/deep-research.png" />
 </p>
 
 <p align="center">
