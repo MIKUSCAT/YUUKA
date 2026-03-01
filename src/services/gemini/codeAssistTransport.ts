@@ -105,7 +105,12 @@ function unwrapCodeAssistResponse(
   json: any,
 ): GeminiGenerateContentResponse {
   if (json && typeof json === 'object' && json.response && typeof json.response === 'object') {
-    return json.response as GeminiGenerateContentResponse
+    const resp = json.response as GeminiGenerateContentResponse
+    const traceId = typeof (json as any).traceId === 'string' ? String((json as any).traceId).trim() : ''
+    if (traceId) {
+      return { ...resp, traceId }
+    }
+    return resp
   }
   return json as GeminiGenerateContentResponse
 }

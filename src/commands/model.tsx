@@ -14,7 +14,7 @@ import {
 import { Select } from '@components/CustomSelect/select'
 import modelsCatalog from '@constants/models'
 import { SimpleSpinner } from '@components/Spinner'
-import { getValidGeminiCliAccessToken } from '@services/gemini/codeAssistAuth'
+import { fetchGeminiCliQuotaModelIds } from '@services/gemini/codeAssistAuth'
 
 export const help =
   '选择/设置 Gemini 模型（写入全局 ~/.yuuka/settings.json）；Enter 确认，Esc 退出'
@@ -43,11 +43,26 @@ function setModelName(settingsPath: string, raw: string): string {
   return normalized
 }
 
+function getBuiltinGeminiModels(): string[] {
+  const geminiList = (modelsCatalog as any)?.gemini ?? []
+  return Array.isArray(geminiList)
+    ? geminiList.map((m: any) => String(m?.model ?? '')).filter(Boolean)
+    : []
+}
+
 async function fetchGeminiModelsFromGoogle(options: {
   settingsPath: string
 }): Promise<string[]> {
   const settings = readGeminiSettingsFile(options.settingsPath)
   const selectedType = settings.security?.auth?.selectedType ?? 'gemini-api-key'
+
+  if (selectedType === 'gemini-cli-oauth') {
+    const quotaModels = await fetchGeminiCliQuotaModelIds()
+    if (quotaModels.length > 0) {
+      return quotaModels
+    }
+    return getBuiltinGeminiModels()
+  }
 
   const baseUrl =
     settings.security?.auth?.geminiApi?.baseUrl ??
@@ -56,29 +71,23 @@ async function fetchGeminiModelsFromGoogle(options: {
   const url = new URL(`${apiRoot.replace(/\/+$/, '')}/models`)
 
   const headers = new Headers()
+  const apiKey = settings.security?.auth?.geminiApi?.apiKey ?? ''
+  if (!apiKey.trim()) {
+    throw new Error('未填写 Gemini API Key（请先用 /auth 选择“自提供 API Key”并填写）')
+  }
 
-  if (selectedType === 'gemini-cli-oauth') {
-    const { accessToken } = await getValidGeminiCliAccessToken()
-    headers.set('Authorization', `Bearer ${accessToken}`)
+  const rawMode = settings.security?.auth?.geminiApi?.apiKeyAuthMode
+  const mode: 'x-goog-api-key' | 'query' | 'bearer' =
+    rawMode === 'bearer' || rawMode === 'query' || rawMode === 'x-goog-api-key'
+      ? rawMode
+      : 'x-goog-api-key'
+
+  if (mode === 'query') {
+    url.searchParams.set('key', apiKey.trim())
+  } else if (mode === 'bearer') {
+    headers.set('Authorization', `Bearer ${apiKey.trim()}`)
   } else {
-    const apiKey = settings.security?.auth?.geminiApi?.apiKey ?? ''
-    if (!apiKey.trim()) {
-      throw new Error('未填写 Gemini API Key（请先用 /auth 选择“自提供 API Key”并填写）')
-    }
-
-    const rawMode = settings.security?.auth?.geminiApi?.apiKeyAuthMode
-    const mode: 'x-goog-api-key' | 'query' | 'bearer' =
-      rawMode === 'bearer' || rawMode === 'query' || rawMode === 'x-goog-api-key'
-        ? rawMode
-        : 'x-goog-api-key'
-
-    if (mode === 'query') {
-      url.searchParams.set('key', apiKey.trim())
-    } else if (mode === 'bearer') {
-      headers.set('Authorization', `Bearer ${apiKey.trim()}`)
-    } else {
-      headers.set('x-goog-api-key', apiKey.trim())
-    }
+    headers.set('x-goog-api-key', apiKey.trim())
   }
 
   const resp = await fetch(url, { headers })
@@ -157,11 +166,7 @@ function ModelCommandUI({
       if (Array.isArray(remoteModels) && remoteModels.length > 0) {
         return remoteModels
       }
-      const geminiList = (modelsCatalog as any)?.gemini ?? []
-      const builtins: string[] = Array.isArray(geminiList)
-        ? geminiList.map((m: any) => String(m?.model ?? '')).filter(Boolean)
-        : []
-      return builtins
+      return getBuiltinGeminiModels()
     })()
 
     const normalizedBuiltins = sourceList

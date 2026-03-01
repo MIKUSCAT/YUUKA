@@ -65,6 +65,7 @@ export type GeminiGenerateContentParameters = {
 }
 
 export type GeminiGenerateContentResponse = {
+  traceId?: string
   candidates?: Array<{
     content?: GeminiContent
     finishReason?: string

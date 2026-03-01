@@ -9,7 +9,11 @@ import {
 } from '@utils/geminiSettings'
 import type { AssistantMessage, UserMessage } from '@query'
 import type { Tool } from '@tool'
-import { getGeminiCliAuthContext, CODE_ASSIST_ENDPOINT } from './codeAssistAuth'
+import {
+  getGeminiCliAuthContext,
+  CODE_ASSIST_ENDPOINT,
+  recordGeminiCliConversationOfferedBestEffort,
+} from './codeAssistAuth'
 import { CodeAssistTransport } from './codeAssistTransport'
 import { GeminiTransport } from './transport'
 import { kodeMessagesToGeminiContents, geminiResponseToAssistantMessage, toolsToFunctionDeclarations } from './adapter'
@@ -59,6 +63,56 @@ function parseThought(rawText: string): ThoughtSummary {
   ).trim()
 
   return { subject, description }
+}
+
+function resolveResponseTraceId(response: GeminiGenerateContentResponse): string | undefined {
+  const traceId = (response as any)?.traceId
+  if (typeof traceId === 'string' && traceId.trim()) {
+    return traceId.trim()
+  }
+  return undefined
+}
+
+function hasResponseFunctionCalls(response: GeminiGenerateContentResponse): boolean {
+  if (Array.isArray(response.functionCalls) && response.functionCalls.length > 0) {
+    return true
+  }
+  const parts = response.candidates?.[0]?.content?.parts ?? []
+  return parts.some(part => !!(part as any)?.functionCall)
+}
+
+function responseIncludesCodeFence(response: GeminiGenerateContentResponse): boolean {
+  const candidates = Array.isArray(response.candidates) ? response.candidates : []
+  for (const candidate of candidates) {
+    const parts = candidate?.content?.parts ?? []
+    for (const part of parts as any[]) {
+      if (typeof part?.text === 'string' && part.text.includes('```')) {
+        return true
+      }
+    }
+  }
+  return false
+}
+
+function maybeReportCodeAssistConversationOffered(options: {
+  oauthContext: { accessToken: string; projectId: string } | null
+  response: GeminiGenerateContentResponse
+  signal: AbortSignal
+}): void {
+  if (!options.oauthContext) return
+  const traceId = resolveResponseTraceId(options.response)
+  const hasFunctionCalls = hasResponseFunctionCalls(options.response)
+  if (!traceId || !hasFunctionCalls) return
+  const status = options.signal.aborted ? 'cancelled' : 'no_error'
+  const includedCode = responseIncludesCodeFence(options.response)
+  void recordGeminiCliConversationOfferedBestEffort({
+    accessToken: options.oauthContext.accessToken,
+    projectId: options.oauthContext.projectId,
+    traceId,
+    hasFunctionCalls,
+    includedCode,
+    status,
+  })
 }
 
 function isNoContentAssistantMessage(message: AssistantMessage): boolean {
@@ -447,8 +501,10 @@ export async function queryGeminiLLM(options: {
     )
 
     let transport: GeminiTransport | CodeAssistTransport
+    let oauthContext: { accessToken: string; projectId: string } | null = null
     if (selectedType === 'gemini-cli-oauth') {
       const { accessToken, projectId } = await getGeminiCliAuthContext()
+      oauthContext = { accessToken, projectId }
       transport = new CodeAssistTransport({
         endpoint: CODE_ASSIST_ENDPOINT,
         accessToken,
@@ -546,6 +602,11 @@ export async function queryGeminiLLM(options: {
             continue
           }
 
+          maybeReportCodeAssistConversationOffered({
+            oauthContext,
+            response: resp,
+            signal: options.signal,
+          })
           return assistantMessage
         }
 
@@ -598,7 +659,11 @@ export async function queryGeminiLLM(options: {
         releaseApiSlot()
 
         const aggregatedParts = aggregateStreamParts(chunks)
+        const streamTraceId = chunks
+          .map(chunk => resolveResponseTraceId(chunk))
+          .find((value): value is string => typeof value === 'string' && value.length > 0)
         const synthetic: GeminiGenerateContentResponse = {
+          ...(streamTraceId ? { traceId: streamTraceId } : {}),
           candidates: [
             {
               content: { role: 'model', parts: aggregatedParts },
@@ -628,9 +693,14 @@ export async function queryGeminiLLM(options: {
               { model: resolved.model, durationMs: Date.now() - start },
             )
           }
-          continue
-        }
+            continue
+          }
 
+        maybeReportCodeAssistConversationOffered({
+          oauthContext,
+          response: synthetic,
+          signal: options.signal,
+        })
         return assistantMessage
       } catch (error) {
         releaseApiSlot() // 确保出错时释放信号量

@@ -34,6 +34,11 @@ const CODE_ASSIST_METADATA = {
 
 const EXPIRY_SKEW_MS = 60_000
 const DEFAULT_OAUTH_CALLBACK_HOST = '127.0.0.1'
+const ACTION_STATUS_NO_ERROR = 1
+const ACTION_STATUS_ERROR_UNKNOWN = 2
+const ACTION_STATUS_CANCELLED = 3
+const ACTION_STATUS_EMPTY = 4
+const INITIATION_METHOD_COMMAND = 2
 
 function normalizeUserAgentModel(model?: string): string {
   const trimmed = String(model ?? '').trim()
@@ -362,15 +367,46 @@ async function fetchUserEmail(accessToken: string): Promise<string | undefined> 
   return email || undefined
 }
 
-async function postCodeAssist(accessToken: string, path: string, body: unknown): Promise<any> {
-  const resp = await fetch(`${CODE_ASSIST_ENDPOINT}${path}`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-      'User-Agent': getGeminiCliUserAgent(),
-    },
-    body: JSON.stringify(body),
+function normalizeCodeAssistMethodPath(path: string): string {
+  const trimmed = String(path ?? '').trim()
+  if (!trimmed) {
+    throw new Error('Code Assist 路径不能为空')
+  }
+  return trimmed.startsWith('/') ? trimmed : `/${trimmed}`
+}
+
+function normalizeOperationName(name: string): string {
+  return String(name ?? '').trim().replace(/^\/+/, '')
+}
+
+function normalizeCodeAssistModelId(modelId: string): string {
+  const trimmed = String(modelId ?? '').trim()
+  if (!trimmed) return ''
+  if (trimmed.startsWith('models/') || trimmed.startsWith('tunedModels/')) {
+    return trimmed
+  }
+  return `models/${trimmed}`
+}
+
+async function requestCodeAssist(options: {
+  accessToken: string
+  path: string
+  method: 'GET' | 'POST'
+  body?: unknown
+}): Promise<any> {
+  const methodPath = normalizeCodeAssistMethodPath(options.path)
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${options.accessToken}`,
+    'User-Agent': getGeminiCliUserAgent(),
+  }
+  if (options.method === 'POST') {
+    headers['Content-Type'] = 'application/json'
+  }
+
+  const resp = await fetch(`${CODE_ASSIST_ENDPOINT}${methodPath}`, {
+    method: options.method,
+    headers,
+    ...(options.method === 'POST' ? { body: JSON.stringify(options.body ?? {}) } : {}),
   })
 
   if (!resp.ok) {
@@ -379,6 +415,23 @@ async function postCodeAssist(accessToken: string, path: string, body: unknown):
   }
 
   return await resp.json()
+}
+
+async function postCodeAssist(accessToken: string, path: string, body: unknown): Promise<any> {
+  return await requestCodeAssist({
+    accessToken,
+    path,
+    method: 'POST',
+    body,
+  })
+}
+
+async function getCodeAssist(accessToken: string, path: string): Promise<any> {
+  return await requestCodeAssist({
+    accessToken,
+    path,
+    method: 'GET',
+  })
 }
 
 function extractProjectId(value: unknown): string | undefined {
@@ -443,17 +496,99 @@ async function tryOnboardUser(accessToken: string): Promise<string | undefined> 
     reqBody.cloudaicompanionProject = envProjectId
   }
 
-  const maxAttempts = 12
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const data = await postCodeAssist(accessToken, '/v1internal:onboardUser', reqBody)
-    if (data?.done) {
-      const projectId = extractProjectId(data?.response?.cloudaicompanionProject)
-      return projectId
-    }
+  let op = await postCodeAssist(accessToken, '/v1internal:onboardUser', reqBody)
+  if (op?.done) {
+    return extractProjectId(op?.response?.cloudaicompanionProject)
+  }
+
+  const operationName = normalizeOperationName(String(op?.name ?? ''))
+  if (!operationName) {
+    return undefined
+  }
+
+  const maxPollAttempts = 12
+  for (let attempt = 1; attempt <= maxPollAttempts; attempt++) {
     await new Promise(r => setTimeout(r, 5000))
+    op = await getCodeAssist(accessToken, `/v1internal/${operationName}`)
+    if (op?.done) {
+      return extractProjectId(op?.response?.cloudaicompanionProject)
+    }
   }
 
   return undefined
+}
+
+export async function fetchGeminiCliQuotaModelIds(options?: {
+  accessToken?: string
+  projectId?: string
+}): Promise<string[]> {
+  try {
+    const accessToken = options?.accessToken?.trim()
+    const projectId = options?.projectId?.trim()
+    const authContext =
+      accessToken && projectId ? null : await getGeminiCliAuthContext()
+    const resolvedAccessToken = accessToken || authContext?.accessToken || ''
+    const resolvedProjectId = projectId || authContext?.projectId || ''
+    if (!resolvedAccessToken || !resolvedProjectId) return []
+
+    const data = await postCodeAssist(accessToken || resolvedAccessToken, '/v1internal:retrieveUserQuota', {
+      project: resolvedProjectId,
+      userAgent: getGeminiCliUserAgent(),
+    })
+    const buckets = Array.isArray(data?.buckets) ? data.buckets : []
+    const ids = buckets
+      .map((bucket: any) => normalizeCodeAssistModelId(String(bucket?.modelId ?? '')))
+      .filter(Boolean)
+    return Array.from(new Set(ids))
+  } catch {
+    return []
+  }
+}
+
+export async function recordGeminiCliConversationOfferedBestEffort(options: {
+  accessToken: string
+  projectId: string
+  traceId?: string
+  hasFunctionCalls: boolean
+  includedCode: boolean
+  status?: 'no_error' | 'error' | 'cancelled' | 'empty'
+}): Promise<void> {
+  if (!options.hasFunctionCalls) return
+  const traceId = String(options.traceId ?? '').trim()
+  if (!traceId) return
+
+  const statusCode =
+    options.status === 'cancelled'
+      ? ACTION_STATUS_CANCELLED
+      : options.status === 'empty'
+        ? ACTION_STATUS_EMPTY
+        : options.status === 'error'
+          ? ACTION_STATUS_ERROR_UNKNOWN
+          : ACTION_STATUS_NO_ERROR
+
+  const request = {
+    project: options.projectId,
+    metadata: CODE_ASSIST_METADATA,
+    metrics: [
+      {
+        timestamp: new Date().toISOString(),
+        conversationOffered: {
+          citationCount: '0',
+          includedCode: options.includedCode,
+          status: statusCode,
+          traceId,
+          isAgentic: true,
+          initiationMethod: INITIATION_METHOD_COMMAND,
+        },
+      },
+    ],
+  }
+
+  try {
+    await postCodeAssist(options.accessToken, '/v1internal:recordCodeAssistMetrics', request)
+  } catch {
+    // best-effort
+  }
 }
 
 export async function fetchGeminiCliProjectId(accessToken: string): Promise<string> {
