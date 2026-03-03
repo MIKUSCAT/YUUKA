@@ -264,9 +264,20 @@ export class CodeAssistTransport {
       // Best-effort: surface HTTP status when present (gaxios error).
       const status = typeof (error as any)?.response?.status === 'number' ? (error as any).response.status : undefined
       const data = (error as any)?.response?.data
-      const snippet = typeof data === 'string' ? data : data ? JSON.stringify(data).slice(0, 400) : undefined
+      let responseBody: string | undefined
+      if (typeof data === 'string') {
+        responseBody = data
+      } else if (typeof Buffer !== 'undefined' && Buffer.isBuffer(data)) {
+        responseBody = data.toString('utf-8')
+      } else if (data != null) {
+        try {
+          responseBody = JSON.stringify(data)
+        } catch {
+          responseBody = String(data)
+        }
+      }
       if (status) {
-        throw new GeminiHttpError(`Code Assist 请求失败 (HTTP ${status})`, status, snippet)
+        throw new GeminiHttpError(`Code Assist 请求失败 (HTTP ${status})`, status, responseBody)
       }
       throw error
     } finally {
@@ -314,9 +325,20 @@ export class CodeAssistTransport {
 
       const status = typeof (error as any)?.response?.status === 'number' ? (error as any).response.status : undefined
       const data = (error as any)?.response?.data
-      const snippet = typeof data === 'string' ? data : data ? JSON.stringify(data).slice(0, 400) : undefined
+      let responseBody: string | undefined
+      if (typeof data === 'string') {
+        responseBody = data
+      } else if (typeof Buffer !== 'undefined' && Buffer.isBuffer(data)) {
+        responseBody = data.toString('utf-8')
+      } else if (data != null) {
+        try {
+          responseBody = JSON.stringify(data)
+        } catch {
+          responseBody = String(data)
+        }
+      }
       if (status) {
-        throw new GeminiHttpError(`Code Assist 流式请求失败 (HTTP ${status})`, status, snippet)
+        throw new GeminiHttpError(`Code Assist 流式请求失败 (HTTP ${status})`, status, responseBody)
       }
       throw error
     }

@@ -3,8 +3,8 @@ import {
   readFileSync,
   statSync,
 } from 'fs'
-import { basename, join, resolve } from 'path'
-import { getOriginalCwd } from './state'
+import { basename, join } from 'path'
+import { homedir } from 'os'
 import { getActiveSkills } from './skillLoader'
 
 export type RuntimeResourceKind = 'instruction' | 'skill'
@@ -26,7 +26,7 @@ type InstructionResourceCache = {
 
 let instructionCache: InstructionResourceCache | null = null
 
-const INSTRUCTION_FILENAMES = ['AGENTS.md', 'CLAUDE.md', '.cursorrules']
+const GLOBAL_INSTRUCTION_FILENAME = 'YUUKA.md'
 const MAX_INSTRUCTION_FILE_BYTES = 16 * 1024
 const MAX_TOTAL_INSTRUCTION_BYTES = 32 * 1024
 
@@ -55,8 +55,7 @@ function buildInstructionCacheKey(paths: string[]): string {
 }
 
 export function getProjectInstructionResources(): RuntimeResource[] {
-  const cwd = resolve(getOriginalCwd())
-  const candidates = INSTRUCTION_FILENAMES.map(name => join(cwd, name))
+  const candidates = [join(homedir(), '.yuuka', GLOBAL_INSTRUCTION_FILENAME)]
   const cacheKey = buildInstructionCacheKey(candidates)
   if (instructionCache && instructionCache.key === cacheKey) {
     return instructionCache.items
@@ -76,11 +75,11 @@ export function getProjectInstructionResources(): RuntimeResource[] {
       id: `instruction:${basename(path)}`,
       kind: 'instruction',
       name: basename(path),
-      location: 'project',
+      location: 'user',
       path,
       content,
       metadata: {
-        source: 'workspace-root',
+        source: 'user-global',
       },
     })
   }
@@ -94,10 +93,8 @@ export function buildInstructionResourcesPromptHeader(): string | null {
   if (resources.length === 0) return null
 
   const lines: string[] = []
-  lines.push('# Workspace Rules (Auto-loaded Resources)')
-  lines.push(
-    '遵循以下工作区说明文件（如果存在）。这些内容来自当前工作目录根目录的资源文件。',
-  )
+  lines.push('# Global Rules (Auto-loaded Resources)')
+  lines.push('遵循以下全局说明文件（如果存在）。这些内容来自用户目录 ~/.yuuka/（默认 ~/.yuuka/YUUKA.md）。')
 
   for (const resource of resources) {
     if (!resource.content) continue

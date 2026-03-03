@@ -18,7 +18,6 @@ import { setTerminalTitle } from '@utils/terminal'
 import { launchExternalEditor } from '@utils/externalEditor'
 import { usePermissionContext } from '@context/PermissionContext'
 import { getGlobalGeminiSettingsPath, readGeminiSettingsFile } from '@utils/geminiSettings'
-import { getTotalCost } from '@costTracker'
 import { formatNumber } from '@utils/format'
 import figures from 'figures'
 import { getTodos } from '@utils/todoStorage'
@@ -63,6 +62,8 @@ type Props = {
       newMessages: Message[],
       abortController?: AbortController,
     ) => Promise<void>
+    onQueueMessage: (kind: 'steering' | 'follow-up', text: string) => void
+    onRetrieveQueuedMessages: () => void
     setToolJSX: SetToolJSXFn
     setIsLoading: (isLoading: boolean) => void
     setAbortController: (abortController: AbortController | null) => void
@@ -103,6 +104,8 @@ function PromptInput({
   const { isDisabled, isLoading, abortController, autoMode } = runtime
   const {
     onQuery,
+    onQueueMessage,
+    onRetrieveQueuedMessages,
     setToolJSX,
     setIsLoading,
     setAbortController,
@@ -314,14 +317,62 @@ function PromptInput({
     }
   }
 
+  const buildFinalInput = useCallback(
+    (raw: string): string => {
+      let finalInput = raw
+      if (pastedText) {
+        const pastedPrompt = getPastedTextPrompt(pastedText)
+        if (finalInput.includes(pastedPrompt)) {
+          finalInput = finalInput.replace(pastedPrompt, pastedText)
+        }
+      }
+      return finalInput
+    },
+    [pastedText],
+  )
+
+  const queueMessage = useCallback(
+    (kind: 'steering' | 'follow-up', raw: string) => {
+      const finalInput = buildFinalInput(raw)
+      if (!finalInput.trim()) {
+        return
+      }
+
+      onQueueMessage(kind, finalInput)
+
+      onInputChange('')
+      setCursorOffset(0)
+      setPastedImage(null)
+      setPastedText(null)
+      onSubmitCountChange(_ => _ + 1)
+
+      addToHistory(raw)
+      resetHistory()
+
+      setMessage({
+        show: true,
+        text:
+          kind === 'steering'
+            ? '已加入插话队列（Enter）'
+            : '已加入跟进队列（Alt+Enter）',
+      })
+      setTimeout(() => setMessage({ show: false }), 1200)
+    },
+    [
+      buildFinalInput,
+      onInputChange,
+      onQueueMessage,
+      onSubmitCountChange,
+      resetHistory,
+      setCursorOffset,
+    ],
+  )
+
   async function onSubmit(input: string, isSubmittingSlashCommand = false) {
     if (input === '') {
       return
     }
     if (isDisabled) {
-      return
-    }
-    if (isLoading) {
       return
     }
     
@@ -331,19 +382,17 @@ function PromptInput({
       return
     }
 
+    if (isLoading) {
+      queueMessage('steering', input)
+      return
+    }
+
     // Handle exit commands
     if (['exit', 'quit', ':q', ':q!', ':wq', ':wq!'].includes(input.trim())) {
       exit()
     }
 
-    let finalInput = input
-    if (pastedText) {
-      // Create the prompt pattern that would have been used for this pasted text
-      const pastedPrompt = getPastedTextPrompt(pastedText)
-      if (finalInput.includes(pastedPrompt)) {
-        finalInput = finalInput.replace(pastedPrompt, pastedText)
-      } // otherwise, ignore the pastedText if the user has modified the prompt
-    }
+    const finalInput = buildFinalInput(input)
     onInputChange('')
     setCursorOffset(0)
     // Suggestions are now handled by unified completion
@@ -374,6 +423,7 @@ function PromptInput({
         abortController: newAbortController,
         readFileTimestamps,
         setForkConvoWithMessagesOnTheNextRender,
+        openSessionTree: onShowMessageSelector,
       },
       pastedImage ?? null,
     )
@@ -421,6 +471,12 @@ function PromptInput({
   useInput((_inputChar, key) => {
     if (key.escape && messages.length > 0 && !input && !isLoading) {
       onShowMessageSelector()
+    }
+
+    // Alt+Up: retrieve queued messages back to editor (pi-style)
+    if (key.meta && key.upArrow) {
+      onRetrieveQueuedMessages()
+      return true
     }
 
     // Alt+M: toggle auto mode for this session
@@ -491,6 +547,12 @@ function PromptInput({
   const handleSpecialKey = useCallback((inputChar: string, key: any): boolean => {
     if (isEditingExternally) return true
 
+    // While agent is working: Alt/Option + Enter queues follow-up (pi-style)
+    if (isLoading && key.return && (key.meta || key.option)) {
+      queueMessage('follow-up', input)
+      return true
+    }
+
     // Shift/Meta/Option + Enter => insert newline, do not submit
     if (key.return && (key.shift || key.meta || key.option)) {
       insertNewlineAtCursor()
@@ -504,7 +566,7 @@ function PromptInput({
     }
 
     return false // Not handled, allow normal processing
-  }, [handleExternalEdit, isEditingExternally])
+  }, [handleExternalEdit, input, insertNewlineAtCursor, isEditingExternally, isLoading, queueMessage])
 
   const textInputColumns = useTerminalSize().columns - 4
   const tokenUsage = useMemo(() => countTokens(messages), [messages])
@@ -520,10 +582,6 @@ function PromptInput({
       // ignore
     }
     return '未设置模型'
-  }, [messages, isLoading])
-  const totalCostLabel = useMemo(() => {
-    const totalCost = getTotalCost()
-    return `$${totalCost > 0.5 ? totalCost.toFixed(2) : totalCost.toFixed(4)}`
   }, [messages, isLoading])
   const tokenUsageLabel = useMemo(() => `${formatNumber(tokenUsage)} tokens`, [
     tokenUsage,
@@ -605,7 +663,7 @@ function PromptInput({
             onMessage={(show, text) => setMessage({ show, text })}
             onImagePaste={onImagePaste}
             columns={textInputColumns}
-            isDimmed={isDisabled || isLoading || isEditingExternally}
+            isDimmed={isDisabled || isEditingExternally}
             disableCursorMovementForUpDownKeys={completionActive}
             cursorOffset={cursorOffset}
             onChangeCursorOffset={setCursorOffset}
@@ -646,9 +704,7 @@ function PromptInput({
           {autoMode ? '开' : '关'}
           {isLoading ? '  Esc 取消' : messages.length > 0 ? '  Esc 历史' : ''}
         </Text>
-        <Text dimColor>
-          {modelDisplayName} · {totalCostLabel} · {tokenUsageLabel}
-        </Text>
+        <Text dimColor>{modelDisplayName} · {tokenUsageLabel}</Text>
       </Box>
     </Box>
   )

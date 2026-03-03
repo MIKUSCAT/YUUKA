@@ -2,6 +2,7 @@ import { z } from 'zod'
 import * as React from 'react'
 import type { PermissionMode } from '@yuuka-types/PermissionMode'
 import type { SessionManager } from '@utils/sessionManager'
+import type { MessageQueueController } from '@utils/messageQueue'
 
 /**
  * Core Tool interface for YUUKA's extensible tool system
@@ -20,6 +21,15 @@ export interface ToolUseContext {
   abortController: AbortController
   readFileTimestamps: { [filePath: string]: number }
   /**
+   * Pi-style message queue (steering/follow-up). Only present in interactive
+   * REPL mode; non-interactive runs can omit it.
+   */
+  messageQueue?: MessageQueueController
+  /**
+   * Interactive-only helper: open the session tree UI (/tree).
+   */
+  openSessionTree?: () => void
+  /**
    * Global, pi-style session manager (JSONL). If present, tools and runtime
    * hooks can append entries (compaction, custom events, etc.).
    */
@@ -37,6 +47,8 @@ export interface ToolUseContext {
     safeMode?: boolean
     autoMode?: boolean
     permissionMode?: PermissionMode
+    steeringMode?: 'one-at-a-time' | 'all'
+    followUpMode?: 'one-at-a-time' | 'all'
     forkNumber?: number
     messageLogName?: string
     sessionId?: string

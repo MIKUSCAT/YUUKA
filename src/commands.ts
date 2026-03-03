@@ -2,10 +2,12 @@ import React from 'react'
 import clear from './commands/clear'
 import compact from './commands/compact'
 import config from './commands/config'
+import fork from './commands/fork'
 import mcp from './commands/mcp'
 import * as model from './commands/model'
 import { Tool, ToolUseContext } from './Tool'
 import resume from './commands/resume'
+import tree from './commands/tree'
 import agents from './commands/agents'
 import auth from './commands/auth'
 import memory from './commands/memory'
@@ -64,10 +66,12 @@ const COMMANDS = memoize((): Command[] => [
   clear,
   compact,
   config,
+  fork,
   memory,
   mcp,
   model,
   resume,
+  tree,
   snapshot,
   skills,
   status,

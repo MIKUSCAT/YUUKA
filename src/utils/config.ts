@@ -240,6 +240,8 @@ export type GlobalConfig = {
   thinkingNonGemini3Budget?: number
   memoryReadEnabled?: boolean
   memoryWriteEnabled?: boolean
+  steeringMode?: 'one-at-a-time' | 'all'
+  followUpMode?: 'one-at-a-time' | 'all'
   dangerousCommands?: string[]
   autoTaskSummaryEnabled?: boolean
   autoTaskDiagnosticsEnabled?: boolean
@@ -273,6 +275,8 @@ export const DEFAULT_GLOBAL_CONFIG: GlobalConfig = {
   thinkingNonGemini3Budget: 8192,
   memoryReadEnabled: true,
   memoryWriteEnabled: true,
+  steeringMode: 'one-at-a-time',
+  followUpMode: 'one-at-a-time',
   dangerousCommands: [],
   autoTaskSummaryEnabled: true,
   autoTaskDiagnosticsEnabled: true,
@@ -310,6 +314,8 @@ export const GLOBAL_CONFIG_KEYS = [
   'thinkingNonGemini3Budget',
   'memoryReadEnabled',
   'memoryWriteEnabled',
+  'steeringMode',
+  'followUpMode',
   'dangerousCommands',
 ] as const
 

@@ -13,7 +13,7 @@ import { MessageResponse } from '@components/MessageResponse'
 import { TASK_PROGRESS_PREFIX, parseTaskProgressText } from '@components/messages/TaskProgressMessage'
 import { TaskProgressGroup } from '@components/messages/TaskProgressGroup'
 import type { TaskProgressPayload } from '@components/messages/TaskProgressMessage'
-import { MessageSelector } from '@components/MessageSelector'
+import { SessionTreeSelector } from '@components/SessionTreeSelector'
 import {
   PermissionRequest,
   type ToolUseConfirm,
@@ -54,10 +54,8 @@ import {
   isNotEmptyMessage,
   type NormalizedMessage,
   normalizeMessages,
-  normalizeMessagesForAPI,
   processUserInput,
   reorderMessages,
-  extractTag,
   createAssistantMessage,
 } from '@utils/messages'
 import { clearTerminal } from '@utils/terminal'
@@ -70,6 +68,7 @@ import { runAgentRuntime } from '@utils/agentRuntime'
 import { normalizeTeamName } from '@services/teamPaths'
 import type { PermissionMode } from '@yuuka-types/PermissionMode'
 import { SessionManager } from '@utils/sessionManager'
+import { createMessageQueue } from '@utils/messageQueue'
 
 type Props = {
   commands: Command[]
@@ -206,6 +205,11 @@ export function REPL({
 
   const { status: apiKeyStatus, reverify } = useApiKeyVerification()
 
+  const messageQueueRef = useRef<ReturnType<typeof createMessageQueue> | null>(null)
+  if (!messageQueueRef.current) {
+    messageQueueRef.current = createMessageQueue()
+  }
+
   useEffect(() => {
     setTools(initialTools)
   }, [initialTools])
@@ -256,8 +260,18 @@ export function REPL({
 
     // 取消后回到干净输入框（不要把上一次的 prompt 塞回来）
     lastSubmittedPromptRef.current = ''
-    setInputValue('')
-    setCursorOffset(0)
+    const drained = messageQueueRef.current?.drainAll() ?? []
+    if (drained.length > 0 || inputValue.trim()) {
+      const parts: string[] = []
+      if (inputValue.trim()) parts.push(inputValue.trimEnd())
+      parts.push(...drained.map(item => item.text))
+      const restored = parts.join('\n\n').trim()
+      setInputValue(restored)
+      setCursorOffset(restored.length)
+    } else {
+      setInputValue('')
+      setCursorOffset(0)
+    }
   }
 
   useCancelRequest(
@@ -272,21 +286,29 @@ export function REPL({
 
   useEffect(() => {
     if (!forkConvoWithMessagesOnTheNextRender) return
+    const seedMessages = forkConvoWithMessagesOnTheNextRender
 
-    // Start a brand new session (pi-style: keep old session intact).
-    const next = SessionManager.create(getOriginalCwd())
+    setImmediate(async () => {
+      await clearTerminal()
+      messageQueueRef.current?.clear()
 
-    // Seed new session with provided messages (excluding progress).
-    for (const m of forkConvoWithMessagesOnTheNextRender) {
-      if (m.type === 'progress') continue
-      next.appendMessage(m)
-    }
+      // Start a brand new session (pi-style: keep old session intact).
+      const next = SessionManager.create(getOriginalCwd())
 
-    sessionManagerRef.current = next
-    setSessionMeta({ id: next.getSessionId(), path: next.getSessionFile() })
-    setSessionKey(k => k + 1)
-    setForkConvoWithMessagesOnTheNextRender(null)
-    setMessages(forkConvoWithMessagesOnTheNextRender)
+      // Seed new session with provided messages (excluding progress).
+      for (const m of seedMessages) {
+        if (m.type === 'progress') continue
+        next.appendMessage(m)
+      }
+
+      sessionManagerRef.current = next
+      setSessionMeta({ id: next.getSessionId(), path: next.getSessionFile() })
+      setSessionKey(k => k + 1)
+      setForkConvoWithMessagesOnTheNextRender(null)
+      setMessages(seedMessages)
+      setInputValue('')
+      setCursorOffset(0)
+    })
   }, [forkConvoWithMessagesOnTheNextRender])
 
   useEffect(() => {
@@ -383,6 +405,8 @@ export function REPL({
               safeMode: effectiveSafeMode,
               autoMode,
               permissionMode,
+              steeringMode: getGlobalConfig().steeringMode ?? 'one-at-a-time',
+              followUpMode: getGlobalConfig().followUpMode ?? 'one-at-a-time',
               maxThinkingTokens,
             },
             messageId: getLastAssistantMessageId([...messages, ...newMessages]),
@@ -391,6 +415,7 @@ export function REPL({
             abortController: newAbortController,
             setToolJSX,
             sessionManager: sessionManagerRef.current,
+            messageQueue: messageQueueRef.current ?? undefined,
           },
           getBinaryFeedbackResponse,
         })) {
@@ -490,6 +515,8 @@ export function REPL({
             safeMode: effectiveSafeMode,
             autoMode,
             permissionMode,
+            steeringMode: getGlobalConfig().steeringMode ?? 'one-at-a-time',
+            followUpMode: getGlobalConfig().followUpMode ?? 'one-at-a-time',
             maxThinkingTokens,
           },
           messageId: getLastAssistantMessageId([...messages, lastMessage]),
@@ -498,6 +525,7 @@ export function REPL({
           abortController: controllerToUse,
           setToolJSX,
           sessionManager: sessionManagerRef.current,
+          messageQueue: messageQueueRef.current ?? undefined,
         },
         getBinaryFeedbackResponse,
       })) {
@@ -955,8 +983,29 @@ export function REPL({
     setAutoMode(prev => !prev)
   }, [])
 
-  const toggleMessageSelector = useCallback(() => {
-    setIsMessageSelectorVisible(prev => !prev)
+  const enqueueQueuedMessage = useCallback(
+    (kind: 'steering' | 'follow-up', text: string) => {
+      messageQueueRef.current?.enqueue(kind, text)
+    },
+    [],
+  )
+
+  const retrieveQueuedMessagesToEditor = useCallback(() => {
+    const drained = messageQueueRef.current?.drainAll() ?? []
+    if (drained.length === 0) return
+
+    const parts: string[] = []
+    if (inputValue.trim()) {
+      parts.push(inputValue.trimEnd())
+    }
+    parts.push(...drained.map(item => item.text))
+    const next = parts.join('\n\n').trim()
+    setInputValue(next)
+    setCursorOffset(next.length)
+  }, [inputValue])
+
+  const showSessionTree = useCallback(() => {
+    setIsMessageSelectorVisible(true)
   }, [])
 
   const promptInputContext = useMemo(
@@ -1010,19 +1059,23 @@ export function REPL({
   const promptInputActions = useMemo(
     () => ({
       onQuery,
+      onQueueMessage: enqueueQueuedMessage,
+      onRetrieveQueuedMessages: retrieveQueuedMessagesToEditor,
       setToolJSX,
       setIsLoading,
       setAbortController,
       onToggleAutoMode: toggleAutoMode,
-      onShowMessageSelector: toggleMessageSelector,
+      onShowMessageSelector: showSessionTree,
     }),
     [
       onQuery,
+      enqueueQueuedMessage,
+      retrieveQueuedMessagesToEditor,
       setToolJSX,
       setIsLoading,
       setAbortController,
       toggleAutoMode,
-      toggleMessageSelector,
+      showSessionTree,
     ],
   )
 
@@ -1112,61 +1165,33 @@ export function REPL({
           )}
       </Box>
       {isMessageSelectorVisible && (
-        <MessageSelector
-          erroredToolUseIDs={erroredToolUseIDs}
-          unresolvedToolUseIDs={unresolvedToolUseIDs}
-          messages={normalizeMessagesForAPI(messages)}
-          onSelect={async message => {
+        <SessionTreeSelector
+          sessionManager={sessionManagerRef.current!}
+          onSelect={entryId => {
             setIsMessageSelectorVisible(false)
 
-            // If the user selected the current prompt, do nothing
-            if (!messages.includes(message)) {
-              return
-            }
-
-            // Cancel tool use calls/requests
-            onCancel()
-
-            // Hack: make sure the "Interrupted by user" message is
-            // rendered in response to the cancellation. Otherwise,
-            // the screen will be cleared but there will remain a
-            // vestigial "Interrupted by user" message at the top.
             setImmediate(async () => {
-              // Clear messages, and re-render
               await clearTerminal()
-              setMessages([])
-              setForkConvoWithMessagesOnTheNextRender(
-                messages.slice(0, messages.indexOf(message)),
-              )
 
-              // Populate/reset the prompt input
-              if (typeof message.message.content === 'string') {
-                const content = message.message.content
-                const commandName =
-                  extractTag(content, 'command-message') ||
-                  extractTag(content, 'command-name')
-                if (commandName) {
-                  const args = extractTag(content, 'command-args')?.trim() || ''
-                  const next = `/${commandName}${args ? ` ${args}` : ''}`
-                  setInputValue(next)
-                  setCursorOffset(next.length)
-                  return
-                }
-
-                const bashInput = extractTag(content, 'bash-input')?.trim()
-                if (bashInput) {
-                  setInputValue(bashInput)
-                  setCursorOffset(bashInput.length)
-                  return
-                }
-
-                setInputValue(content)
-                setCursorOffset(content.length)
+              const mgr = sessionManagerRef.current
+              if (!mgr) {
+                return
               }
+              if (entryId === null) {
+                mgr.branchToRoot()
+              } else {
+                mgr.branch(entryId)
+              }
+
+              const nextMessages = (mgr.buildSessionContext().messages ?? []) as MessageType[]
+              setMessages([])
+              setSessionKey(k => k + 1)
+              setMessages(nextMessages)
+              setInputValue('')
+              setCursorOffset(0)
             })
           }}
           onEscape={() => setIsMessageSelectorVisible(false)}
-          tools={tools}
         />
       )}
       {/** Fix occasional rendering artifact */}

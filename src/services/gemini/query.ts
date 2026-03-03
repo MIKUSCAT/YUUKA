@@ -25,15 +25,15 @@ import { setSessionState, getSessionState } from '@utils/sessionState'
 import { GeminiHttpError } from './transport'
 import { applyGroundingCitations, extractGeminiGrounding, type GroundingSource } from './grounding'
 import { acquireApiSlot, releaseApiSlot } from '@utils/apiSemaphore'
+import { DEFAULT_MAX_ATTEMPTS, retryWithBackoff } from './retry'
+import { RetryableQuotaError, TerminalQuotaError, ValidationRequiredError } from './googleQuotaErrors'
+import { ModelNotFoundError } from './httpErrors'
 
 const NO_CONTENT_TEXTS = new Set([
   '(no content)',
   '(No content)',
   '（模型没有输出可见内容，请重试）',
 ])
-const RETRY_MAX_ATTEMPTS = 3
-const RETRY_INITIAL_DELAY_MS = 5000
-const RETRY_MAX_DELAY_MS = 30000
 
 type ThoughtSummary = {
   subject: string
@@ -165,45 +165,6 @@ function isAbortError(error: unknown): boolean {
   return false
 }
 
-function isRetryableGeminiError(error: unknown): { retryable: boolean; reason: string } {
-  if (!error) return { retryable: false, reason: 'unknown' }
-  if (isAbortError(error)) return { retryable: false, reason: 'aborted' }
-
-  if (error instanceof GeminiHttpError) {
-    const status = error.status
-    if (status === 408 || status === 429) {
-      return { retryable: true, reason: `HTTP ${status}` }
-    }
-    if (status >= 500 && status <= 599) {
-      return { retryable: true, reason: `HTTP ${status}` }
-    }
-    return { retryable: false, reason: `HTTP ${status}` }
-  }
-
-  const msg =
-    error instanceof Error ? error.message : typeof error === 'string' ? error : String(error)
-
-  // fetch/网络类错误：best-effort
-  if (
-    /fetch failed/i.test(msg) ||
-    /network/i.test(msg) ||
-    /ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|socket hang up/i.test(msg)
-  ) {
-    return { retryable: true, reason: 'network' }
-  }
-
-  return { retryable: false, reason: 'non-retryable' }
-}
-
-function computeBackoffMs(attempt: number): number {
-  const currentDelay = Math.min(
-    RETRY_MAX_DELAY_MS,
-    Math.floor(RETRY_INITIAL_DELAY_MS * Math.pow(2, Math.max(0, attempt - 1))),
-  )
-  const jitter = currentDelay * 0.3 * (Math.random() * 2 - 1)
-  return Math.max(0, Math.floor(currentDelay + jitter))
-}
-
 async function sleepWithAbort(ms: number, signal: AbortSignal): Promise<boolean> {
   if (signal.aborted) return true
   return await new Promise(resolve => {
@@ -245,6 +206,15 @@ function wrapGeminiRequestError(
   const wrapped = new Error(message)
   ;(wrapped as any).cause = error
   return wrapped
+}
+
+function isNonWrappedGoogleError(error: unknown): boolean {
+  return (
+    error instanceof TerminalQuotaError ||
+    error instanceof RetryableQuotaError ||
+    error instanceof ValidationRequiredError ||
+    error instanceof ModelNotFoundError
+  )
 }
 
 function isPreviewModelName(model: string): boolean {
@@ -641,205 +611,214 @@ export async function queryGeminiLLM(options: {
     }
 
     const userPromptId = randomUUID()
-    for (let attempt = 1; attempt <= RETRY_MAX_ATTEMPTS; attempt++) {
-      if (options.signal.aborted) {
-        // 不再发新请求，直接返回空内容（上层会显示“Interrupted by user”）
-        return geminiResponseToAssistantMessage(
-          { candidates: [{ content: { role: 'model', parts: [] } }] } as any,
-          { model: resolved.model, durationMs: Date.now() - start },
-        )
-      }
 
-      try {
-        setSessionState('currentError', null)
-        const requestContents =
-          noContentRetries > 0
-            ? [...baseContents, noContentHint]
-            : baseContents
+    const emptyAssistantMessage = () =>
+      geminiResponseToAssistantMessage(
+        { candidates: [{ content: { role: 'model', parts: [] } }] } as any,
+        { model: resolved.model, durationMs: Date.now() - start },
+      )
 
-        if (!options.stream) {
-          await acquireApiSlot(options.signal)
-          let resp: GeminiGenerateContentResponse
-	          try {
-	            resp = await transport.generateContent({
-	              model: effectiveModel,
-	              contents: requestContents,
-	              userPromptId,
-	              config: {
-	                ...resolved.config,
-	                abortSignal: options.signal,
-                ...(systemInstruction ? { systemInstruction } : {}),
-                ...(options.sessionId ? { sessionId: options.sessionId } : {}),
-              },
-            })
-          } finally {
-            releaseApiSlot()
+    try {
+      return await retryWithBackoff(
+        async () => {
+          if (options.signal.aborted) {
+            return emptyAssistantMessage()
           }
 
-	          const assistantMessage = geminiResponseToAssistantMessage(resp, {
-	            model: effectiveModel,
-	            durationMs: Date.now() - start,
-	          })
-          if (
-            isNoContentAssistantMessage(assistantMessage) &&
-            noContentRetries < MAX_NO_CONTENT_RETRIES &&
-            !options.signal.aborted
-          ) {
-            noContentRetries++
+          while (true) {
+            if (options.signal.aborted) {
+              return emptyAssistantMessage()
+            }
+
+            setSessionState('currentError', null)
+            const requestContents =
+              noContentRetries > 0 ? [...baseContents, noContentHint] : baseContents
+
+            if (!options.stream) {
+              await acquireApiSlot(options.signal)
+              let resp: GeminiGenerateContentResponse
+              try {
+                resp = await transport.generateContent({
+                  model: effectiveModel,
+                  contents: requestContents,
+                  userPromptId,
+                  config: {
+                    ...resolved.config,
+                    abortSignal: options.signal,
+                    ...(systemInstruction ? { systemInstruction } : {}),
+                    ...(options.sessionId ? { sessionId: options.sessionId } : {}),
+                  },
+                })
+              } finally {
+                releaseApiSlot()
+              }
+
+              const assistantMessage = geminiResponseToAssistantMessage(resp, {
+                model: effectiveModel,
+                durationMs: Date.now() - start,
+              })
+
+              if (
+                isNoContentAssistantMessage(assistantMessage) &&
+                noContentRetries < MAX_NO_CONTENT_RETRIES &&
+                !options.signal.aborted
+              ) {
+                noContentRetries++
+                setSessionState(
+                  'currentError',
+                  `模型返回空内容，自动重试 ${noContentRetries}/${MAX_NO_CONTENT_RETRIES}`,
+                )
+                const aborted = await sleepWithAbort(200, options.signal)
+                if (aborted) {
+                  return emptyAssistantMessage()
+                }
+                continue
+              }
+
+              maybeReportCodeAssistConversationOffered({
+                oauthContext,
+                response: resp,
+                signal: options.signal,
+              })
+
+              return assistantMessage
+            }
+
+            await acquireApiSlot(options.signal)
+            let stream: AsyncIterable<GeminiGenerateContentResponse>
+            try {
+              stream = await transport.generateContentStream({
+                model: effectiveModel,
+                contents: requestContents,
+                userPromptId,
+                config: {
+                  ...resolved.config,
+                  abortSignal: options.signal,
+                  ...(systemInstruction ? { systemInstruction } : {}),
+                  ...(options.sessionId ? { sessionId: options.sessionId } : {}),
+                },
+              })
+            } catch (e) {
+              releaseApiSlot()
+              throw e
+            }
+
+            try {
+              const chunks: GeminiGenerateContentResponse[] = []
+              let lastUsage: GeminiGenerateContentResponse['usageMetadata'] | undefined
+              for await (const chunk of stream) {
+                chunks.push(chunk)
+                if (chunk.usageMetadata) lastUsage = chunk.usageMetadata
+
+                // Gemini “thinking” 兼容：如果 stream 里带 thought，就用状态条显示（不进正文）
+                const parts = chunk.candidates?.[0]?.content?.parts ?? []
+                for (const part of parts as any[]) {
+                  const thoughtFlag = (part as any)?.thought
+                  const thoughtText =
+                    typeof thoughtFlag === 'string'
+                      ? thoughtFlag
+                      : typeof (part as any)?.text === 'string'
+                        ? String((part as any).text)
+                        : ''
+                  if ((thoughtFlag === true || typeof thoughtFlag === 'string') && thoughtText.trim()) {
+                    const parsed = parseThought(thoughtText)
+                    const subject =
+                      parsed.subject.trim() || parsed.description.trim() || thoughtText.trim()
+                    if (getSessionState('suppressThoughtDepth') === 0) {
+                      setSessionState('currentThought', {
+                        subject,
+                        description: parsed.description.trim(),
+                      })
+                    }
+                  }
+                }
+              }
+
+              const aggregatedParts = aggregateStreamParts(chunks)
+              const streamTraceId = chunks
+                .map(chunk => resolveResponseTraceId(chunk))
+                .find((value): value is string => typeof value === 'string' && value.length > 0)
+              const synthetic: GeminiGenerateContentResponse = {
+                ...(streamTraceId ? { traceId: streamTraceId } : {}),
+                candidates: [
+                  {
+                    content: { role: 'model', parts: aggregatedParts },
+                  },
+                ],
+                usageMetadata: lastUsage,
+              }
+
+              const assistantMessage = geminiResponseToAssistantMessage(synthetic, {
+                model: effectiveModel,
+                durationMs: Date.now() - start,
+              })
+
+              if (
+                isNoContentAssistantMessage(assistantMessage) &&
+                noContentRetries < MAX_NO_CONTENT_RETRIES &&
+                !options.signal.aborted
+              ) {
+                noContentRetries++
+                setSessionState(
+                  'currentError',
+                  `模型返回空内容，自动重试 ${noContentRetries}/${MAX_NO_CONTENT_RETRIES}`,
+                )
+                const aborted = await sleepWithAbort(200, options.signal)
+                if (aborted) {
+                  return emptyAssistantMessage()
+                }
+                continue
+              }
+
+              maybeReportCodeAssistConversationOffered({
+                oauthContext,
+                response: synthetic,
+                signal: options.signal,
+              })
+
+              return assistantMessage
+            } finally {
+              releaseApiSlot()
+            }
+          }
+        },
+        {
+          maxAttempts: DEFAULT_MAX_ATTEMPTS,
+          signal: options.signal,
+          onRetry: event => {
+            setSessionState('currentThought', null)
+            const reason =
+              typeof event.status === 'number'
+                ? `HTTP ${event.status}`
+                : event.classifiedError instanceof RetryableQuotaError
+                  ? 'quota'
+                  : 'network'
+            const prefix =
+              event.status === 429 || event.classifiedError instanceof RetryableQuotaError
+                ? '触发限流/配额'
+                : '网络波动'
             setSessionState(
               'currentError',
-              `模型返回空内容，自动重试 ${noContentRetries}/${MAX_NO_CONTENT_RETRIES}`,
+              `${prefix}，重试 ${event.attempt}/${event.maxAttempts}（${reason}，等待 ${event.delayMs}ms）`,
             )
-            const aborted = await sleepWithAbort(200, options.signal)
-            if (aborted) {
-              return geminiResponseToAssistantMessage(
-                { candidates: [{ content: { role: 'model', parts: [] } }] } as any,
-                { model: resolved.model, durationMs: Date.now() - start },
-              )
-            }
-            continue
-          }
-
-          maybeReportCodeAssistConversationOffered({
-            oauthContext,
-            response: resp,
-            signal: options.signal,
-          })
-          return assistantMessage
-        }
-
-        await acquireApiSlot(options.signal)
-        let stream: AsyncIterable<GeminiGenerateContentResponse>
-	        try {
-	          stream = await transport.generateContentStream({
-	            model: effectiveModel,
-	            contents: requestContents,
-	            userPromptId,
-	            config: {
-	              ...resolved.config,
-	              abortSignal: options.signal,
-              ...(systemInstruction ? { systemInstruction } : {}),
-              ...(options.sessionId ? { sessionId: options.sessionId } : {}),
-            },
-          })
-        } catch (e) {
-          releaseApiSlot()
-          throw e
-        }
-
-        const chunks: GeminiGenerateContentResponse[] = []
-        let lastUsage: GeminiGenerateContentResponse['usageMetadata'] | undefined
-        for await (const chunk of stream) {
-          chunks.push(chunk)
-          if (chunk.usageMetadata) lastUsage = chunk.usageMetadata
-
-          // Gemini “thinking” 兼容：如果 stream 里带 thought，就用状态条显示（不进正文）
-          const parts = chunk.candidates?.[0]?.content?.parts ?? []
-          for (const part of parts as any[]) {
-            const thoughtFlag = (part as any)?.thought
-            const thoughtText =
-              typeof thoughtFlag === 'string'
-                ? thoughtFlag
-                : typeof (part as any)?.text === 'string'
-                  ? String((part as any).text)
-                  : ''
-            if ((thoughtFlag === true || typeof thoughtFlag === 'string') && thoughtText.trim()) {
-              const parsed = parseThought(thoughtText)
-              const subject = parsed.subject.trim() || parsed.description.trim() || thoughtText.trim()
-              if (getSessionState('suppressThoughtDepth') === 0) {
-                setSessionState('currentThought', {
-                  subject,
-                  description: parsed.description.trim(),
-                })
-              }
-            }
-          }
-        }
-        releaseApiSlot()
-
-        const aggregatedParts = aggregateStreamParts(chunks)
-        const streamTraceId = chunks
-          .map(chunk => resolveResponseTraceId(chunk))
-          .find((value): value is string => typeof value === 'string' && value.length > 0)
-        const synthetic: GeminiGenerateContentResponse = {
-          ...(streamTraceId ? { traceId: streamTraceId } : {}),
-          candidates: [
-            {
-              content: { role: 'model', parts: aggregatedParts },
-            },
-          ],
-          usageMetadata: lastUsage,
-        }
-
-	        const assistantMessage = geminiResponseToAssistantMessage(synthetic, {
-	          model: effectiveModel,
-	          durationMs: Date.now() - start,
-	        })
-        if (
-          isNoContentAssistantMessage(assistantMessage) &&
-          noContentRetries < MAX_NO_CONTENT_RETRIES &&
-          !options.signal.aborted
-        ) {
-          noContentRetries++
-          setSessionState(
-            'currentError',
-            `模型返回空内容，自动重试 ${noContentRetries}/${MAX_NO_CONTENT_RETRIES}`,
-          )
-          const aborted = await sleepWithAbort(200, options.signal)
-          if (aborted) {
-            return geminiResponseToAssistantMessage(
-              { candidates: [{ content: { role: 'model', parts: [] } }] } as any,
-              { model: resolved.model, durationMs: Date.now() - start },
-            )
-          }
-            continue
-          }
-
-        maybeReportCodeAssistConversationOffered({
-          oauthContext,
-          response: synthetic,
-          signal: options.signal,
-        })
-        return assistantMessage
-      } catch (error) {
-        releaseApiSlot() // 确保出错时释放信号量
-        const meta = isRetryableGeminiError(error)
-        if (
-          attempt >= RETRY_MAX_ATTEMPTS ||
-          !meta.retryable ||
-          options.signal.aborted ||
-          isAbortError(error)
-        ) {
-	          throw wrapGeminiRequestError(error, {
-	            stage: 'llm',
-	            model: effectiveModel,
-	            modelKey,
-	            attempt,
-	            maxAttempts: RETRY_MAX_ATTEMPTS,
-	          })
-        }
-
-        const backoff = computeBackoffMs(attempt)
-        setSessionState('currentThought', null)
-        setSessionState(
-          'currentError',
-          `网络波动，重试 ${attempt}/${RETRY_MAX_ATTEMPTS}（${meta.reason}，等待 ${backoff}ms）`,
-        )
-        const aborted = await sleepWithAbort(backoff, options.signal)
-        if (aborted) {
-          return geminiResponseToAssistantMessage(
-            { candidates: [{ content: { role: 'model', parts: [] } }] } as any,
-            { model: resolved.model, durationMs: Date.now() - start },
-          )
-        }
+          },
+        },
+      )
+    } catch (error) {
+      if (options.signal.aborted || isAbortError(error)) {
+        return emptyAssistantMessage()
       }
+      if (isNonWrappedGoogleError(error)) {
+        throw error
+      }
+      throw wrapGeminiRequestError(error, {
+        stage: 'llm',
+        model: effectiveModel,
+        modelKey,
+        attempt: DEFAULT_MAX_ATTEMPTS,
+        maxAttempts: DEFAULT_MAX_ATTEMPTS,
+      })
     }
-
-    // 理论上不会到这
-    return geminiResponseToAssistantMessage(
-      { candidates: [{ content: { role: 'model', parts: [] } }] } as any,
-      { model: resolved.model, durationMs: Date.now() - start },
-    )
   } finally {
     setSessionState('currentThought', null)
     setSessionState('currentError', null)
@@ -873,63 +852,77 @@ export async function queryGeminiToolsOnlyDetailed(options: {
   const { transport } = await createGeminiTransport(settings, path)
 
   const userPromptId = randomUUID()
-  for (let attempt = 1; attempt <= RETRY_MAX_ATTEMPTS; attempt++) {
-    try {
-      const resp = await transport.generateContent({
-        model: resolved.model,
-        contents: [{ role: 'user', parts: [{ text: options.prompt }] }],
-        userPromptId,
-        config: {
-          ...resolved.config,
-          abortSignal: options.signal,
-        },
-      })
-
-      const parts = resp.candidates?.[0]?.content?.parts ?? []
-      const rawText = parts
-        .map(p => (p as any).text)
-        .filter((t): t is string => typeof t === 'string')
-        .join('')
-
-      const { sources, webSearchQueries, supports } = extractGeminiGrounding(resp as any)
-      const textWithCitations = applyGroundingCitations(rawText, supports)
-
-      return {
-        text: rawText.trim(),
-        textWithCitations: textWithCitations.trim(),
-        sources,
-        webSearchQueries,
-      }
-    } catch (error) {
-      const meta = isRetryableGeminiError(error)
-      const aborted = !!options.signal?.aborted || isAbortError(error)
-      if (attempt >= RETRY_MAX_ATTEMPTS || !meta.retryable || aborted) {
-        throw wrapGeminiRequestError(error, {
-          stage: 'tools-only',
+  try {
+    return await retryWithBackoff(
+      async () => {
+        const resp = await transport.generateContent({
           model: resolved.model,
-          modelKey: options.modelKey,
-          attempt,
-          maxAttempts: RETRY_MAX_ATTEMPTS,
+          contents: [{ role: 'user', parts: [{ text: options.prompt }] }],
+          userPromptId,
+          config: {
+            ...resolved.config,
+            abortSignal: options.signal,
+          },
         })
-      }
 
-      const backoff = computeBackoffMs(attempt)
-      if (options.signal) {
-        const wasAborted = await sleepWithAbort(backoff, options.signal)
-        if (wasAborted) {
-          throw wrapGeminiRequestError(new Error('aborted'), {
-            stage: 'tools-only',
-            model: resolved.model,
-            modelKey: options.modelKey,
-            attempt,
-            maxAttempts: RETRY_MAX_ATTEMPTS,
-          })
+        const parts = resp.candidates?.[0]?.content?.parts ?? []
+        const rawText = parts
+          .map(p => (p as any).text)
+          .filter((t): t is string => typeof t === 'string')
+          .join('')
+
+        const { sources, webSearchQueries, supports } = extractGeminiGrounding(resp as any)
+        const textWithCitations = applyGroundingCitations(rawText, supports)
+
+        return {
+          text: rawText.trim(),
+          textWithCitations: textWithCitations.trim(),
+          sources,
+          webSearchQueries,
         }
-      } else {
-        await new Promise(resolve => setTimeout(resolve, backoff))
-      }
+      },
+      {
+        maxAttempts: DEFAULT_MAX_ATTEMPTS,
+        signal: options.signal,
+        onRetry: event => {
+          const reason =
+            typeof event.status === 'number'
+              ? `HTTP ${event.status}`
+              : event.classifiedError instanceof RetryableQuotaError
+                ? 'quota'
+                : 'network'
+          const prefix =
+            event.status === 429 || event.classifiedError instanceof RetryableQuotaError
+              ? '触发限流/配额'
+              : '网络波动'
+          setSessionState(
+            'currentError',
+            `${prefix}，重试 ${event.attempt}/${event.maxAttempts}（${reason}，等待 ${event.delayMs}ms）`,
+          )
+        },
+      },
+    )
+  } catch (error) {
+    if (options.signal?.aborted || isAbortError(error)) {
+      throw wrapGeminiRequestError(new Error('aborted'), {
+        stage: 'tools-only',
+        model: resolved.model,
+        modelKey: options.modelKey,
+        attempt: DEFAULT_MAX_ATTEMPTS,
+        maxAttempts: DEFAULT_MAX_ATTEMPTS,
+      })
     }
+    if (isNonWrappedGoogleError(error)) {
+      throw error
+    }
+    throw wrapGeminiRequestError(error, {
+      stage: 'tools-only',
+      model: resolved.model,
+      modelKey: options.modelKey,
+      attempt: DEFAULT_MAX_ATTEMPTS,
+      maxAttempts: DEFAULT_MAX_ATTEMPTS,
+    })
+  } finally {
+    setSessionState('currentError', null)
   }
-
-  throw new Error(`Gemini tools-only request failed unexpectedly (${options.modelKey})`)
 }

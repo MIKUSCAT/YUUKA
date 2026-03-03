@@ -69,6 +69,8 @@ interface ExtendedToolUseContext extends ToolUseContext {
     safeMode: boolean
     autoMode?: boolean
     permissionMode?: PermissionMode
+    steeringMode?: 'one-at-a-time' | 'all'
+    followUpMode?: 'one-at-a-time' | 'all'
     maxThinkingTokens: number
     model?: string | import('./utils/config').ModelPointerType
   }
@@ -121,69 +123,6 @@ const UNBOUNDED_TOOL_USE_CONCURRENCY = Number.POSITIVE_INFINITY
 
 function getToolUseConcurrencyCap(): number {
   return UNBOUNDED_TOOL_USE_CONCURRENCY
-}
-
-function isAbortError(error: unknown): boolean {
-  if (!error) return false
-  if (typeof error === 'object') {
-    const name = (error as any).name
-    if (name === 'AbortError') return true
-    const code = (error as any).code
-    if (code === 'ABORT_ERR') return true
-  }
-  if (error instanceof Error) {
-    if (error.name === 'AbortError') return true
-    if (typeof error.message === 'string' && /aborted/i.test(error.message)) {
-      return true
-    }
-  }
-  return false
-}
-
-function isRetryableNetworkError(
-  error: unknown,
-): { retryable: boolean; reason: string } {
-  if (!error) return { retryable: false, reason: 'unknown' }
-  if (isAbortError(error)) return { retryable: false, reason: 'aborted' }
-
-  // Gemini transport errors（HTTP 状态）
-  if (typeof error === 'object' && (error as any).name === 'GeminiHttpError') {
-    const status = Number((error as any).status)
-    if (status === 408 || status === 429) {
-      return { retryable: true, reason: `HTTP ${status}` }
-    }
-    if (status >= 500 && status <= 599) {
-      return { retryable: true, reason: `HTTP ${status}` }
-    }
-    return { retryable: false, reason: `HTTP ${status}` }
-  }
-
-  const msg =
-    error instanceof Error
-      ? error.message
-      : typeof error === 'string'
-        ? error
-        : String(error)
-
-  if (
-    /fetch failed/i.test(msg) ||
-    /network/i.test(msg) ||
-    /ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|socket hang up/i.test(
-      msg,
-    )
-  ) {
-    return { retryable: true, reason: 'network' }
-  }
-
-  return { retryable: false, reason: 'non-retryable' }
-}
-
-function computeReconnectBackoffMs(attempt: number): number {
-  const base = 1500
-  const cap = 20000
-  const exp = Math.min(cap, Math.floor(base * Math.pow(2, Math.max(0, attempt - 1))))
-  const jitter = Math.floor(Math.random() * 300)
-  return Math.min(cap, exp + jitter)
 }
 
 function isGeminiCliOauthSelected(): boolean {
@@ -339,25 +278,6 @@ async function repairPseudoTodoActionIfNeeded(
     logError(error)
     return assistantMessage
   }
-}
-
-async function sleepWithAbort(ms: number, signal: AbortSignal): Promise<boolean> {
-  if (signal.aborted) return true
-  return await new Promise(resolve => {
-    const t = setTimeout(() => {
-      cleanup()
-      resolve(false)
-    }, ms)
-    const onAbort = () => {
-      cleanup()
-      resolve(true)
-    }
-    const cleanup = () => {
-      clearTimeout(t)
-      signal.removeEventListener('abort', onAbort)
-    }
-    signal.addEventListener('abort', onAbort, { once: true })
-  })
 }
 
 function applyToolUseSerialGate(
@@ -595,6 +515,21 @@ export async function* query(
       toolUseContext.agentId,
     )
 
+  type QueueMode = 'one-at-a-time' | 'all'
+  const getQueueMode = (raw: unknown): QueueMode =>
+    raw === 'all' ? 'all' : 'one-at-a-time'
+
+  const dequeueQueuedUserMessages = (kind: 'steering' | 'follow-up'): UserMessage[] => {
+    const queue = toolUseContext.messageQueue
+    if (!queue) return []
+    const modeRaw =
+      kind === 'steering'
+        ? toolUseContext.options.steeringMode
+        : toolUseContext.options.followUpMode
+    const mode = getQueueMode(modeRaw)
+    return queue.dequeue(kind, mode).map(item => createUserMessage(item.text))
+  }
+
   // Emit session startup event
   emitReminderEvent('session:startup', {
     agentId: toolUseContext.agentId,
@@ -654,49 +589,9 @@ export async function* query(
     )
   }
 
-  async function getAssistantResponseWithReconnect(): Promise<AssistantMessage> {
-    const MAX_OUTER_ATTEMPTS = 3
-
-    for (let attempt = 1; attempt <= MAX_OUTER_ATTEMPTS; attempt++) {
-      try {
-        const resp = await getAssistantResponse()
-        setSessionState('currentError', null)
-        return resp
-      } catch (error) {
-        if (toolUseContext.abortController.signal.aborted) {
-          setSessionState('currentError', null)
-          throw error
-        }
-
-        const meta = isRetryableNetworkError(error)
-        if (attempt >= MAX_OUTER_ATTEMPTS || !meta.retryable) {
-          setSessionState('currentError', null)
-          throw error
-        }
-
-        const backoff = computeReconnectBackoffMs(attempt)
-        setSessionState(
-          'currentError',
-          `网络波动，外层重试 ${attempt}/${MAX_OUTER_ATTEMPTS}（${meta.reason}，等待 ${backoff}ms）`,
-        )
-        const aborted = await sleepWithAbort(
-          backoff,
-          toolUseContext.abortController.signal,
-        )
-        if (aborted) {
-          setSessionState('currentError', null)
-          throw error
-        }
-      }
-    }
-
-    // 理论上不会到这
-    return await getAssistantResponse()
-  }
-
   const result = await queryWithBinaryFeedback(
     toolUseContext,
-    getAssistantResponseWithReconnect,
+    getAssistantResponse,
     getBinaryFeedbackResponse,
   )
 
@@ -746,10 +641,28 @@ export async function* query(
 
   // If there's no more tool use, we're done
   if (!toolUseMessages.length) {
+    if (toolUseContext.abortController.signal.aborted) {
+      return
+    }
+
+    const queuedSteering = dequeueQueuedUserMessages('steering')
+    const queuedFollowUp = dequeueQueuedUserMessages('follow-up')
+    const queued = [...queuedSteering, ...queuedFollowUp]
+    if (queued.length > 0) {
+      yield* await query(
+        [...messages, assistantMessage, ...queued],
+        systemPrompt,
+        context,
+        canUseTool,
+        toolUseContext,
+        getBinaryFeedbackResponse,
+      )
+    }
     return
   }
 
   const toolResults: UserMessage[] = []
+  const resolvedToolUseIDs = new Set<string>()
 
   const toolByName = new Map(effectiveTools.map(tool => [tool.name, tool]))
   const executionGroups: Array<{ concurrent: boolean; toolUses: ToolUseBlock[] }> = []
@@ -776,6 +689,36 @@ export async function* query(
     executionGroups.push({ concurrent: true, toolUses: pendingConcurrent })
   }
 
+  const queuedSteeringBeforeTools = dequeueQueuedUserMessages('steering')
+  if (queuedSteeringBeforeTools.length > 0) {
+    for (const toolUse of toolUseMessages) {
+      const cancelMessage = createUserMessage([
+        createToolResultStopMessage(toolUse.id),
+      ])
+      yield cancelMessage
+      toolResults.push(cancelMessage)
+      resolvedToolUseIDs.add(toolUse.id)
+    }
+
+    const orderedToolResults = toolResults.sort((a, b) => {
+      const aId = extractToolResultBlock(a)?.tool_use_id
+      const bId = extractToolResultBlock(b)?.tool_use_id
+      const aIndex = toolUseMessages.findIndex(tu => tu.id === aId)
+      const bIndex = toolUseMessages.findIndex(tu => tu.id === bId)
+      return aIndex - bIndex
+    })
+
+    yield* await query(
+      [...messages, assistantMessage, ...orderedToolResults, ...queuedSteeringBeforeTools],
+      systemPrompt,
+      context,
+      canUseTool,
+      toolUseContext,
+      getBinaryFeedbackResponse,
+    )
+    return
+  }
+
   const toolUseConcurrencyCap = getToolUseConcurrencyCap()
   for (const group of executionGroups) {
     const runner = group.concurrent ? runToolsConcurrently : runToolsSerially
@@ -791,7 +734,48 @@ export async function* query(
       // progress messages are not sent to the server, so don't need to be accumulated for the next turn
       if (message.type === 'user') {
         toolResults.push(message)
+        const block = extractToolResultBlock(message)
+        const toolUseId =
+          block && typeof block.tool_use_id === 'string' ? block.tool_use_id : null
+        if (toolUseId) {
+          resolvedToolUseIDs.add(toolUseId)
+        }
       }
+    }
+
+    if (toolUseContext.abortController.signal.aborted) {
+      break
+    }
+
+    const queuedSteeringAfterGroup = dequeueQueuedUserMessages('steering')
+    if (queuedSteeringAfterGroup.length > 0) {
+      for (const toolUse of toolUseMessages) {
+        if (resolvedToolUseIDs.has(toolUse.id)) continue
+        const cancelMessage = createUserMessage([
+          createToolResultStopMessage(toolUse.id),
+        ])
+        yield cancelMessage
+        toolResults.push(cancelMessage)
+        resolvedToolUseIDs.add(toolUse.id)
+      }
+
+      const orderedToolResults = toolResults.sort((a, b) => {
+        const aId = extractToolResultBlock(a)?.tool_use_id
+        const bId = extractToolResultBlock(b)?.tool_use_id
+        const aIndex = toolUseMessages.findIndex(tu => tu.id === aId)
+        const bIndex = toolUseMessages.findIndex(tu => tu.id === bId)
+        return aIndex - bIndex
+      })
+
+      yield* await query(
+        [...messages, assistantMessage, ...orderedToolResults, ...queuedSteeringAfterGroup],
+        systemPrompt,
+        context,
+        canUseTool,
+        toolUseContext,
+        getBinaryFeedbackResponse,
+      )
+      return
     }
   }
 
@@ -802,12 +786,10 @@ export async function* query(
 
   // Sort toolResults to match the order of toolUseMessages
   const orderedToolResults = toolResults.sort((a, b) => {
-    const aIndex = toolUseMessages.findIndex(
-      tu => tu.id === (a.message.content[0] as ToolUseBlock).id,
-    )
-    const bIndex = toolUseMessages.findIndex(
-      tu => tu.id === (b.message.content[0] as ToolUseBlock).id,
-    )
+    const aId = extractToolResultBlock(a)?.tool_use_id
+    const bId = extractToolResultBlock(b)?.tool_use_id
+    const aIndex = toolUseMessages.findIndex(tu => tu.id === aId)
+    const bIndex = toolUseMessages.findIndex(tu => tu.id === bId)
     return aIndex - bIndex
   })
 
@@ -820,8 +802,12 @@ export async function* query(
   // Recursive query
 
   try {
+    const queuedSteeringBeforeRecurse = dequeueQueuedUserMessages('steering')
+    const extraUserMessages =
+      queuedSteeringBeforeRecurse.length > 0 ? queuedSteeringBeforeRecurse : []
+
     yield* await query(
-      [...messages, assistantMessage, ...orderedToolResults],
+      [...messages, assistantMessage, ...orderedToolResults, ...extraUserMessages],
       systemPrompt,
       context,
       canUseTool,

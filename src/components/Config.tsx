@@ -234,6 +234,36 @@ export function Config({ onClose }: Props): React.ReactNode {
       type: 'boolean',
     },
     {
+      id: 'steeringMode',
+      label: 'Steering delivery',
+      value: globalConfig.steeringMode ?? 'one-at-a-time',
+      options: ['one-at-a-time', 'all'],
+      onChange(steeringMode: string) {
+        const config = {
+          ...getGlobalConfig(),
+          steeringMode: steeringMode as GlobalConfig['steeringMode'],
+        }
+        saveGlobalConfig(config)
+        setGlobalConfig(config)
+      },
+      type: 'enum',
+    },
+    {
+      id: 'followUpMode',
+      label: 'Follow-up delivery',
+      value: globalConfig.followUpMode ?? 'one-at-a-time',
+      options: ['one-at-a-time', 'all'],
+      onChange(followUpMode: string) {
+        const config = {
+          ...getGlobalConfig(),
+          followUpMode: followUpMode as GlobalConfig['followUpMode'],
+        }
+        saveGlobalConfig(config)
+        setGlobalConfig(config)
+      },
+      type: 'enum',
+    },
+    {
       id: 'dangerousCommands',
       label: 'Dangerous Commands Blacklist',
       value: dangerousCommandsDisplay,

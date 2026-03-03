@@ -622,4 +622,8 @@ export class SessionManager {
     }
     this.leafId = branchFromId
   }
+
+  branchToRoot(): void {
+    this.leafId = null
+  }
 }

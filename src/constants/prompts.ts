@@ -184,6 +184,8 @@ export async function getSystemPrompt(): Promise<string[]> {
 - \`/clear\` - 清屏
 - \`/compact\` - 压缩对话
 - \`/resume\` - 恢复会话
+- \`/tree\` - 打开会话树，在同一 session 内分支继续
+- \`/fork\` - 从当前分支创建一个新会话（新 JSONL 文件）
 - \`/snapshot\` - 保存/查看/恢复会话快照
 - \`/memory\` - 手动更新用户偏好记忆（YUUKA.md）；\`/memory forget <file_path>\` 可显式删除记忆
 
