@@ -4,7 +4,10 @@ import type {
   GeminiGenerateContentResponse,
   GeminiPart,
 } from './types'
+import { getYuukaUserAgent } from './userAgent'
 import { fetch } from 'undici'
+import { getInstallationId } from '@utils/installationId'
+import { getGeminiCliCustomHeaders } from './customHeaderUtils'
 
 const REQUEST_TIMEOUT_MS = 90_000
 const STREAM_IDLE_TIMEOUT_MS = 90_000
@@ -106,11 +109,20 @@ function buildRequestBody(
   if (cfg.systemInstruction !== undefined) {
     body.systemInstruction = cfg.systemInstruction
   }
+  if (cfg.cachedContent !== undefined) {
+    body.cachedContent = cfg.cachedContent
+  }
   if (cfg.tools !== undefined) {
     body.tools = cfg.tools
   }
   if (cfg.toolConfig !== undefined) {
     body.toolConfig = cfg.toolConfig
+  }
+  if (cfg.labels !== undefined) {
+    body.labels = cfg.labels
+  }
+  if (cfg.safetySettings !== undefined) {
+    body.safetySettings = cfg.safetySettings
   }
   if (cfg.generationConfig !== undefined) {
     body.generationConfig = cfg.generationConfig
@@ -218,6 +230,7 @@ export class GeminiTransport {
       apiKey: string
       apiKeyAuthMode?: GeminiApiKeyAuthMode
       headers?: Record<string, string>
+      usageStatisticsEnabled?: boolean
     },
   ) {
     this.apiRoot = normalizeApiRoot(options.baseUrl)
@@ -230,8 +243,17 @@ export class GeminiTransport {
   }
 
   private buildHeaders(): Headers {
-    const headers = new Headers(this.options.headers ?? {})
+    const headers = new Headers({
+      ...getGeminiCliCustomHeaders(),
+      ...(this.options.headers ?? {}),
+    })
     headers.set('Content-Type', 'application/json')
+
+    // Align with Gemini CLI: only send installation id when usage statistics are enabled.
+    const usageStatsEnabled = this.options.usageStatisticsEnabled ?? true
+    if (usageStatsEnabled && process.env['YUUKA_DISABLE_INSTALLATION_ID_HEADER'] !== '1') {
+      headers.set('x-gemini-api-privileged-user-id', getInstallationId())
+    }
 
     if (this.apiKeyAuthMode === 'bearer') {
       headers.set('Authorization', `Bearer ${this.options.apiKey}`)
@@ -250,6 +272,7 @@ export class GeminiTransport {
       apiKeyAuthMode: this.apiKeyAuthMode,
     })
     const headers = this.buildHeaders()
+    headers.set('User-Agent', getYuukaUserAgent(request.model))
     let resp: Awaited<ReturnType<typeof fetch>>
     const managed = createManagedAbortController({
       upstream: request.config?.abortSignal,
@@ -301,6 +324,7 @@ export class GeminiTransport {
       apiKeyAuthMode: this.apiKeyAuthMode,
     })
     const headers = this.buildHeaders()
+    headers.set('User-Agent', getYuukaUserAgent(request.model))
 
     async function* emptyIterator(): AsyncGenerator<GeminiGenerateContentResponse> {
       return

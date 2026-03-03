@@ -9,7 +9,13 @@ import {
   ensureGlobalGeminiSettings,
   readGeminiSettingsFile,
 } from '@utils/geminiSettings'
-import { fetch } from 'undici'
+import { getModelManager } from '@utils/model'
+import { getClientMetadata } from './clientMetadata'
+import { getYuukaUserAgent } from './userAgent'
+import { appendGeminiOAuthDiagnostic } from './diagnostics'
+import type { AuthClient, Credentials } from 'google-auth-library'
+import { OAuth2Client } from 'google-auth-library'
+import { getGeminiCliCustomHeaders } from './customHeaderUtils'
 
 const OAUTH_SCOPES = [
   'https://www.googleapis.com/auth/cloud-platform',
@@ -17,20 +23,15 @@ const OAUTH_SCOPES = [
   'https://www.googleapis.com/auth/userinfo.profile',
 ]
 
-// 新版 OAuth 授权端点（旧的 /o/oauth2/auth 逐步不再被接受）
-const OAUTH_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth'
-const OAUTH_TOKEN_URL = 'https://oauth2.googleapis.com/token'
+// Defaults copied from gemini-cli (installed application OAuth).
+// These values are public in Gemini CLI's source tree.
+const GEMINI_CLI_OAUTH_CLIENT_ID =
+  '681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com'
+const GEMINI_CLI_OAUTH_CLIENT_SECRET = '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'
+
 const GOOGLE_USERINFO_URL = 'https://www.googleapis.com/oauth2/v2/userinfo'
 
 export const CODE_ASSIST_ENDPOINT = 'https://cloudcode-pa.googleapis.com'
-const DEFAULT_GEMINI_CLI_VERSION = '1.1.0'
-const USER_AGENT_MODEL_FALLBACK = 'unknown'
-
-const CODE_ASSIST_METADATA = {
-  ideType: 'IDE_UNSPECIFIED',
-  platform: 'PLATFORM_UNSPECIFIED',
-  pluginType: 'GEMINI',
-} as const
 
 const EXPIRY_SKEW_MS = 60_000
 const DEFAULT_OAUTH_CALLBACK_HOST = '127.0.0.1'
@@ -43,21 +44,7 @@ const ACTION_STATUS_EMPTY = 4
 const INITIATION_METHOD_COMMAND = 2
 const CONVERSATION_INTERACTION_UNKNOWN = 0
 
-function normalizeUserAgentModel(model?: string): string {
-  const trimmed = String(model ?? '').trim()
-  if (!trimmed) return USER_AGENT_MODEL_FALLBACK
-  if (trimmed.startsWith('models/')) return trimmed.slice('models/'.length)
-  return trimmed
-}
-
-export function getGeminiCliUserAgent(model?: string): string {
-  const version =
-    String(
-      process.env['YUUKA_VERSION'] ?? process.env['npm_package_version'] ?? DEFAULT_GEMINI_CLI_VERSION,
-    ).trim() || DEFAULT_GEMINI_CLI_VERSION
-  const normalizedModel = normalizeUserAgentModel(model)
-  return `GeminiCLI/${version}/${normalizedModel} (${process.platform}; ${process.arch})`
-}
+export { getYuukaUserAgent } from './userAgent'
 
 export type GeminiCliOAuthCreds = {
   access_token?: string
@@ -94,27 +81,110 @@ type OAuthClientConfig = {
 function getOAuthClientConfig(): OAuthClientConfig {
   const { settingsPath } = ensureGlobalGeminiSettings()
   const settings = readGeminiSettingsFile(settingsPath)
-  const clientId = settings.security?.auth?.geminiCliOAuth?.clientId?.trim() || ''
-  const clientSecret =
+  const overrideClientId = settings.security?.auth?.geminiCliOAuth?.clientId?.trim() || ''
+  const overrideClientSecret =
     settings.security?.auth?.geminiCliOAuth?.clientSecret?.trim() || ''
 
-  return { clientId, clientSecret }
+  // If user provides an override, require both fields.
+  if (overrideClientId || overrideClientSecret) {
+    return { clientId: overrideClientId, clientSecret: overrideClientSecret }
+  }
+
+  return {
+    clientId: GEMINI_CLI_OAUTH_CLIENT_ID,
+    clientSecret: GEMINI_CLI_OAUTH_CLIENT_SECRET,
+  }
 }
 
 function ensureOauthClientConfigured(): OAuthClientConfig {
   const config = getOAuthClientConfig()
-  if (!config.clientId) {
+  if (!config.clientId || !config.clientSecret) {
     throw new Error(
-      'OAuth 配置缺失：client_id 为空。请在 /auth 的 Google OAuth 页面填写 client_id。',
-    )
-  }
-  if (!config.clientSecret) {
-    throw new Error(
-      'OAuth 配置缺失：client_secret 为空。请在 /auth 的 Google OAuth 页面填写 client_secret。',
+      'OAuth 配置缺失：geminiCliOAuth 需要同时提供 clientId 与 clientSecret（或删掉 override 让它回退到 Gemini CLI 默认值）。',
     )
   }
 
   return config
+}
+
+function getProxyFromSettings(): string | undefined {
+  try {
+    const { settingsPath } = ensureGlobalGeminiSettings()
+    const settings = readGeminiSettingsFile(settingsPath)
+    const proxy = typeof settings.proxy === 'string' ? settings.proxy.trim() : ''
+    return proxy || undefined
+  } catch {
+    return undefined
+  }
+}
+
+function createOAuth2ClientFromConfig(): OAuth2Client {
+  const oauthConfig = ensureOauthClientConfigured()
+  const proxy = getProxyFromSettings()
+  return new OAuth2Client({
+    clientId: oauthConfig.clientId,
+    clientSecret: oauthConfig.clientSecret,
+    transporterOptions: proxy ? { proxy } : undefined,
+  })
+}
+
+let cachedOauthClient: OAuth2Client | null = null
+let cachedOauthClientKey = ''
+
+function getOauthClientCacheKey(): string {
+  const oauthConfig = ensureOauthClientConfigured()
+  const proxy = getProxyFromSettings() ?? ''
+  return `${oauthConfig.clientId}::${oauthConfig.clientSecret}::${proxy}`
+}
+
+function mergeTokenFields(existing: GeminiCliOAuthCreds, tokens: Credentials): GeminiCliOAuthCreds {
+  const next: GeminiCliOAuthCreds = { ...existing }
+  const accessToken = typeof tokens.access_token === 'string' ? tokens.access_token.trim() : ''
+  if (accessToken) next.access_token = accessToken
+
+  const refreshToken = typeof tokens.refresh_token === 'string' ? tokens.refresh_token.trim() : ''
+  if (refreshToken) next.refresh_token = refreshToken
+
+  if (typeof tokens.scope === 'string') next.scope = tokens.scope
+  if (typeof tokens.token_type === 'string') next.token_type = tokens.token_type
+  if (typeof tokens.expiry_date === 'number') next.expiry_date = tokens.expiry_date
+
+  const idToken = typeof tokens.id_token === 'string' ? tokens.id_token.trim() : ''
+  if (idToken) next.id_token = idToken
+
+  return next
+}
+
+async function getCachedGeminiCliOAuthClient(): Promise<OAuth2Client> {
+  const key = getOauthClientCacheKey()
+  if (cachedOauthClient && cachedOauthClientKey === key) {
+    return cachedOauthClient
+  }
+
+  const client = createOAuth2ClientFromConfig()
+
+  // Load cached credentials if present (ignore extra fields like project_id/user_email).
+  const creds = await readGeminiCliOAuthCreds()
+  if (creds) {
+    client.setCredentials(creds as any)
+  }
+
+  // Persist refreshed tokens automatically (Gemini CLI style).
+  client.on('tokens', (tokens: Credentials) => {
+    void (async () => {
+      const existing = (await readGeminiCliOAuthCreds()) ?? {}
+      const next = mergeTokenFields(existing, tokens)
+      await writeGeminiCliOAuthCreds(next)
+    })().catch(() => {})
+  })
+
+  cachedOauthClient = client
+  cachedOauthClientKey = key
+  return client
+}
+
+export async function getGeminiCliOAuthClient(): Promise<OAuth2Client> {
+  return await getCachedGeminiCliOAuthClient()
 }
 
 async function readJsonFile<T>(filePath: string): Promise<T | null> {
@@ -153,6 +223,8 @@ export async function clearGeminiCliOAuthCreds(): Promise<void> {
   } catch {
     // ignore
   }
+  cachedOauthClient = null
+  cachedOauthClientKey = ''
 }
 
 export async function getAvailablePort(): Promise<number> {
@@ -236,148 +308,55 @@ function normalizeCallbackHost(rawHost: string | undefined): string {
   return DEFAULT_OAUTH_CALLBACK_HOST
 }
 
-function buildAuthUrl(options: { redirectUri: string; state: string }): string {
-  const oauthConfig = ensureOauthClientConfigured()
-  const params = new URLSearchParams({
-    client_id: oauthConfig.clientId,
-    redirect_uri: options.redirectUri,
-    scope: OAUTH_SCOPES.join(' '),
-    response_type: 'code',
-    access_type: 'offline',
-    prompt: 'consent',
-    include_granted_scopes: 'true',
-    state: options.state,
-  })
-  return `${OAUTH_AUTH_URL}?${params.toString()}`
-}
-
-async function readResponseText(resp: { text: () => Promise<string> }): Promise<string> {
-  try {
-    return await resp.text()
-  } catch {
-    return ''
-  }
-}
-
-async function exchangeCodeForTokens(options: {
-  code: string
-  redirectUri: string
-}): Promise<GeminiCliOAuthCreds> {
-  const oauthConfig = ensureOauthClientConfigured()
-  const form = new URLSearchParams({
-    client_id: oauthConfig.clientId,
-    client_secret: oauthConfig.clientSecret,
-    redirect_uri: options.redirectUri,
-    code: options.code,
-    grant_type: 'authorization_code',
-  })
-
-  const resp = await fetch(OAUTH_TOKEN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: form.toString(),
-  })
-
-  if (!resp.ok) {
-    const body = await readResponseText(resp)
-    throw new Error(`OAuth 换 token 失败 (HTTP ${resp.status}): ${body.slice(0, 400)}`)
-  }
-
-  const data = (await resp.json()) as any
-  const accessToken = typeof data?.access_token === 'string' ? data.access_token : ''
-  if (!accessToken) {
-    throw new Error('OAuth 返回缺少 access_token')
-  }
-
-  const expiresIn = typeof data?.expires_in === 'number' ? data.expires_in : undefined
-  const expiryDate = expiresIn ? Date.now() + expiresIn * 1000 : undefined
-
-  return {
-    access_token: accessToken,
-    refresh_token: typeof data?.refresh_token === 'string' ? data.refresh_token : undefined,
-    scope: typeof data?.scope === 'string' ? data.scope : undefined,
-    token_type: typeof data?.token_type === 'string' ? data.token_type : undefined,
-    id_token: typeof data?.id_token === 'string' ? data.id_token : undefined,
-    expiry_date: expiryDate,
-  }
-}
-
-async function refreshAccessToken(creds: GeminiCliOAuthCreds): Promise<GeminiCliOAuthCreds> {
-  const oauthConfig = ensureOauthClientConfigured()
-  const refreshToken = creds.refresh_token
-  if (!refreshToken) {
-    throw new Error('没有 refresh_token：请重新用 /auth 登录一次')
-  }
-
-  const form = new URLSearchParams({
-    client_id: oauthConfig.clientId,
-    client_secret: oauthConfig.clientSecret,
-    refresh_token: refreshToken,
-    grant_type: 'refresh_token',
-  })
-
-  const resp = await fetch(OAUTH_TOKEN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: form.toString(),
-  })
-
-  if (!resp.ok) {
-    const body = await readResponseText(resp)
-    throw new Error(`OAuth 刷新 token 失败 (HTTP ${resp.status}): ${body.slice(0, 400)}`)
-  }
-
-  const data = (await resp.json()) as any
-  const accessToken = typeof data?.access_token === 'string' ? data.access_token : ''
-  if (!accessToken) {
-    throw new Error('OAuth 刷新返回缺少 access_token')
-  }
-
-  const expiresIn = typeof data?.expires_in === 'number' ? data.expires_in : undefined
-  const expiryDate = expiresIn ? Date.now() + expiresIn * 1000 : undefined
-
-  return {
-    ...creds,
-    access_token: accessToken,
-    token_type: typeof data?.token_type === 'string' ? data.token_type : creds.token_type,
-    scope: typeof data?.scope === 'string' ? data.scope : creds.scope,
-    expiry_date: expiryDate ?? creds.expiry_date,
-  }
-}
-
 export async function getValidGeminiCliAccessToken(): Promise<{
   accessToken: string
   creds: GeminiCliOAuthCreds
 }> {
   const existing = await readGeminiCliOAuthCreds()
-  if (!existing) {
-    throw new Error(`未登录：找不到 ${getGlobalGeminiOauthCredsPath()}`)
+  if (!existing) throw new Error(`未登录：找不到 ${getGlobalGeminiOauthCredsPath()}`)
+
+  const client = await getCachedGeminiCliOAuthClient()
+  // Ensure we carry refresh_token (and any other cached fields) into the client.
+  client.setCredentials(existing as any)
+
+  let token = ''
+  try {
+    const res = await client.getAccessToken()
+    token = (typeof res === 'string' ? res : res?.token || '').trim()
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error)
+    if (!existing.refresh_token?.trim()) {
+      throw new Error(`OAuth 不可用（没有 refresh_token）：请重新用 /auth 登录一次。原始错误：${msg}`)
+    }
+    throw new Error(`OAuth 获取 access token 失败：${msg}`)
   }
 
-  const token = existing.access_token?.trim() ?? ''
-  const expiry = typeof existing.expiry_date === 'number' ? existing.expiry_date : undefined
-  const stillValid = token && expiry && expiry - Date.now() > EXPIRY_SKEW_MS
-
-  if (stillValid) {
-    return { accessToken: token, creds: existing }
+  if (!token) {
+    throw new Error('OAuth 返回空 access_token：请重新用 /auth 登录一次')
   }
 
-  const refreshed = await refreshAccessToken(existing)
-  await writeGeminiCliOAuthCreds(refreshed)
-
-  const nextToken = refreshed.access_token?.trim() ?? ''
-  if (!nextToken) throw new Error('刷新后仍然没有 access_token')
-  return { accessToken: nextToken, creds: refreshed }
+  const next = mergeTokenFields(existing, client.credentials as any)
+  await writeGeminiCliOAuthCreds(next)
+  return { accessToken: token, creds: next }
 }
 
-async function fetchUserEmail(accessToken: string): Promise<string | undefined> {
-  const resp = await fetch(GOOGLE_USERINFO_URL, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  })
-  if (!resp.ok) return undefined
-  const data = (await resp.json()) as any
-  const email = typeof data?.email === 'string' ? data.email.trim() : ''
-  return email || undefined
+async function fetchUserEmail(client: AuthClient): Promise<string | undefined> {
+  try {
+    const res = await client.request({
+      url: GOOGLE_USERINFO_URL,
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getGeminiCliCustomHeaders(),
+      },
+      responseType: 'json',
+    })
+    const data = (res as any).data as any
+    const email = typeof data?.email === 'string' ? data.email.trim() : ''
+    return email || undefined
+  } catch {
+    return undefined
+  }
 }
 
 function normalizeCodeAssistMethodPath(path: string): string {
@@ -402,49 +381,104 @@ function normalizeCodeAssistModelId(modelId: string): string {
 }
 
 async function requestCodeAssist(options: {
-  accessToken: string
+  client: AuthClient
   path: string
   method: 'GET' | 'POST'
   body?: unknown
 }): Promise<any> {
   const methodPath = normalizeCodeAssistMethodPath(options.path)
+  const uaModel = getModelManager().getModelName('main') || undefined
+  const url = `${(process.env['CODE_ASSIST_ENDPOINT'] ?? CODE_ASSIST_ENDPOINT)
+    .trim()
+    .replace(/\/+$/, '')}${methodPath}`
+
   const headers: Record<string, string> = {
-    Authorization: `Bearer ${options.accessToken}`,
-    'User-Agent': getGeminiCliUserAgent(),
-  }
-  if (options.method === 'POST') {
-    headers['Content-Type'] = 'application/json'
+    'Content-Type': 'application/json',
+    ...getGeminiCliCustomHeaders(),
+    'User-Agent': getYuukaUserAgent(uaModel),
   }
 
-  const resp = await fetch(`${CODE_ASSIST_ENDPOINT}${methodPath}`, {
-    method: options.method,
-    headers,
-    ...(options.method === 'POST' ? { body: JSON.stringify(options.body ?? {}) } : {}),
-  })
+  try {
+    const res = await options.client.request({
+      url,
+      method: options.method,
+      headers,
+      responseType: 'json',
+      ...(options.method === 'POST'
+        ? { body: JSON.stringify(options.body ?? {}) }
+        : {}),
+    })
+    return (res as any).data
+  } catch (error) {
+    const status =
+      typeof (error as any)?.response?.status === 'number'
+        ? (error as any).response.status
+        : 0
+    const data = (error as any)?.response?.data
+    const snippet =
+      typeof data === 'string'
+        ? data
+        : data
+          ? JSON.stringify(data).slice(0, 800)
+          : error instanceof Error
+            ? error.message
+            : String(error)
 
-  if (!resp.ok) {
-    const text = await readResponseText(resp)
-    throw new Error(`Code Assist 请求失败 (HTTP ${resp.status}): ${text.slice(0, 400)}`)
+    await appendGeminiOAuthDiagnostic({
+      stage: 'code_assist_request',
+      url,
+      method: options.method,
+      status,
+      ok: false,
+      responseSnippet: snippet,
+      extra: {
+        path: methodPath,
+      },
+    })
+    throw new Error(`Code Assist 请求失败 (HTTP ${status || 'unknown'}): ${snippet.slice(0, 400)}`)
   }
-
-  return await resp.json()
 }
 
-async function postCodeAssist(accessToken: string, path: string, body: unknown): Promise<any> {
+async function postCodeAssist(client: AuthClient, path: string, body: unknown): Promise<any> {
   return await requestCodeAssist({
-    accessToken,
+    client,
     path,
     method: 'POST',
     body,
   })
 }
 
-async function getCodeAssist(accessToken: string, path: string): Promise<any> {
+async function getCodeAssist(client: AuthClient, path: string): Promise<any> {
   return await requestCodeAssist({
-    accessToken,
+    client,
     path,
     method: 'GET',
   })
+}
+
+function createOAuth2ClientForAccessToken(accessToken: string): OAuth2Client {
+  const client = createOAuth2ClientFromConfig()
+  client.setCredentials({ access_token: accessToken })
+  return client
+}
+
+function getCodeAssistApiVersion(): string {
+  const version = String(process.env['CODE_ASSIST_API_VERSION'] || 'v1internal')
+    .trim()
+    .replace(/^\/+/, '')
+  return version || 'v1internal'
+}
+
+function caMethodPath(method: string): string {
+  const v = getCodeAssistApiVersion()
+  const name = String(method ?? '').trim().replace(/^:+/, '')
+  return `/${v}:${name}`
+}
+
+function caOperationPath(operationName: string): string {
+  const v = getCodeAssistApiVersion()
+  const name = String(operationName ?? '').trim().replace(/^\/+/, '')
+  return `/${v}/${name}`
 }
 
 function extractProjectId(value: unknown): string | undefined {
@@ -486,14 +520,15 @@ function ensureLoadCodeAssistUsable(loadRes: any): void {
   throw new ValidationRequiredGeminiCliError(message, validation.validationUrl)
 }
 
-async function tryLoadCodeAssist(accessToken: string): Promise<string | undefined> {
+async function tryLoadCodeAssist(client: AuthClient): Promise<string | undefined> {
   const envProjectId =
     process.env['GOOGLE_CLOUD_PROJECT'] || process.env['GOOGLE_CLOUD_PROJECT_ID'] || undefined
-  const data = await postCodeAssist(accessToken, '/v1internal:loadCodeAssist', {
+  const clientMetadata = await getClientMetadata()
+  const data = await postCodeAssist(client, caMethodPath('loadCodeAssist'), {
     cloudaicompanionProject: envProjectId,
     metadata: {
-      ...CODE_ASSIST_METADATA,
-      duetProject: envProjectId,
+      ...clientMetadata,
+      ...(envProjectId ? { duetProject: envProjectId } : {}),
     },
   })
   ensureLoadCodeAssistUsable(data)
@@ -512,14 +547,15 @@ function getDefaultTierId(loadRes: any): string {
   return LEGACY_TIER_ID
 }
 
-async function tryOnboardUser(accessToken: string): Promise<string | undefined> {
+async function tryOnboardUser(client: AuthClient): Promise<string | undefined> {
   const envProjectId =
     process.env['GOOGLE_CLOUD_PROJECT'] || process.env['GOOGLE_CLOUD_PROJECT_ID'] || undefined
-  const loadRes = await postCodeAssist(accessToken, '/v1internal:loadCodeAssist', {
+  const clientMetadata = await getClientMetadata()
+  const loadRes = await postCodeAssist(client, caMethodPath('loadCodeAssist'), {
     cloudaicompanionProject: envProjectId,
     metadata: {
-      ...CODE_ASSIST_METADATA,
-      duetProject: envProjectId,
+      ...clientMetadata,
+      ...(envProjectId ? { duetProject: envProjectId } : {}),
     },
   })
   ensureLoadCodeAssistUsable(loadRes)
@@ -527,10 +563,10 @@ async function tryOnboardUser(accessToken: string): Promise<string | undefined> 
 
   const isFreeTier = tierId === FREE_TIER_ID
   const metadata: any = isFreeTier
-    ? CODE_ASSIST_METADATA
+    ? clientMetadata
     : {
-        ...CODE_ASSIST_METADATA,
-        duetProject: envProjectId,
+        ...clientMetadata,
+        ...(envProjectId ? { duetProject: envProjectId } : {}),
       }
 
   const reqBody: any = {
@@ -541,7 +577,7 @@ async function tryOnboardUser(accessToken: string): Promise<string | undefined> 
     reqBody.cloudaicompanionProject = envProjectId
   }
 
-  let op = await postCodeAssist(accessToken, '/v1internal:onboardUser', reqBody)
+  let op = await postCodeAssist(client, caMethodPath('onboardUser'), reqBody)
   if (op?.done) {
     return extractProjectId(op?.response?.cloudaicompanionProject)
   }
@@ -554,7 +590,7 @@ async function tryOnboardUser(accessToken: string): Promise<string | undefined> 
   const maxPollAttempts = 12
   for (let attempt = 1; attempt <= maxPollAttempts; attempt++) {
     await new Promise(r => setTimeout(r, 5000))
-    op = await getCodeAssist(accessToken, `/v1internal/${operationName}`)
+    op = await getCodeAssist(client, caOperationPath(operationName))
     if (op?.done) {
       return extractProjectId(op?.response?.cloudaicompanionProject)
     }
@@ -576,9 +612,10 @@ export async function fetchGeminiCliQuotaModelIds(options?: {
     const resolvedProjectId = projectId || authContext?.projectId || ''
     if (!resolvedAccessToken || !resolvedProjectId) return []
 
-    const data = await postCodeAssist(accessToken || resolvedAccessToken, '/v1internal:retrieveUserQuota', {
+    const client = createOAuth2ClientForAccessToken(resolvedAccessToken)
+    const data = await postCodeAssist(client, caMethodPath('retrieveUserQuota'), {
       project: resolvedProjectId,
-      userAgent: getGeminiCliUserAgent(),
+      userAgent: getYuukaUserAgent(),
     })
     const buckets = Array.isArray(data?.buckets) ? data.buckets : []
     const ids = buckets
@@ -588,6 +625,30 @@ export async function fetchGeminiCliQuotaModelIds(options?: {
   } catch {
     return []
   }
+}
+
+const QUOTA_MODEL_CACHE_TTL_MS = 30_000
+let cachedQuotaModels: { projectId: string; ts: number; modelIds: string[] } | null = null
+
+// Gemini CLI 会在初始化时拉 quota，用它判断是否有 preview 模型权限。
+// 这里做个 30s 的轻量缓存，避免每次对话都打一次 retrieveUserQuota。
+export async function fetchGeminiCliQuotaModelIdsCached(options?: {
+  accessToken?: string
+  projectId?: string
+}): Promise<string[]> {
+  const projectId = String(options?.projectId ?? '').trim()
+  if (projectId && cachedQuotaModels) {
+    const age = Date.now() - cachedQuotaModels.ts
+    if (cachedQuotaModels.projectId === projectId && age >= 0 && age < QUOTA_MODEL_CACHE_TTL_MS) {
+      return cachedQuotaModels.modelIds
+    }
+  }
+
+  const ids = await fetchGeminiCliQuotaModelIds(options)
+  if (projectId) {
+    cachedQuotaModels = { projectId, ts: Date.now(), modelIds: ids }
+  }
+  return ids
 }
 
 export async function recordGeminiCliConversationOfferedBestEffort(options: {
@@ -613,7 +674,7 @@ export async function recordGeminiCliConversationOfferedBestEffort(options: {
 
   const request = {
     project: options.projectId,
-    metadata: CODE_ASSIST_METADATA,
+    metadata: await getClientMetadata(),
     metrics: [
       {
         timestamp: new Date().toISOString(),
@@ -630,7 +691,8 @@ export async function recordGeminiCliConversationOfferedBestEffort(options: {
   }
 
   try {
-    await postCodeAssist(options.accessToken, '/v1internal:recordCodeAssistMetrics', request)
+    const client = createOAuth2ClientForAccessToken(options.accessToken)
+    await postCodeAssist(client, caMethodPath('recordCodeAssistMetrics'), request)
   } catch {
     // best-effort
   }
@@ -659,7 +721,7 @@ export async function recordGeminiCliConversationInteractionBestEffort(options: 
 
   const request = {
     project: options.projectId,
-    metadata: CODE_ASSIST_METADATA,
+    metadata: await getClientMetadata(),
     metrics: [
       {
         timestamp: new Date().toISOString(),
@@ -674,15 +736,17 @@ export async function recordGeminiCliConversationInteractionBestEffort(options: 
   }
 
   try {
-    await postCodeAssist(options.accessToken, '/v1internal:recordCodeAssistMetrics', request)
+    const client = createOAuth2ClientForAccessToken(options.accessToken)
+    await postCodeAssist(client, caMethodPath('recordCodeAssistMetrics'), request)
   } catch {
     // best-effort
   }
 }
 
 export async function fetchGeminiCliProjectId(accessToken: string): Promise<string> {
+  const client = createOAuth2ClientForAccessToken(accessToken)
   try {
-    const pid = await tryLoadCodeAssist(accessToken)
+    const pid = await tryLoadCodeAssist(client)
     if (pid) return pid
   } catch (error) {
     if (error instanceof ValidationRequiredGeminiCliError) {
@@ -691,7 +755,7 @@ export async function fetchGeminiCliProjectId(accessToken: string): Promise<stri
     // fallback
   }
 
-  const onboarded = await tryOnboardUser(accessToken)
+  const onboarded = await tryOnboardUser(client)
   if (onboarded) return onboarded
   throw new Error('获取 project_id 失败（loadCodeAssist/onboardUser 都没拿到）')
 }
@@ -726,54 +790,99 @@ export async function loginWithGoogleForGeminiCli(options?: {
   onAuthUrl?: (url: string) => void
 }): Promise<{ email?: string; projectId?: string }> {
   ensureOauthClientConfigured()
+
+  // Mirror Gemini CLI's OAuth flow: use google-auth-library OAuth2Client.
+  const client = createOAuth2ClientFromConfig()
   const port = await getAvailablePort()
-  // Google 对 Desktop / loopback 回调有严格限制，优先使用 IP 字面量。
   const redirectUri = `http://127.0.0.1:${port}/oauth2callback`
   const state = crypto.randomBytes(32).toString('hex')
-  const authUrl = buildAuthUrl({ redirectUri, state })
+
+  const authUrl = client.generateAuthUrl({
+    redirect_uri: redirectUri,
+    access_type: 'offline',
+    scope: OAUTH_SCOPES,
+    state,
+  })
 
   options?.onAuthUrl?.(authUrl)
   void openBrowser(authUrl)
 
-  const code = await new Promise<string>((resolve, reject) => {
+  const HTTP_REDIRECT = 301
+  const SIGN_IN_SUCCESS_URL =
+    'https://developers.google.com/gemini-code-assist/auth_success_gemini'
+  const SIGN_IN_FAILURE_URL =
+    'https://developers.google.com/gemini-code-assist/auth_failure_gemini'
+
+  const loginCompletePromise = new Promise<void>((resolve, reject) => {
     const host = normalizeCallbackHost(process.env['OAUTH_CALLBACK_HOST'])
-    const server = http.createServer((req, res) => {
+    const server = http.createServer(async (req, res) => {
       try {
-        if (!req.url || !req.url.includes('/oauth2callback')) {
-          res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' })
-          res.end('Not Found')
+        if (!req.url || req.url.indexOf('/oauth2callback') === -1) {
+          res.writeHead(HTTP_REDIRECT, { Location: SIGN_IN_FAILURE_URL })
+          res.end()
+          reject(new Error('OAuth callback not received. Unexpected request: ' + (req.url || '')))
           return
         }
 
         const qs = new URL(req.url, 'http://127.0.0.1:3000').searchParams
         const error = qs.get('error')
         const gotState = qs.get('state')
-        const gotCode = qs.get('code')
+        const code = qs.get('code')
 
         if (error) {
-          res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' })
-          res.end(`登录失败：${error}`)
+          res.writeHead(HTTP_REDIRECT, { Location: SIGN_IN_FAILURE_URL })
+          res.end()
           reject(new Error(`Google OAuth error: ${error}`))
           return
         }
 
         if (gotState !== state) {
-          res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' })
-          res.end('State 不匹配（可能是浏览器会话问题），请重试')
+          res.end('State mismatch. Possible CSRF attack or browser session issue.')
           reject(new Error('OAuth state mismatch'))
           return
         }
 
-        if (!gotCode) {
-          res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' })
-          res.end('没有收到 code，请重试')
-          reject(new Error('No authorization code received'))
+        if (!code) {
+          res.writeHead(HTTP_REDIRECT, { Location: SIGN_IN_FAILURE_URL })
+          res.end()
+          reject(new Error('No authorization code received from Google OAuth'))
           return
         }
 
-        res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' })
-        res.end('登录成功，可以关掉这个页面回到终端了。')
-        resolve(gotCode)
+        try {
+          const { tokens } = await client.getToken({
+            code,
+            redirect_uri: redirectUri,
+          })
+          client.setCredentials(tokens)
+
+          res.writeHead(HTTP_REDIRECT, { Location: SIGN_IN_SUCCESS_URL })
+          res.end()
+          resolve()
+        } catch (e) {
+          const status =
+            typeof (e as any)?.response?.status === 'number' ? (e as any).response.status : 0
+          const data = (e as any)?.response?.data
+          const snippet =
+            typeof data === 'string'
+              ? data
+              : data
+                ? JSON.stringify(data).slice(0, 800)
+                : e instanceof Error
+                  ? e.message
+                  : String(e)
+          await appendGeminiOAuthDiagnostic({
+            stage: 'oauth_token_exchange',
+            url: 'google-auth-library:getToken',
+            method: 'POST',
+            status,
+            ok: false,
+            responseSnippet: snippet,
+          })
+          res.writeHead(HTTP_REDIRECT, { Location: SIGN_IN_FAILURE_URL })
+          res.end()
+          reject(new Error(`Failed to exchange authorization code for tokens: ${snippet}`))
+        }
       } catch (e) {
         reject(e instanceof Error ? e : new Error(String(e)))
       } finally {
@@ -785,23 +894,41 @@ export async function loginWithGoogleForGeminiCli(options?: {
     server.on('error', reject)
   })
 
-  const tokens = await exchangeCodeForTokens({ code, redirectUri })
-  const email = await fetchUserEmail(tokens.access_token ?? '')
+  const authTimeoutMs = 5 * 60 * 1000
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(() => {
+      reject(
+        new Error(
+          'OAuth 登录超时（5 分钟）。浏览器可能卡住了；请重试，或换个网络/浏览器。',
+        ),
+      )
+    }, authTimeoutMs)
+  })
 
+  await Promise.race([loginCompletePromise, timeoutPromise])
+
+  const tokens = client.credentials as Credentials
+  const email = await fetchUserEmail(client)
+
+  const accessToken = typeof tokens.access_token === 'string' ? tokens.access_token.trim() : ''
   const projectId = await (async () => {
+    if (!accessToken) return undefined
     try {
-      return await fetchGeminiCliProjectId(tokens.access_token ?? '')
+      return await fetchGeminiCliProjectId(accessToken)
     } catch {
       return undefined
     }
   })()
 
-  const next: GeminiCliOAuthCreds = {
-    ...tokens,
-    ...(email ? { user_email: email } : {}),
-    ...(projectId ? { project_id: projectId } : {}),
-  }
+  const next: GeminiCliOAuthCreds = mergeTokenFields({}, tokens)
+  if (email) next.user_email = email
+  if (projectId) next.project_id = projectId
 
   await writeGeminiCliOAuthCreds(next)
+
+  // Clear in-memory cache so subsequent requests use the latest stored creds.
+  cachedOauthClient = null
+  cachedOauthClientKey = ''
+
   return { email, projectId }
 }

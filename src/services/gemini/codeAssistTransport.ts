@@ -1,12 +1,14 @@
 import { randomUUID } from 'node:crypto'
+import * as readline from 'node:readline'
 import type {
   GeminiFunctionCall,
   GeminiGenerateContentParameters,
   GeminiGenerateContentResponse,
 } from './types'
-import { getGeminiCliUserAgent } from './codeAssistAuth'
+import { getYuukaUserAgent } from './codeAssistAuth'
 import { GeminiHttpError } from './transport'
-import { fetch } from 'undici'
+import type { AuthClient } from 'google-auth-library'
+import { getGeminiCliCustomHeaders } from './customHeaderUtils'
 
 const REQUEST_TIMEOUT_MS = 90_000
 const STREAM_IDLE_TIMEOUT_MS = 90_000
@@ -187,24 +189,38 @@ function createManagedAbortController(options: {
 
 export class CodeAssistTransport {
   private readonly endpoint: string
+  private readonly version: string
 
   constructor(
     private readonly options: {
-      endpoint: string
-      accessToken: string
+      client: AuthClient
       projectId: string
       headers?: Record<string, string>
     },
   ) {
-    this.endpoint = options.endpoint.trim().replace(/\/+$/, '')
+    const endpoint = (process.env['CODE_ASSIST_ENDPOINT'] ?? 'https://cloudcode-pa.googleapis.com')
+      .trim()
+      .replace(/\/+$/, '')
+    this.endpoint = endpoint
+    this.version = String(process.env['CODE_ASSIST_API_VERSION'] || 'v1internal')
+      .trim()
+      .replace(/^\/+/, '')
   }
 
-  private buildHeaders(model: string): Headers {
-    const headers = new Headers(this.options.headers ?? {})
-    headers.set('Content-Type', 'application/json')
-    headers.set('Authorization', `Bearer ${this.options.accessToken}`)
-    headers.set('User-Agent', getGeminiCliUserAgent(model))
-    return headers
+  private getMethodUrl(method: string): string {
+    const base = `${this.endpoint}/${this.version}`
+    const trimmed = String(method ?? '').trim().replace(/^:+/, '')
+    return `${base}:${trimmed}`
+  }
+
+  private buildHeaders(model: string): Record<string, string> {
+    // Mirror Gemini CLI: Content-Type is always present; no installation id header for OAuth.
+    return {
+      'Content-Type': 'application/json',
+      ...getGeminiCliCustomHeaders(),
+      ...(this.options.headers ?? {}),
+      'User-Agent': getYuukaUserAgent(model),
+    }
   }
 
   private buildPayload(request: GeminiGenerateContentParameters): Record<string, unknown> {
@@ -219,31 +235,20 @@ export class CodeAssistTransport {
   async generateContent(
     request: GeminiGenerateContentParameters,
   ): Promise<GeminiGenerateContentResponse> {
-    const url = new URL(`${this.endpoint}/v1internal:generateContent`)
-    const headers = this.buildHeaders(request.model)
     const managed = createManagedAbortController({
       upstream: request.config?.abortSignal,
       requestTimeoutMs: REQUEST_TIMEOUT_MS,
     })
     try {
-      const resp = await fetch(url, {
+      const res = await this.options.client.request({
+        url: this.getMethodUrl('generateContent'),
         method: 'POST',
-        headers,
+        headers: this.buildHeaders(request.model),
+        responseType: 'json',
         body: JSON.stringify(this.buildPayload(request)),
         signal: managed.controller.signal,
       })
-
-      if (!resp.ok) {
-        const text = await readErrorBody(resp)
-        throw new GeminiHttpError(
-          `Code Assist 请求失败 (HTTP ${resp.status})`,
-          resp.status,
-          text,
-        )
-      }
-
-      const json = await resp.json()
-      return withConvenienceFields(unwrapCodeAssistResponse(json))
+      return withConvenienceFields(unwrapCodeAssistResponse((res as any).data))
     } catch (error) {
       if (request.config?.abortSignal?.aborted) {
         return withConvenienceFields({
@@ -256,6 +261,13 @@ export class CodeAssistTransport {
           408,
         )
       }
+      // Best-effort: surface HTTP status when present (gaxios error).
+      const status = typeof (error as any)?.response?.status === 'number' ? (error as any).response.status : undefined
+      const data = (error as any)?.response?.data
+      const snippet = typeof data === 'string' ? data : data ? JSON.stringify(data).slice(0, 400) : undefined
+      if (status) {
+        throw new GeminiHttpError(`Code Assist 请求失败 (HTTP ${status})`, status, snippet)
+      }
       throw error
     } finally {
       managed.cleanup()
@@ -265,9 +277,6 @@ export class CodeAssistTransport {
   async generateContentStream(
     request: GeminiGenerateContentParameters,
   ): Promise<AsyncGenerator<GeminiGenerateContentResponse>> {
-    const url = new URL(`${this.endpoint}/v1internal:streamGenerateContent?alt=sse`)
-    const headers = this.buildHeaders(request.model)
-
     async function* emptyIterator(): AsyncGenerator<GeminiGenerateContentResponse> {
       return
     }
@@ -277,14 +286,18 @@ export class CodeAssistTransport {
       requestTimeoutMs: REQUEST_TIMEOUT_MS,
     })
 
-    let resp: Awaited<ReturnType<typeof fetch>>
+    let stream: NodeJS.ReadableStream
     try {
-      resp = await fetch(url, {
+      const res = await this.options.client.request({
+        url: this.getMethodUrl('streamGenerateContent'),
         method: 'POST',
-        headers,
+        params: { alt: 'sse' },
+        headers: this.buildHeaders(request.model),
+        responseType: 'stream',
         body: JSON.stringify(this.buildPayload(request)),
         signal: managed.controller.signal,
       })
+      stream = (res as any).data as NodeJS.ReadableStream
     } catch (error) {
       if (request.config?.abortSignal?.aborted) {
         managed.cleanup()
@@ -298,191 +311,85 @@ export class CodeAssistTransport {
         )
       }
       managed.cleanup()
+
+      const status = typeof (error as any)?.response?.status === 'number' ? (error as any).response.status : undefined
+      const data = (error as any)?.response?.data
+      const snippet = typeof data === 'string' ? data : data ? JSON.stringify(data).slice(0, 400) : undefined
+      if (status) {
+        throw new GeminiHttpError(`Code Assist 流式请求失败 (HTTP ${status})`, status, snippet)
+      }
       throw error
     }
 
-    if (!resp.ok) {
-      const text = await readErrorBody(resp)
-      managed.cleanup()
-      throw new GeminiHttpError(
-        `Code Assist 流式请求失败 (HTTP ${resp.status})`,
-        resp.status,
-        text,
-      )
-    }
-
-    const contentType = resp.headers.get('content-type') || ''
-    const stream = resp.body
     if (!stream) {
       managed.cleanup()
       throw new Error('Code Assist 流式响应没有 body')
     }
 
-    if (contentType.includes('text/event-stream')) {
-      managed.clearRequestTimeout()
-      const reader = (stream as ReadableStream<Uint8Array>).getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-      let idleTimeoutId: ReturnType<typeof setTimeout> | null = null
+    managed.clearRequestTimeout()
 
-      const clearIdleTimeout = () => {
-        if (idleTimeoutId) {
-          clearTimeout(idleTimeoutId)
-          idleTimeoutId = null
-        }
+    let idleTimeoutId: ReturnType<typeof setTimeout> | null = null
+    const clearIdleTimeout = () => {
+      if (idleTimeoutId) {
+        clearTimeout(idleTimeoutId)
+        idleTimeoutId = null
       }
-
-      const resetIdleTimeout = () => {
-        clearIdleTimeout()
-        idleTimeoutId = setTimeout(() => {
-          managed.markTimeout('stream_idle_timeout')
-          managed.controller.abort()
-        }, STREAM_IDLE_TIMEOUT_MS)
-      }
-
-      resetIdleTimeout()
-
-      async function* iterator(): AsyncGenerator<GeminiGenerateContentResponse> {
-        try {
-          while (true) {
-            let readResult: ReadableStreamReadResult<Uint8Array>
-            try {
-              readResult = await reader.read()
-              resetIdleTimeout()
-            } catch (error) {
-              if (request.config?.abortSignal?.aborted) {
-                try {
-                  await reader.cancel()
-                } catch {}
-                return
-              }
-              if (managed.getTimeoutReason() === 'stream_idle_timeout') {
-                try {
-                  await reader.cancel()
-                } catch {}
-                throw new GeminiHttpError(
-                  `Code Assist 流式响应空闲超时（${Math.round(STREAM_IDLE_TIMEOUT_MS / 1000)}s）`,
-                  408,
-                )
-              }
-              if (managed.getTimeoutReason() === 'request_timeout') {
-                try {
-                  await reader.cancel()
-                } catch {}
-                throw new GeminiHttpError(
-                  `Code Assist 请求超时（${Math.round(REQUEST_TIMEOUT_MS / 1000)}s）`,
-                  408,
-                )
-              }
-              if (isAbortError(error)) {
-                try {
-                  await reader.cancel()
-                } catch {}
-              }
-              throw error
-            }
-
-            const { value, done } = readResult
-            if (done) break
-
-            buffer += decoder.decode(value, { stream: true })
-            buffer = buffer.replace(/\r\n/g, '\n')
-
-            while (true) {
-              const splitIndex = buffer.indexOf('\n\n')
-              if (splitIndex < 0) break
-
-              const eventBlock = buffer.slice(0, splitIndex)
-              buffer = buffer.slice(splitIndex + 2)
-
-              const dataLines = eventBlock
-                .split('\n')
-                .filter(l => l.startsWith('data:'))
-                .map(l => l.slice('data:'.length).trimStart())
-              if (dataLines.length === 0) continue
-
-              const data = dataLines.join('\n').trim()
-              if (!data || data === '[DONE]') continue
-
-              try {
-                const json = JSON.parse(data)
-                yield withConvenienceFields(unwrapCodeAssistResponse(json))
-              } catch (error) {
-                if (request.config?.abortSignal?.aborted) return
-                throw error
-              }
-            }
-          }
-
-          const tail = buffer.trim()
-          if (tail.startsWith('data:')) {
-            const data = tail.slice('data:'.length).trimStart().trim()
-            if (data && data !== '[DONE]') {
-              try {
-                const json = JSON.parse(data)
-                yield withConvenienceFields(unwrapCodeAssistResponse(json))
-              } catch (error) {
-                if (request.config?.abortSignal?.aborted) return
-                throw error
-              }
-            }
-          }
-        } finally {
-          clearIdleTimeout()
-          managed.cleanup()
-        }
-      }
-
-      return iterator()
     }
-
-    // 非 SSE：兜底当作一次性 JSON
-    let text: string
-    try {
-      text = await resp.text()
-    } catch (error) {
-      if (request.config?.abortSignal?.aborted) {
-        managed.cleanup()
-        return emptyIterator()
-      }
-      if (managed.getTimeoutReason() === 'request_timeout') {
-        managed.cleanup()
-        throw new GeminiHttpError(
-          `Code Assist 请求超时（${Math.round(REQUEST_TIMEOUT_MS / 1000)}s）`,
-          408,
-        )
-      }
-      managed.cleanup()
-      throw error
+    const resetIdleTimeout = () => {
+      clearIdleTimeout()
+      idleTimeoutId = setTimeout(() => {
+        managed.markTimeout('stream_idle_timeout')
+        managed.controller.abort()
+      }, STREAM_IDLE_TIMEOUT_MS)
     }
+    resetIdleTimeout()
 
-    let parsed: unknown
-    try {
-      parsed = JSON.parse(text)
-    } catch (e) {
-      managed.cleanup()
-      if (request.config?.abortSignal?.aborted) {
-        return emptyIterator()
-      }
-      throw new Error(
-        `Code Assist 流式响应不是 SSE 也不是 JSON，无法解析：${String(e)}`,
-      )
-    }
+    const rl = readline.createInterface({
+      input: stream,
+      crlfDelay: Infinity,
+    })
 
-    async function* fallbackIterator(): AsyncGenerator<GeminiGenerateContentResponse> {
+    async function* iterator(): AsyncGenerator<GeminiGenerateContentResponse> {
       try {
-        if (Array.isArray(parsed)) {
-          for (const item of parsed) {
-            yield withConvenienceFields(unwrapCodeAssistResponse(item))
+        let buffered: string[] = []
+        for await (const line of rl) {
+          resetIdleTimeout()
+          if (line.startsWith('data: ')) {
+            buffered.push(line.slice(6).trim())
+            continue
           }
-          return
+          if (line === '') {
+            if (buffered.length === 0) continue
+            const json = JSON.parse(buffered.join('\n'))
+            buffered = []
+            yield withConvenienceFields(unwrapCodeAssistResponse(json))
+          }
         }
-        yield withConvenienceFields(unwrapCodeAssistResponse(parsed))
+      } catch (error) {
+        if (request.config?.abortSignal?.aborted) return
+        if (managed.getTimeoutReason() === 'stream_idle_timeout') {
+          throw new GeminiHttpError(
+            `Code Assist 流式响应空闲超时（${Math.round(STREAM_IDLE_TIMEOUT_MS / 1000)}s）`,
+            408,
+          )
+        }
+        if (managed.getTimeoutReason() === 'request_timeout') {
+          throw new GeminiHttpError(
+            `Code Assist 请求超时（${Math.round(REQUEST_TIMEOUT_MS / 1000)}s）`,
+            408,
+          )
+        }
+        if (isAbortError(error)) return
+        throw error
       } finally {
+        clearIdleTimeout()
         managed.cleanup()
+        try {
+          rl.close()
+        } catch {}
       }
     }
 
-    return fallbackIterator()
+    return iterator()
   }
 }

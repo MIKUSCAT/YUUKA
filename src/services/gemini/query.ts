@@ -12,7 +12,8 @@ import type { Tool } from '@tool'
 import { getModelManager } from '@utils/model'
 import {
   getGeminiCliAuthContext,
-  CODE_ASSIST_ENDPOINT,
+  getGeminiCliOAuthClient,
+  fetchGeminiCliQuotaModelIdsCached,
   recordGeminiCliConversationOfferedBestEffort,
 } from './codeAssistAuth'
 import { CodeAssistTransport } from './codeAssistTransport'
@@ -232,12 +233,32 @@ function wrapGeminiRequestError(
     maxAttempts: number
   },
 ): Error {
-  const raw =
+  let raw =
     error instanceof Error ? error.message : typeof error === 'string' ? error : String(error)
+  if (error instanceof GeminiHttpError && error.responseBody) {
+    const snippet = String(error.responseBody).replace(/\s+/g, ' ').trim().slice(0, 800)
+    if (snippet) {
+      raw = `${raw}: ${snippet}`
+    }
+  }
   const message = `Gemini ${meta.stage} request failed (modelKey=${meta.modelKey}, model=${meta.model}, attempt=${meta.attempt}/${meta.maxAttempts}): ${raw}`
   const wrapped = new Error(message)
   ;(wrapped as any).cause = error
   return wrapped
+}
+
+function isPreviewModelName(model: string): boolean {
+  const id = String(model ?? '').trim().replace(/^models\//, '')
+  return id.includes('preview')
+}
+
+function pickCodeAssistFallbackModel(quotaModelIds: string[]): string | null {
+  // 跟 Gemini CLI 的行为一致：没 preview 权限就回退到 2.5 系列（优先 flash）。
+  const preferred = ['models/gemini-2.5-flash', 'models/gemini-2.5-pro', 'models/gemini-2.5-flash-lite']
+  for (const m of preferred) {
+    if (quotaModelIds.includes(m)) return m
+  }
+  return quotaModelIds.length > 0 ? quotaModelIds[0] : null
 }
 
 function getProjectSettings(): { settings: GeminiSettings; path: string } {
@@ -308,12 +329,12 @@ async function createGeminiTransport(
   if (authMode === 'gemini-cli-oauth') {
     try {
       const { accessToken, projectId } = await getGeminiCliAuthContext()
+      const client = await getGeminiCliOAuthClient()
       return {
         authMode,
         oauthContext: { accessToken, projectId },
         transport: new CodeAssistTransport({
-          endpoint: CODE_ASSIST_ENDPOINT,
-          accessToken,
+          client,
           projectId,
         }),
       }
@@ -334,6 +355,7 @@ async function createGeminiTransport(
       baseUrl: auth.baseUrl,
       apiKey: auth.apiKey,
       apiKeyAuthMode: auth.apiKeyAuthMode,
+      usageStatisticsEnabled: settings.privacy?.usageStatisticsEnabled ?? true,
     }),
   }
 }
@@ -557,6 +579,7 @@ export async function queryGeminiLLM(options: {
   signal: AbortSignal
   model: string | 'main' | 'task' | 'reasoning' | 'quick'
   stream: boolean
+  sessionId?: string
 }): Promise<AssistantMessage> {
   const start = Date.now()
   setSessionState('currentThought', null)
@@ -573,17 +596,30 @@ export async function queryGeminiLLM(options: {
     const functionDeclarations =
       options.tools.length > 0 ? toolsToFunctionDeclarations(options.tools) : []
 
-    const resolved = resolveGeminiModelConfig(
-      modelKey,
-      { model: { name: requestedModelName } },
-      { functionDeclarations },
-    )
+	    const resolved = resolveGeminiModelConfig(
+	      modelKey,
+	      { model: { name: requestedModelName } },
+	      { functionDeclarations },
+	    )
 
-    const { transport, oauthContext } = await createGeminiTransport(settings, path)
-
-    const systemInstruction =
-      options.systemPrompt.length > 0
-        ? {
+	    const { transport, oauthContext } = await createGeminiTransport(settings, path)
+      let effectiveModel = resolved.model
+      if (transport instanceof CodeAssistTransport && oauthContext && isPreviewModelName(effectiveModel)) {
+        const quotaModelIds = await fetchGeminiCliQuotaModelIdsCached({
+          accessToken: oauthContext.accessToken,
+          projectId: oauthContext.projectId,
+        })
+        if (quotaModelIds.length > 0 && !quotaModelIds.includes(effectiveModel)) {
+          const fallback = pickCodeAssistFallbackModel(quotaModelIds)
+          if (fallback) {
+            effectiveModel = fallback
+          }
+        }
+      }
+	
+	    const systemInstruction =
+	      options.systemPrompt.length > 0
+	        ? {
             role: 'user' as const,
             parts: [{ text: options.systemPrompt.join('\n') }],
           }
@@ -624,25 +660,26 @@ export async function queryGeminiLLM(options: {
         if (!options.stream) {
           await acquireApiSlot(options.signal)
           let resp: GeminiGenerateContentResponse
-          try {
-            resp = await transport.generateContent({
-              model: resolved.model,
-              contents: requestContents,
-              userPromptId,
-              config: {
-                ...resolved.config,
-                abortSignal: options.signal,
+	          try {
+	            resp = await transport.generateContent({
+	              model: effectiveModel,
+	              contents: requestContents,
+	              userPromptId,
+	              config: {
+	                ...resolved.config,
+	                abortSignal: options.signal,
                 ...(systemInstruction ? { systemInstruction } : {}),
+                ...(options.sessionId ? { sessionId: options.sessionId } : {}),
               },
             })
           } finally {
             releaseApiSlot()
           }
 
-          const assistantMessage = geminiResponseToAssistantMessage(resp, {
-            model: resolved.model,
-            durationMs: Date.now() - start,
-          })
+	          const assistantMessage = geminiResponseToAssistantMessage(resp, {
+	            model: effectiveModel,
+	            durationMs: Date.now() - start,
+	          })
           if (
             isNoContentAssistantMessage(assistantMessage) &&
             noContentRetries < MAX_NO_CONTENT_RETRIES &&
@@ -673,15 +710,16 @@ export async function queryGeminiLLM(options: {
 
         await acquireApiSlot(options.signal)
         let stream: AsyncIterable<GeminiGenerateContentResponse>
-        try {
-          stream = await transport.generateContentStream({
-            model: resolved.model,
-            contents: requestContents,
-            userPromptId,
-            config: {
-              ...resolved.config,
-              abortSignal: options.signal,
+	        try {
+	          stream = await transport.generateContentStream({
+	            model: effectiveModel,
+	            contents: requestContents,
+	            userPromptId,
+	            config: {
+	              ...resolved.config,
+	              abortSignal: options.signal,
               ...(systemInstruction ? { systemInstruction } : {}),
+              ...(options.sessionId ? { sessionId: options.sessionId } : {}),
             },
           })
         } catch (e) {
@@ -733,10 +771,10 @@ export async function queryGeminiLLM(options: {
           usageMetadata: lastUsage,
         }
 
-        const assistantMessage = geminiResponseToAssistantMessage(synthetic, {
-          model: resolved.model,
-          durationMs: Date.now() - start,
-        })
+	        const assistantMessage = geminiResponseToAssistantMessage(synthetic, {
+	          model: effectiveModel,
+	          durationMs: Date.now() - start,
+	        })
         if (
           isNoContentAssistantMessage(assistantMessage) &&
           noContentRetries < MAX_NO_CONTENT_RETRIES &&
@@ -772,13 +810,13 @@ export async function queryGeminiLLM(options: {
           options.signal.aborted ||
           isAbortError(error)
         ) {
-          throw wrapGeminiRequestError(error, {
-            stage: 'llm',
-            model: resolved.model,
-            modelKey,
-            attempt,
-            maxAttempts: RETRY_MAX_ATTEMPTS,
-          })
+	          throw wrapGeminiRequestError(error, {
+	            stage: 'llm',
+	            model: effectiveModel,
+	            modelKey,
+	            attempt,
+	            maxAttempts: RETRY_MAX_ATTEMPTS,
+	          })
         }
 
         const backoff = computeBackoffMs(attempt)

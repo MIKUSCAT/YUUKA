@@ -30,6 +30,10 @@ export type GeminiSettings = {
   }
   proxy?: string
   mcpServers?: unknown
+  privacy?: {
+    // Align with Gemini CLI settings key: privacy.usageStatisticsEnabled
+    usageStatisticsEnabled?: boolean
+  }
   ui?: {
     theme?: string
   }
@@ -150,6 +154,12 @@ function ensureGeminiSettingsAtPath(settingsPath: string): EnsureGeminiSettingsR
       }
       next.security.auth.geminiApi = next.security.auth.geminiApi ?? {}
       next.security.auth.geminiCliOAuth = next.security.auth.geminiCliOAuth ?? {}
+
+      // Align with Gemini CLI defaults: privacy.usageStatisticsEnabled defaults to true.
+      next.privacy = next.privacy ?? {}
+      if (typeof next.privacy.usageStatisticsEnabled !== 'boolean') {
+        next.privacy.usageStatisticsEnabled = true
+      }
       const keyMode = String(next.security.auth.geminiApi.apiKeyAuthMode ?? '').trim()
       if (keyMode !== 'x-goog-api-key' && keyMode !== 'query' && keyMode !== 'bearer') {
         next.security.auth.geminiApi.apiKeyAuthMode = 'x-goog-api-key'
@@ -185,6 +195,9 @@ function ensureGeminiSettingsAtPath(settingsPath: string): EnsureGeminiSettingsR
           },
           selectedType: 'gemini-api-key',
         },
+      },
+      privacy: {
+        usageStatisticsEnabled: true,
       },
       model: { name: DEFAULT_GEMINI_MODEL },
       yuuka: {},

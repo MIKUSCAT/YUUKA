@@ -40,7 +40,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0",
     "@commander-js/extra-typings": "^13.1.0",
     "@inkjs/ui": "^2.0.0",
     "@modelcontextprotocol/sdk": "^1.15.1",
