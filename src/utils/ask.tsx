@@ -8,29 +8,27 @@ import { CanUseToolFn } from '@hooks/useCanUseTool'
 import { Tool } from '@tool'
 import { getModelManager } from '@utils/model'
 import { setCwd } from './state'
-import { getMessagesPath, overwriteLog } from './log'
 import { createUserMessage } from './messages'
 import { runAgentRuntime } from './agentRuntime'
+import { SessionManager } from './sessionManager'
 
 type Props = {
   commands: Command[]
   safeMode?: boolean
   hasPermissionsToUseTool: CanUseToolFn
-  messageLogName: string
   prompt: string
   cwd: string
   tools: Tool[]
   verbose?: boolean
 }
 
-// Sends a single prompt to the Anthropic Messages API and returns the response.
+// Sends a single prompt and returns the response (non-interactive mode).
 // Assumes that claude is being used non-interactively -- will not
 // ask the user for permissions or further input.
 export async function ask({
   commands,
   safeMode,
   hasPermissionsToUseTool,
-  messageLogName,
   prompt,
   cwd,
   tools,
@@ -38,11 +36,16 @@ export async function ask({
 }: Props): Promise<{
   resultText: string
   totalCost: number
-  messageHistoryFile: string
+  sessionFile: string
 }> {
   await setCwd(cwd)
+  const sessionManager = SessionManager.create(cwd)
+  const sessionFile = sessionManager.getSessionFile() || ''
+  const sessionId = sessionManager.getSessionId()
+
   const message = createUserMessage(prompt)
   const messages: Message[] = [message]
+  sessionManager.appendMessage(message)
 
   const [systemPrompt, context, model] = await Promise.all([
     getSystemPrompt(),
@@ -62,11 +65,12 @@ export async function ask({
         verbose,
         safeMode,
         autoMode: true,
-        forkNumber: 0,
-        messageLogName: messageLogName || 'unused',
+        sessionId,
+        sessionPath: sessionFile || undefined,
         maxThinkingTokens: 0,
       },
       abortController: new AbortController(),
+      sessionManager,
       messageId: undefined,
       agentId: 'lead',
       readFileTimestamps: {},
@@ -74,6 +78,9 @@ export async function ask({
     },
   })) {
     messages.push(m)
+    if (m.type === 'user' || m.type === 'assistant') {
+      sessionManager.appendMessage(m)
+    }
   }
 
   const result = last(messages)
@@ -90,13 +97,9 @@ export async function ask({
     )
   }
 
-  // Write log that can be retrieved with `claude log`
-  const messageHistoryFile = getMessagesPath(messageLogName, 0, 0)
-  overwriteLog(messageHistoryFile, messages)
-
   return {
     resultText: result.message.content[0].text,
     totalCost: getTotalCost(),
-    messageHistoryFile,
+    sessionFile,
   }
 }

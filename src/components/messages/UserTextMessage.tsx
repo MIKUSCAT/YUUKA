@@ -1,4 +1,4 @@
-import { TextBlockParam } from '@anthropic-ai/sdk/resources/index.mjs'
+import type { TextBlockParam } from '@yuuka-types/llm'
 import { UserBashInputMessage } from './UserBashInputMessage'
 import { UserCommandMessage } from './UserCommandMessage'
 import { UserPromptMessage } from './UserPromptMessage'

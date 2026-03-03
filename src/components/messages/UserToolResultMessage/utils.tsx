@@ -1,4 +1,4 @@
-import { ToolUseBlockParam } from '@anthropic-ai/sdk/resources/index.mjs'
+import type { ToolUseBlockParam } from '@yuuka-types/llm'
 import { Message } from '@query'
 import { useMemo } from 'react'
 import { Tool } from '@tool'

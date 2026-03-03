@@ -1,4 +1,4 @@
-import { TextBlock, ToolUseBlock } from '@anthropic-ai/sdk/resources/index.mjs'
+import type { TextBlock, ToolUseBlock } from '@yuuka-types/llm'
 import { AssistantMessage, BinaryFeedbackResult } from '@query'
 import { MAIN_QUERY_TEMPERATURE } from '@services/llm'
 
@@ -19,6 +19,14 @@ type BinaryFeedbackConfig = {
 
 async function getBinaryFeedbackConfig(): Promise<BinaryFeedbackConfig> {
   return { sampleFrequency: 0 }
+}
+
+function isTextBlock(cb: any): cb is TextBlock {
+  return cb?.type === 'text' && typeof cb?.text === 'string'
+}
+
+function isToolUseBlock(cb: any): cb is ToolUseBlock {
+  return cb?.type === 'tool_use' && typeof cb?.name === 'string'
 }
 
 function getMessageBlockSequence(m: AssistantMessage) {
@@ -102,13 +110,24 @@ export function messagePairValidForBinaryFeedback(
   const nonThinkingBlocks2 = m2.message.content.filter(
     b => b.type !== 'thinking' && b.type !== 'redacted_thinking',
   )
-  const hasToolUse =
-    nonThinkingBlocks1.some(b => b.type === 'tool_use') ||
-    nonThinkingBlocks2.some(b => b.type === 'tool_use')
+  const toolUseBlocks1 = nonThinkingBlocks1.filter(isToolUseBlock)
+  const toolUseBlocks2 = nonThinkingBlocks2.filter(isToolUseBlock)
+  const hasToolUse = toolUseBlocks1.length > 0 || toolUseBlocks2.length > 0
 
   // If they're all text blocks, compare those
   if (!hasToolUse) {
-    if (allContentBlocksEqual(nonThinkingBlocks1, nonThinkingBlocks2)) {
+    const textBlocks1 = nonThinkingBlocks1.filter(isTextBlock)
+    const textBlocks2 = nonThinkingBlocks2.filter(isTextBlock)
+
+    // If either side contains non-text blocks (images/tool_results/etc.), skip binary feedback.
+    if (
+      textBlocks1.length !== nonThinkingBlocks1.length ||
+      textBlocks2.length !== nonThinkingBlocks2.length
+    ) {
+      return false
+    }
+
+    if (allContentBlocksEqual(textBlocks1, textBlocks2)) {
       logFail('contents_identical')
       return false
     }
@@ -120,8 +139,8 @@ export function messagePairValidForBinaryFeedback(
   // Only show binary feedback if there's a tool use difference, ignoring text.
   if (
     allContentBlocksEqual(
-      nonThinkingBlocks1.filter(b => b.type === 'tool_use'),
-      nonThinkingBlocks2.filter(b => b.type === 'tool_use'),
+      toolUseBlocks1,
+      toolUseBlocks2,
     )
   ) {
     logFail('contents_identical')

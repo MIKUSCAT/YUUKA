@@ -10,6 +10,7 @@ import { queryLLM } from '@services/llm'
 import { selectAndReadFiles } from './fileRecoveryCore'
 import { addLineNumbers } from './file'
 import { getModelManager } from './model'
+import type { SessionManager } from './sessionManager'
 
 /**
  * Threshold ratio for triggering automatic context compression
@@ -202,7 +203,11 @@ export async function checkAutoCompact(
   }
 
   try {
-    const compactedMessages = await executeAutoCompact(messages, toolUseContext)
+    const compactedMessages = await executeAutoCompact(
+      messages,
+      toolUseContext,
+      (toolUseContext as any)?.sessionManager as SessionManager | undefined,
+    )
 
     return {
       messages: compactedMessages,
@@ -229,6 +234,7 @@ export async function checkAutoCompact(
 async function executeAutoCompact(
   messages: Message[],
   toolUseContext: any,
+  sessionManager: SessionManager | undefined,
 ): Promise<Message[]> {
   const endIndex = lastNonProgressIndex(messages)
   const tailStartIndex = findTailStartIndex(messages)
@@ -237,6 +243,7 @@ async function executeAutoCompact(
   const olderMessages =
     tailStartIndex > 0 ? messages.slice(0, tailStartIndex) : []
 
+  const tokensBefore = countTokens(messages)
   const summaryRequest = createUserMessage(COMPRESSION_PROMPT)
 
   const summaryResponse = await queryLLM(
@@ -275,44 +282,87 @@ async function executeAutoCompact(
     cache_read_input_tokens: 0,
   }
 
-  // Automatic file recovery: preserve recently accessed development files
-  // This maintains coding context even after conversation compression
+  if (!sessionManager) {
+    // Fallback to legacy in-memory rewrite mode.
+    const recoveredFiles = await selectAndReadFiles()
+
+    const compactedMessages = [
+      createUserMessage(
+        '（已自动压缩上下文，保留摘要与关键内容；请继续完成我最新的请求。）',
+      ),
+      summaryResponse,
+    ]
+
+    if (recoveredFiles.length > 0) {
+      for (const file of recoveredFiles) {
+        const contentWithLines = addLineNumbers({
+          content: file.content,
+          startLine: 1,
+        })
+        const recoveryMessage = createUserMessage(
+          `**Recovered File: ${file.path}**\n\n\`\`\`\n${contentWithLines}\n\`\`\`\n\n` +
+            `*Automatically recovered (${file.tokens} tokens)${file.truncated ? ' [truncated]' : ''}*`,
+        )
+        compactedMessages.push(recoveryMessage)
+      }
+    }
+
+    const nextMessages = [
+      ...compactedMessages,
+      ...tailMessages.filter(m => !isProgressMessage(m)),
+    ]
+    getMessagesSetter()(nextMessages)
+    getContext.cache.clear?.()
+    getCodeStyle.cache.clear?.()
+    resetFileFreshnessSession()
+    return nextMessages
+  }
+
+  // SessionManager mode (pi-style): write compaction as a session entry.
+  const firstKept = messages[tailStartIndex]
+  const firstKeptUuid = firstKept ? String((firstKept as any).uuid ?? '').trim() : ''
+  const firstKeptEntryId =
+    firstKeptUuid ? sessionManager.findEntryIdByMessageUuid(firstKeptUuid) : undefined
+  if (!firstKeptEntryId) {
+    // If we cannot map to a session entry, fall back to legacy mode.
+    const nextMessages = [
+      createUserMessage('（已自动压缩上下文；请继续完成我最新的请求。）'),
+      summaryResponse,
+      ...tailMessages.filter(m => !isProgressMessage(m)),
+    ]
+    getMessagesSetter()(nextMessages)
+    getContext.cache.clear?.()
+    getCodeStyle.cache.clear?.()
+    resetFileFreshnessSession()
+    return nextMessages
+  }
+
+  sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore)
+
+  // Optional: keep a small hint + recovered files AFTER the compaction entry.
+  sessionManager.appendMessage(
+    createUserMessage('（已自动压缩上下文；请继续完成我最新的请求。）'),
+  )
   const recoveredFiles = await selectAndReadFiles()
-
-  const compactedMessages = [
-    createUserMessage(
-      '（已自动压缩上下文，保留摘要与关键内容；请继续完成我最新的请求。）',
-    ),
-    summaryResponse,
-  ]
-
-  // Append recovered files to maintain development workflow continuity
-  // Files are prioritized by recency and importance, with strict token limits
   if (recoveredFiles.length > 0) {
     for (const file of recoveredFiles) {
       const contentWithLines = addLineNumbers({
         content: file.content,
         startLine: 1,
       })
-      const recoveryMessage = createUserMessage(
-        `**Recovered File: ${file.path}**\n\n\`\`\`\n${contentWithLines}\n\`\`\`\n\n` +
-          `*Automatically recovered (${file.tokens} tokens)${file.truncated ? ' [truncated]' : ''}*`,
+      sessionManager.appendMessage(
+        createUserMessage(
+          `**Recovered File: ${file.path}**\n\n\`\`\`\n${contentWithLines}\n\`\`\`\n\n` +
+            `*Automatically recovered (${file.tokens} tokens)${file.truncated ? ' [truncated]' : ''}*`,
+        ),
       )
-      compactedMessages.push(recoveryMessage)
     }
   }
 
-  // State cleanup to ensure fresh context after compression
-  // Mirrors the cleanup sequence from manual /compact command
-  const nextMessages = [
-    ...compactedMessages,
-    // 关键：保留“尾部”真实上下文（尤其是最后一条用户消息 / tool_result），否则会像“开新对话”
-    ...tailMessages.filter(m => !isProgressMessage(m)),
-  ]
+  const nextMessages = sessionManager.buildSessionContext().messages as Message[]
   getMessagesSetter()(nextMessages)
   getContext.cache.clear?.()
   getCodeStyle.cache.clear?.()
   resetFileFreshnessSession()
-
   return nextMessages
 }

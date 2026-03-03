@@ -30,6 +30,7 @@ import { TaskCreateTool } from './tools/SharedTaskTools/TaskCreateTool'
 import { TaskListTool } from './tools/SharedTaskTools/TaskListTool'
 import { TaskUpdateTool } from './tools/SharedTaskTools/TaskUpdateTool'
 import { getMCPTools } from './services/mcpClient'
+import { getExtensionTools } from '@utils/extensions'
 import { memoize } from 'lodash-es'
 
 const ANT_ONLY_TOOLS = [
@@ -109,7 +110,11 @@ export const getCoreTools = memoize(
 
 export const getTools = memoize(
   async (): Promise<Tool[]> => {
-    const tools = [...(await getCoreTools()), ...(await getMCPTools())]
+    const tools = [
+      ...(await getCoreTools()),
+      ...(await getMCPTools()),
+      ...(await getExtensionTools()),
+    ]
     await primeToolDescriptions(tools)
     return tools
   },

@@ -1,4 +1,4 @@
-import { ToolResultBlockParam } from '@anthropic-ai/sdk/resources/index.mjs'
+import type { ToolResultBlockParam } from '@yuuka-types/llm'
 import { Box, Text } from 'ink'
 import * as React from 'react'
 import { getTheme } from '@utils/theme'

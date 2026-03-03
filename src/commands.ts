@@ -14,6 +14,7 @@ import status from './commands/status'
 import snapshot from './commands/snapshot'
 import { memoize } from 'lodash-es'
 import type { Message } from './query'
+import { getExtensionCommands } from '@utils/extensions'
 
 type LocalCommand = {
   type: 'local'
@@ -73,7 +74,9 @@ const COMMANDS = memoize((): Command[] => [
 ])
 
 export const getCommands = memoize(async (): Promise<Command[]> => {
-  return COMMANDS().filter(_ => _.isEnabled)
+  const base = COMMANDS().filter(_ => _.isEnabled)
+  const ext = await getExtensionCommands()
+  return [...base, ...ext].filter(_ => _.isEnabled)
 })
 
 export function hasCommand(commandName: string, commands: Command[]): boolean {

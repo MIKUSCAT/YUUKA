@@ -14,15 +14,15 @@ import { last, memoize } from 'lodash-es'
 import type { SetToolJSXFn, Tool, ToolUseContext } from '@tool'
 import { NO_CONTENT_MESSAGE } from '@services/llm'
 import {
-  ImageBlockParam,
-  TextBlockParam,
-  ToolResultBlockParam,
-  ToolUseBlockParam,
-  Message as APIMessage,
-  ContentBlockParam,
-  ContentBlock,
-} from '@anthropic-ai/sdk/resources/index.mjs'
-import { ToolUseBlock } from '@anthropic-ai/sdk/resources/index.mjs'
+  type ContentBlock,
+  type ContentBlockParam,
+  type ImageBlockParam,
+  type Message as APIMessage,
+  type TextBlockParam,
+  type ToolResultBlockParam,
+  type ToolUseBlock,
+  type ToolUseBlockParam,
+} from '@yuuka-types/llm'
 import { getCwd } from '@utils/state'
 
 // NOTE: Dynamic content processing for custom commands has been moved to
@@ -309,16 +309,24 @@ export async function processUserInput(
     }
 
     // For invalid commands, preserve both the user message and error
-    if (
-      newMessages.length === 2 &&
-      newMessages[0]!.type === 'user' &&
-      newMessages[1]!.type === 'assistant' &&
-      typeof newMessages[1]!.message.content === 'string' &&
-      newMessages[1]!.message.content.startsWith('Unknown command:')
-    ) {
-      
-      return newMessages
-    }
+	    if (
+	      newMessages.length === 2 &&
+	      newMessages[0]!.type === 'user' &&
+	      newMessages[1]!.type === 'assistant' &&
+	      (() => {
+	        const blocks = (newMessages[1] as any)?.message?.content
+	        if (!Array.isArray(blocks)) return false
+	        const textBlock = blocks.find(
+	          (b: any) => b?.type === 'text' && typeof b?.text === 'string',
+	        )
+	        return typeof textBlock?.text === 'string'
+	          ? textBlock.text.startsWith('Unknown command:')
+	          : false
+	      })()
+	    ) {
+	      
+	      return newMessages
+	    }
 
     // User-Assistant pair (eg. local commands)
     if (newMessages.length === 2) {

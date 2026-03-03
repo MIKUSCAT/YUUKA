@@ -8,8 +8,7 @@ import {
 import { homedir } from 'os'
 import { join } from 'path'
 import type { Tool } from '@tool'
-import { getMessagesPath } from './log'
-import { deserializeMessages } from './conversationRecovery'
+import { SessionManager } from './sessionManager'
 
 const SNAPSHOT_DIR = join(homedir(), '.yuuka', 'snapshots')
 const SNAPSHOT_EXT = '.snapshot.json'
@@ -21,10 +20,9 @@ export type ConversationSnapshot = {
   createdAtIso: string
   reason: string
   label?: string
-  messageLogName: string
-  forkNumber: number
-  sidechainNumber: number
-  sourcePath: string
+  sessionId: string
+  sessionFile: string
+  leafId: string | null
   messageCount: number
   messages: any[]
 }
@@ -32,10 +30,7 @@ export type ConversationSnapshot = {
 export type ConversationSnapshotMeta = Omit<ConversationSnapshot, 'messages'>
 
 type SnapshotContextLike = {
-  options?: {
-    messageLogName?: string
-    forkNumber?: number
-  }
+  sessionManager?: SessionManager
 }
 
 function ensureSnapshotDir(): void {
@@ -103,32 +98,30 @@ function getAllSnapshotMetas(): ConversationSnapshotMeta[] {
 }
 
 export function createConversationSnapshot(input: {
-  messageLogName: string
-  forkNumber?: number
-  sidechainNumber?: number
   reason: string
   label?: string
-  sourcePath?: string
+  sessionId: string
+  sessionFile: string
+  leafId?: string | null
+  messages?: any[]
 }): ConversationSnapshotMeta {
   ensureSnapshotDir()
 
-  const forkNumber = Number.isFinite(Number(input.forkNumber))
-    ? Math.max(0, Math.floor(Number(input.forkNumber)))
-    : 0
-  const sidechainNumber = Number.isFinite(Number(input.sidechainNumber))
-    ? Math.max(0, Math.floor(Number(input.sidechainNumber)))
-    : 0
-  const sourcePath =
-    input.sourcePath ||
-    getMessagesPath(input.messageLogName, forkNumber, sidechainNumber)
-
-  if (!existsSync(sourcePath)) {
-    throw new Error(`Snapshot source log not found: ${sourcePath}`)
+  const sessionFile = String(input.sessionFile || '').trim()
+  const sessionId = String(input.sessionId || '').trim()
+  const leafId = input.leafId ?? null
+  if (!sessionFile) {
+    throw new Error('Snapshot requires sessionFile')
+  }
+  if (!sessionId) {
+    throw new Error('Snapshot requires sessionId')
   }
 
-  const messages = readJSONFile<any[]>(sourcePath)
+  const messages = Array.isArray(input.messages)
+    ? input.messages
+    : SessionManager.open(sessionFile).buildSessionContext().messages
   if (!Array.isArray(messages)) {
-    throw new Error(`Snapshot source is not a valid message array: ${sourcePath}`)
+    throw new Error('Snapshot source is not a valid message array')
   }
 
   const now = new Date()
@@ -148,10 +141,9 @@ export function createConversationSnapshot(input: {
     createdAtIso: now.toISOString(),
     reason: String(input.reason || 'manual'),
     ...(input.label ? { label: input.label } : {}),
-    messageLogName: input.messageLogName,
-    forkNumber,
-    sidechainNumber,
-    sourcePath,
+    sessionId,
+    sessionFile,
+    leafId,
     messageCount: messages.length,
     messages,
   }
@@ -170,15 +162,19 @@ export function tryCreateAutoSnapshotFromContext(
   reason: string,
   label?: string,
 ): ConversationSnapshotMeta | null {
-  const messageLogName = String(context?.options?.messageLogName || '').trim()
-  if (!messageLogName) return null
-  const forkNumber = Number(context?.options?.forkNumber || 0)
+  const sessionManager = context?.sessionManager
+  if (!sessionManager) return null
+  const sessionFile = sessionManager.getSessionFile() || ''
+  const sessionId = sessionManager.getSessionId()
+  if (!sessionFile || !sessionId) return null
   try {
     return createConversationSnapshot({
-      messageLogName,
-      forkNumber,
       reason,
       label,
+      sessionId,
+      sessionFile,
+      leafId: sessionManager.getLeafId(),
+      messages: sessionManager.buildSessionContext().messages,
     })
   } catch {
     return null
@@ -237,7 +233,6 @@ export function loadConversationSnapshotMessages(
   }
   return {
     snapshot: splitMeta(snapshot),
-    messages: deserializeMessages(snapshot.messages, tools),
+    messages: snapshot.messages,
   }
 }
-

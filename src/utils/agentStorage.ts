@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
-import { createHash, randomUUID } from 'crypto'
+import { randomUUID } from 'crypto'
 import { CONFIG_BASE_DIR } from '@constants/product'
 
 /**
@@ -26,7 +26,7 @@ function sanitizeScope(scope?: string | null): string {
 
 /**
  * Set conversation storage scope.
- * Use messageLogName so each conversation has isolated todo storage.
+ * Use sessionId (pi-style JSONL session id) so each conversation has isolated todo storage.
  */
 export function setConversationScope(scope?: string): void {
   const sanitized = sanitizeScope(scope)
@@ -48,10 +48,8 @@ function getConfigDirectory(): string {
  * Get the current session ID
  */
 function getSessionId(): string {
-  // 项目隔离 + 对话隔离，避免新对话读到旧 todo
-  const cwd = process.cwd()
-  const hash = createHash('md5').update(cwd).digest('hex').slice(0, 8)
-  return `project-${hash}-conv-${conversationScope}`
+  // 全局 + 对话隔离：不按 cwd 做项目隔离（用户要求“只要全局”）。
+  return `conv-${conversationScope}`
 }
 
 /**

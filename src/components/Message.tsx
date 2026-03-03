@@ -3,13 +3,11 @@ import * as React from 'react'
 import type { AssistantMessage, Message as QueryMessage, UserMessage } from '@query'
 import type {
   ContentBlock,
-  DocumentBlockParam,
   ImageBlockParam,
   TextBlockParam,
-  ThinkingBlockParam,
   ToolResultBlockParam,
   ToolUseBlockParam,
-} from '@anthropic-ai/sdk/resources/index.mjs'
+} from '@yuuka-types/llm'
 import { Tool } from '@tool'
 import { logError } from '@utils/log'
 import { UserToolResultMessage } from './messages/UserToolResultMessage/UserToolResultMessage'
@@ -156,7 +154,6 @@ function UserMessage({
   tools: Tool[]
   param:
     | TextBlockParam
-    | DocumentBlockParam
     | ImageBlockParam
     | ToolUseBlockParam
     | ToolResultBlockParam
@@ -202,7 +199,6 @@ function AssistantMessage({
     | ContentBlock
     | TextBlockParam
     | ImageBlockParam
-    | ThinkingBlockParam
     | ToolUseBlockParam
     | ToolResultBlockParam
   costUSD: number

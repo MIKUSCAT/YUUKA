@@ -1,4 +1,4 @@
-import { ToolUseBlockParam } from '@anthropic-ai/sdk/resources/index.mjs'
+import type { ToolUseBlockParam } from '@yuuka-types/llm'
 import { Box, Newline, Static, Text } from 'ink'
 import ProjectOnboarding, {
   markProjectOnboardingComplete,
@@ -28,7 +28,6 @@ import { addToHistory } from '@history'
 import { useApiKeyVerification } from '@hooks/useApiKeyVerification'
 import { useCancelRequest } from '@hooks/useCancelRequest'
 import useCanUseTool from '@hooks/useCanUseTool'
-import { useLogMessages } from '@hooks/useLogMessages'
 import { PermissionProvider } from '@context/PermissionContext'
 import { ModeIndicator } from '@components/ModeIndicator'
 import {
@@ -45,7 +44,6 @@ import {
 import type { Tool } from '@tool'
 // Auto-updater removed; only show a new version banner passed from CLI
 import { getGlobalConfig, saveGlobalConfig } from '@utils/config'
-import { getNextAvailableLogForkNumber } from '@utils/log'
 import {
   getErroredToolUseMessages,
   getInProgressToolUseIDs,
@@ -71,16 +69,16 @@ import { logError } from '@utils/log'
 import { runAgentRuntime } from '@utils/agentRuntime'
 import { normalizeTeamName } from '@services/teamPaths'
 import type { PermissionMode } from '@yuuka-types/PermissionMode'
+import { SessionManager } from '@utils/sessionManager'
 
 type Props = {
   commands: Command[]
   safeMode?: boolean
   loadMcpToolsInBackground?: boolean
   debug?: boolean
-  initialForkNumber?: number | undefined
   initialPrompt: string | undefined
-  // A unique name for the message log file, used to identify the fork
-  messageLogName: string
+  // Resume from an existing session file. If omitted, a new session is created.
+  sessionPath?: string
   shouldShowPromptInput: boolean
   tools: Tool[]
   verbose: boolean | undefined
@@ -101,9 +99,8 @@ export function REPL({
   safeMode,
   loadMcpToolsInBackground = false,
   debug = false,
-  initialForkNumber = 0,
   initialPrompt,
-  messageLogName,
+  sessionPath,
   shouldShowPromptInput,
   tools: initialTools,
   verbose: verboseFromCLI,
@@ -120,10 +117,31 @@ export function REPL({
   const [verboseConfig] = useState(() => verboseFromCLI ?? getGlobalConfig().verbose)
   const verbose = verboseConfig
 
-  // Used to force the logo to re-render and conversation log to use a new file
-  const [forkNumber, setForkNumber] = useState(
-    getNextAvailableLogForkNumber(messageLogName, initialForkNumber, 0),
-  )
+  const sessionManagerRef = useRef<SessionManager | null>(null)
+  if (!sessionManagerRef.current) {
+    sessionManagerRef.current = sessionPath
+      ? SessionManager.open(sessionPath)
+      : SessionManager.create(getOriginalCwd())
+
+    // If caller provided initialMessages for a new session, persist them.
+    if (!sessionPath && initialMessages && initialMessages.length > 0) {
+      const mgr = sessionManagerRef.current
+      if (mgr && mgr.getEntries().length === 0) {
+        for (const m of initialMessages) {
+          if (m.type === 'progress') continue
+          mgr.appendMessage(m)
+        }
+      }
+    }
+  }
+
+  const [sessionMeta, setSessionMeta] = useState(() => ({
+    id: sessionManagerRef.current!.getSessionId(),
+    path: sessionManagerRef.current!.getSessionFile(),
+  }))
+
+  // Used to force Static sections to re-render on session switches.
+  const [sessionKey, setSessionKey] = useState(0)
 
   const [
     forkConvoWithMessagesOnTheNextRender,
@@ -142,7 +160,15 @@ export function REPL({
     null,
   )
   const [tools, setTools] = useState<Tool[]>(initialTools)
-  const [messages, setMessages] = useState<MessageType[]>(initialMessages ?? [])
+  const [messages, setMessages] = useState<MessageType[]>(() => {
+    if (initialMessages) return initialMessages
+    // When resuming via sessionPath, load from session context.
+    if (sessionPath) {
+      return (sessionManagerRef.current?.buildSessionContext().messages ??
+        []) as MessageType[]
+    }
+    return []
+  })
   const [inputValue, setInputValue] = useState('')
   const [cursorOffset, setCursorOffset] = useState(0)
   const [submitCount, setSubmitCount] = useState(0)
@@ -245,11 +271,22 @@ export function REPL({
   )
 
   useEffect(() => {
-    if (forkConvoWithMessagesOnTheNextRender) {
-      setForkNumber(_ => _ + 1)
-      setForkConvoWithMessagesOnTheNextRender(null)
-      setMessages(forkConvoWithMessagesOnTheNextRender)
+    if (!forkConvoWithMessagesOnTheNextRender) return
+
+    // Start a brand new session (pi-style: keep old session intact).
+    const next = SessionManager.create(getOriginalCwd())
+
+    // Seed new session with provided messages (excluding progress).
+    for (const m of forkConvoWithMessagesOnTheNextRender) {
+      if (m.type === 'progress') continue
+      next.appendMessage(m)
     }
+
+    sessionManagerRef.current = next
+    setSessionMeta({ id: next.getSessionId(), path: next.getSessionFile() })
+    setSessionKey(k => k + 1)
+    setForkConvoWithMessagesOnTheNextRender(null)
+    setMessages(forkConvoWithMessagesOnTheNextRender)
   }, [forkConvoWithMessagesOnTheNextRender])
 
   useEffect(() => {
@@ -285,8 +322,10 @@ export function REPL({
           abortController: newAbortController,
           options: {
             commands,
-            forkNumber,
-            messageLogName,
+            forkNumber: 0,
+            messageLogName: sessionMeta.id,
+            sessionId: sessionMeta.id,
+            sessionPath: sessionMeta.path,
             tools,
             verbose,
             maxThinkingTokens: 0,
@@ -306,6 +345,10 @@ export function REPL({
             addToHistory(initialPrompt)
             // TODO: setHistoryIndex
           }
+        }
+        for (const message of newMessages) {
+          if (message.type === 'progress') continue
+          sessionManagerRef.current?.appendMessage(message)
         }
         setMessages(_ => [..._, ...newMessages])
 
@@ -331,8 +374,10 @@ export function REPL({
           toolUseContext: {
             options: {
               commands,
-              forkNumber,
-              messageLogName,
+              forkNumber: 0,
+              messageLogName: sessionMeta.id,
+              sessionId: sessionMeta.id,
+              sessionPath: sessionMeta.path,
               tools,
               verbose,
               safeMode: effectiveSafeMode,
@@ -345,9 +390,13 @@ export function REPL({
             readFileTimestamps: readFileTimestamps.current,
             abortController: newAbortController,
             setToolJSX,
+            sessionManager: sessionManagerRef.current,
           },
           getBinaryFeedbackResponse,
         })) {
+          if (message.type !== 'progress') {
+            sessionManagerRef.current?.appendMessage(message)
+          }
           setMessages(oldMessages => [...oldMessages, message])
         }
       } else {
@@ -378,6 +427,10 @@ export function REPL({
       setAbortController(controllerToUse)
     }
 
+    for (const message of newMessages) {
+      if (message.type === 'progress') continue
+      sessionManagerRef.current?.appendMessage(message)
+    }
     setMessages(oldMessages => [...oldMessages, ...newMessages])
 
     // Mark onboarding as complete when any user message is sent to the assistant
@@ -428,8 +481,10 @@ export function REPL({
         toolUseContext: {
           options: {
             commands,
-            forkNumber,
-            messageLogName,
+            forkNumber: 0,
+            messageLogName: sessionMeta.id,
+            sessionId: sessionMeta.id,
+            sessionPath: sessionMeta.path,
             tools,
             verbose,
             safeMode: effectiveSafeMode,
@@ -442,9 +497,13 @@ export function REPL({
           readFileTimestamps: readFileTimestamps.current,
           abortController: controllerToUse,
           setToolJSX,
+          sessionManager: sessionManagerRef.current,
         },
         getBinaryFeedbackResponse,
       })) {
+        if (message.type !== 'progress') {
+          sessionManagerRef.current?.appendMessage(message)
+        }
         setMessages(oldMessages => [...oldMessages, message])
       }
     } catch (e) {
@@ -469,16 +528,13 @@ export function REPL({
     setMessagesSetter(setMessages)
   }, [messages])
 
-  // Record transcripts locally, for debugging and conversation recovery
-  useLogMessages(messages, messageLogName, forkNumber)
-
   // Log startup time
   useLogStartupTime()
 
   // Keep todo/memory storage isolated per conversation log
   useEffect(() => {
-    setConversationScope(messageLogName)
-  }, [messageLogName])
+    setConversationScope(sessionMeta.id)
+  }, [sessionMeta.id])
 
   // Initial load
   useEffect(() => {
@@ -595,7 +651,7 @@ export function REPL({
             if (block?.type === 'tool_use' && block.name === 'Task') {
               const input = (block.input as any) || {}
               const teamName = normalizeTeamName(
-                String(input?.team_name || messageLogName || 'default-team'),
+                String(input?.team_name || sessionMeta.id || 'default-team'),
               )
               const agentName = String(input?.name || input?.subagent_type || 'teammate')
               taskToolUses.set(block.id, {
@@ -618,7 +674,7 @@ export function REPL({
                 const task = batchTasks[i] || {}
                 const seedKey = `${block.id}::seed-${i + 1}`
                 const teamName = normalizeTeamName(
-                  String(task?.team_name || messageLogName || 'default-team'),
+                  String(task?.team_name || sessionMeta.id || 'default-team'),
                 )
                 const agentName = String(
                   task?.name || task?.subagent_type || `task-${i + 1}`,
@@ -683,7 +739,7 @@ export function REPL({
               teamName:
                 (payload.teamName ? normalizeTeamName(payload.teamName) : undefined) ||
                 existingMeta?.teamName ||
-                normalizeTeamName(String(messageLogName || 'default-team')),
+                normalizeTeamName(String(sessionMeta.id || 'default-team')),
               agentName:
                 payload.agentName ||
                 existingMeta?.agentName ||
@@ -725,7 +781,7 @@ export function REPL({
               const meta = taskToolUses.get(id)
               const payload = taskProgresses.get(id)
               const teamName =
-                meta?.teamName || payload?.teamName || String(messageLogName || 'default-team')
+                meta?.teamName || payload?.teamName || String(sessionMeta.id || 'default-team')
               if (!byTeam.has(teamName)) {
                 byTeam.set(teamName, [])
               }
@@ -869,14 +925,14 @@ export function REPL({
     canAnimateMessages,
     unresolvedToolUseIDs,
     replStaticPrefixLength,
-    messageLogName,
+    sessionMeta.id,
   ])
 
   const staticItems = useMemo(
     () => [
       {
         jsx: (
-          <Box flexDirection="column" width="100%" key={`logo${forkNumber}`}>
+          <Box flexDirection="column" width="100%" key={`logo${sessionKey}`}>
             <Logo />
             <ProjectOnboarding workspaceDir={getOriginalCwd()} />
           </Box>
@@ -884,7 +940,7 @@ export function REPL({
       },
       ...messagesJSX.slice(0, replStaticPrefixLength),
     ],
-    [forkNumber, messagesJSX, replStaticPrefixLength],
+    [sessionKey, messagesJSX, replStaticPrefixLength],
   )
 
   const transientItems = useMemo(
@@ -906,8 +962,10 @@ export function REPL({
   const promptInputContext = useMemo(
     () => ({
       commands,
-      forkNumber,
-      messageLogName,
+      forkNumber: 0,
+      messageLogName: sessionMeta.id,
+      sessionId: sessionMeta.id,
+      sessionPath: sessionMeta.path,
       debug,
       verbose,
       messages,
@@ -917,8 +975,8 @@ export function REPL({
     }),
     [
       commands,
-      forkNumber,
-      messageLogName,
+      sessionMeta.id,
+      sessionMeta.path,
       debug,
       verbose,
       messages,
@@ -974,7 +1032,7 @@ export function REPL({
       children={
         <React.Fragment>
         <ModeIndicator />
-      <React.Fragment key={`static-messages-${forkNumber}`}>
+      <React.Fragment key={`static-messages-${sessionKey}`}>
         <Static
           items={staticItems}
           children={(item: any) => item.jsx}

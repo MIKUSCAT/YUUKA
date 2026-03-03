@@ -1,4 +1,4 @@
-import { TextBlock } from '@anthropic-ai/sdk/resources/index.mjs'
+import type { TextBlock } from '@yuuka-types/llm'
 import { last, memoize } from 'lodash-es'
 import { hasPermissionsToUseTool } from '@permissions'
 import { getAgentPrompt } from '@constants/prompts'

@@ -71,20 +71,20 @@ import {
   enableConfigs,
 } from '@utils/config'
 import { cwd } from 'process'
-import { dateToFilename, logError, parseLogFilename } from '@utils/log'
+import { logError } from '@utils/log'
 import { initDebugLogger } from '@utils/debugLogger'
 import { Onboarding } from '@components/Onboarding'
 import { Doctor } from '@screens/Doctor'
 import { TrustDialog } from '@components/TrustDialog'
 import { checkHasTrustDialogAccepted, McpServerConfig } from '@utils/config'
+import { SessionLogList } from '@screens/SessionLogList'
+import { ResumeSession } from '@screens/ResumeSession'
 import { LogList } from '@screens/LogList'
-import { ResumeConversation } from '@screens/ResumeConversation'
 import { startMCPServer } from './mcp'
 import { getCwd, setCwd, setOriginalCwd } from '@utils/state'
 import { omit } from 'lodash-es'
 import { getCommands } from '@commands'
-import { getNextAvailableLogForkNumber, loadLogList } from '@utils/log'
-import { loadMessagesFromLog } from '@utils/conversationRecovery'
+import { listSessions } from '@utils/sessionManager'
 import { cleanupOldMessageFilesInBackground } from '@utils/cleanup'
 import {
   handleListApprovedTools,
@@ -103,7 +103,6 @@ import { handleMcprcServerApprovals } from '@services/mcpServerApproval'
 import { cursorShow } from 'ansi-escapes'
 import { getLatestVersion, assertMinVersion } from '@utils/autoUpdater'
 import { gt } from 'semver'
-import { CACHE_PATHS } from '@utils/log'
 import { PersistentShell } from '@utils/PersistentShell'
 import { clearTerminal } from '@utils/terminal'
 import { showInvalidConfigDialog } from '@components/InvalidConfigDialog'
@@ -763,7 +762,6 @@ ${commandList}`,
           const { resultText: response } = await ask({
             commands,
             hasPermissionsToUseTool,
-            messageLogName: dateToFilename(new Date()),
             prompt: inputPrompt,
             cwd,
             tools,
@@ -782,7 +780,6 @@ ${commandList}`,
               commands={commands}
               debug={debug}
               initialPrompt={inputPrompt}
-              messageLogName={dateToFilename(new Date())}
               shouldShowPromptInput={true}
               verbose={verbose}
               tools={tools}
@@ -1622,28 +1619,28 @@ ${commandList}`,
     })
 
   // claude log
-  program
-    .command('log')
-    .description('Manage conversation logs.')
-    .argument(
-      '[number]',
+	  program
+	    .command('log')
+	    .description('Manage conversation logs.')
+	    .argument(
+	      '[number]',
       'A number (0, 1, 2, etc.) to display a specific log',
       parseInt,
     )
     .option('-c, --cwd <cwd>', 'The current working directory', String, cwd())
-    .action(async (number, { cwd }) => {
-      await setup(cwd, false)
-      
-      const context: { unmount?: () => void } = {}
-      ;(async () => {
-        const { render } = await import('ink')
-        const { unmount } = render(
-          <LogList context={context} type="messages" logNumber={number} />,
-          renderContextWithExitOnCtrlC,
-        )
-        context.unmount = unmount
-      })()
-    })
+	    .action(async (number, { cwd }) => {
+	      await setup(cwd, false)
+	      
+	      const context: { unmount?: () => void } = {}
+	      ;(async () => {
+	        const { render } = await import('ink')
+	        const { unmount } = render(
+	          <SessionLogList context={context} logNumber={number} />,
+	          renderContextWithExitOnCtrlC,
+	        )
+	        context.unmount = unmount
+	      })()
+	    })
 
   // claude resume
   program
@@ -1666,10 +1663,10 @@ ${commandList}`,
       await setup(cwd, safe)
       assertMinVersion()
 
-      const [tools, commands, logs] = await Promise.all([
+      const [tools, commands, sessions] = await Promise.all([
         getTools(),
         getCommands(),
-        loadLogList(CACHE_PATHS.messages()),
+        listSessions(),
       ])
 
       // If a specific conversation is requested, load and resume it directly
@@ -1677,17 +1674,16 @@ ${commandList}`,
         // Check if identifier is a number or a file path
         const number = Math.abs(parseInt(identifier))
         const isNumber = !isNaN(number)
-        let messages, date, forkNumber
         try {
+          let sessionPath: string
           if (isNumber) {
             
-            const log = logs[number]
-            if (!log) {
+            const session = sessions[number]
+            if (!session) {
               console.error('No conversation found at index', number)
               process.exit(1)
             }
-            messages = await loadMessagesFromLog(log.fullPath, tools)
-            ;({ date, forkNumber } = log)
+            sessionPath = session.path
           } else {
             // Handle file path case
             
@@ -1695,26 +1691,20 @@ ${commandList}`,
               console.error('File does not exist:', identifier)
               process.exit(1)
             }
-            messages = await loadMessagesFromLog(identifier, tools)
-            const pathSegments = identifier.split('/')
-            const filename = pathSegments[pathSegments.length - 1] ?? 'unknown'
-            ;({ date, forkNumber } = parseLogFilename(filename))
+            sessionPath = identifier
           }
-          const fork = getNextAvailableLogForkNumber(date, forkNumber ?? 1, 0)
           {
             const { render } = await import('ink')
             const { REPL } = await import('@screens/REPL')
             render(
               <REPL
               initialPrompt=""
-              messageLogName={date}
-              initialForkNumber={fork}
+              sessionPath={sessionPath}
               shouldShowPromptInput={true}
               verbose={verbose}
               commands={commands}
               tools={tools}
               safeMode={safe}
-              initialMessages={messages}
             />,
             { exitOnCtrlC: false },
             )
@@ -1729,12 +1719,13 @@ ${commandList}`,
         ;(async () => {
           const { render } = await import('ink')
           const { unmount } = render(
-            <ResumeConversation
+            <ResumeSession
               context={context}
               commands={commands}
-              logs={logs}
+              sessions={sessions}
               tools={tools}
               verbose={verbose}
+              safeMode={safe}
             />,
             renderContextWithExitOnCtrlC,
           )

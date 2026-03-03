@@ -338,8 +338,11 @@ async function learnFromConversation(
   if (typeof result.message?.content === 'string') {
     responseText = result.message.content
   } else if (Array.isArray(result.message?.content)) {
-    const textContent = result.message.content.find((c: any) => c.type === 'text')
-    responseText = textContent?.text || ''
+    const textBlock = result.message.content.find(
+      (c): c is { type: 'text'; text: string } =>
+        (c as any)?.type === 'text' && typeof (c as any)?.text === 'string',
+    )
+    responseText = textBlock?.text || ''
   }
 
   if (!responseText) {

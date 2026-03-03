@@ -1,4 +1,4 @@
-import { TextBlockParam } from '@anthropic-ai/sdk/resources/index.mjs'
+import type { TextBlockParam } from '@yuuka-types/llm'
 import React from 'react'
 import { AssistantBashOutputMessage } from './AssistantBashOutputMessage'
 import { AssistantLocalCommandOutputMessage } from './AssistantLocalCommandOutputMessage'

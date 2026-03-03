@@ -1,8 +1,8 @@
-import {
+import type {
   Message as APIAssistantMessage,
   MessageParam,
   ToolUseBlock,
-} from '@anthropic-ai/sdk/resources/index.mjs'
+} from '@yuuka-types/llm'
 import type { UUID } from './types/common'
 import type { Tool, ToolUseContext } from './Tool'
 import {
@@ -62,6 +62,8 @@ interface ExtendedToolUseContext extends ToolUseContext {
     commands: any[]
     forkNumber: number
     messageLogName: string
+    sessionId?: string
+    sessionPath?: string
     tools: Tool[]
     verbose: boolean
     safeMode: boolean
@@ -546,7 +548,9 @@ export async function* query(
   const currentRequest = getCurrentRequest()
 
   markPhase('QUERY_INIT')
-  setConversationScope(toolUseContext.options.messageLogName)
+  setConversationScope(
+    toolUseContext.options.sessionId ?? toolUseContext.options.messageLogName,
+  )
 
   // Auto-compact check
   const { messages: processedMessages, wasCompacted } = await checkAutoCompact(

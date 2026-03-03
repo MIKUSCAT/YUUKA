@@ -132,15 +132,16 @@ Make the agent highly specialized and effective for the described use case.`
     ] as any
     const response = await queryModel('main', messages, [systemPrompt])
 
-    // Get the text content from the response - handle both string and object responses
+    // Get the text content from the response
     let responseText = ''
     if (typeof response.message?.content === 'string') {
       responseText = response.message.content
     } else if (Array.isArray(response.message?.content)) {
-      const textContent = response.message.content.find((c: any) => c.type === 'text')
-      responseText = textContent?.text || ''
-    } else if (response.message?.content?.[0]?.text) {
-      responseText = response.message.content[0].text
+      const textBlock = response.message.content.find(
+        (c): c is { type: 'text'; text: string } =>
+          (c as any)?.type === 'text' && typeof (c as any)?.text === 'string',
+      )
+      responseText = textBlock?.text || ''
     }
     
     if (!responseText) {

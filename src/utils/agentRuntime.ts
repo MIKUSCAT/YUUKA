@@ -14,6 +14,7 @@ type QueryToolUseContext = ToolUseContext & {
   options?: ToolUseContext['options'] & {
     tools?: Tool[]
     messageLogName?: string
+    sessionId?: string
   }
   setToolJSX: (jsx: any) => void
 }
@@ -33,7 +34,7 @@ export interface RunAgentRuntimeInput {
 }
 
 function getSessionId(context: QueryToolUseContext): string | undefined {
-  return context.options?.messageLogName
+  return context.options?.sessionId ?? context.options?.messageLogName
 }
 
 function getAgentId(context: QueryToolUseContext): string | undefined {

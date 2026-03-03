@@ -14,9 +14,9 @@ import { getCwd } from '@utils/state'
 import { safeParseJSON } from '@utils/json'
 import { spawnSync } from 'child_process'
 import {
-  ImageBlockParam,
-  ToolResultBlockParam,
-} from '@anthropic-ai/sdk/resources/index.mjs'
+  type ImageBlockParam,
+  type ToolResultBlockParam,
+} from '@yuuka-types/llm'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'

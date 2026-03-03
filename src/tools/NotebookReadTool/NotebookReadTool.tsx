@@ -1,7 +1,7 @@
 import type {
   ImageBlockParam,
   TextBlockParam,
-} from '@anthropic-ai/sdk/resources/index.mjs'
+} from '@yuuka-types/llm'
 
 import { existsSync, readFileSync } from 'fs'
 import { Text } from 'ink'

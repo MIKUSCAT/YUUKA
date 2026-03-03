@@ -1,4 +1,4 @@
-import { ToolResultBlockParam } from '@anthropic-ai/sdk/resources/index.mjs'
+import type { ToolResultBlockParam } from '@yuuka-types/llm'
 import * as React from 'react'
 import { Tool } from '@tool'
 import { Message, UserMessage } from '@query'

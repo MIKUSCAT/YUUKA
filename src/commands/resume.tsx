@@ -1,8 +1,8 @@
 import * as React from 'react'
 import type { Command } from '@commands'
-import { ResumeConversation } from '@screens/ResumeConversation'
+import { ResumeSession } from '@screens/ResumeSession'
 import { render } from 'ink'
-import { CACHE_PATHS, loadLogList } from '@utils/log'
+import { listSessions } from '@utils/sessionManager'
 
 export default {
   type: 'local-jsx',
@@ -15,12 +15,12 @@ export default {
   },
   async call(onDone, context) {
     const { commands = [], tools = [], verbose = false } = context.options || {}
-    const logs = await loadLogList(CACHE_PATHS.messages())
+    const sessions = await listSessions()
     render(
-      <ResumeConversation
+      <ResumeSession
         commands={commands}
         context={{ unmount: onDone }}
-        logs={logs}
+        sessions={sessions}
         tools={tools}
         verbose={verbose}
       />,

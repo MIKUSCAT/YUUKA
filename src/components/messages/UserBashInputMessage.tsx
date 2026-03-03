@@ -2,7 +2,7 @@ import { Box, Text } from 'ink'
 import * as React from 'react'
 import { extractTag } from '@utils/messages'
 import { getTheme } from '@utils/theme'
-import { TextBlockParam } from '@anthropic-ai/sdk/resources/index.mjs'
+import type { TextBlockParam } from '@yuuka-types/llm'
 
 type Props = {
   addMargin: boolean

@@ -55,17 +55,14 @@ export const SESSION_ID = randomUUID()
 
 const paths = envPaths(PRODUCT_COMMAND)
 
-function getProjectDir(cwd: string): string {
-  return cwd.replace(/[^a-zA-Z0-9]/g, '-')
-}
-
 export const CACHE_PATHS = {
-  errors: () => join(paths.cache, getProjectDir(process.cwd()), 'errors'),
-  messages: () => join(paths.cache, getProjectDir(process.cwd()), 'messages'),
+  // 用户要求“全局且只要全局”：不按 cwd 做项目隔离。
+  errors: () => join(paths.cache, 'errors'),
+  messages: () => join(paths.cache, 'messages'),
   taskOutputs: () =>
-    join(paths.cache, getProjectDir(process.cwd()), 'task-outputs'),
+    join(paths.cache, 'task-outputs'),
   mcpLogs: (serverName: string) =>
-    join(paths.cache, getProjectDir(process.cwd()), `mcp-logs-${serverName}`),
+    join(paths.cache, `mcp-logs-${serverName}`),
 }
 
 export function dateToFilename(date: Date): string {

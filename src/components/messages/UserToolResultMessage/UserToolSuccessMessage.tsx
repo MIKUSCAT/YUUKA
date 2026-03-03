@@ -1,4 +1,4 @@
-import { ToolResultBlockParam } from '@anthropic-ai/sdk/resources/index.mjs'
+import type { ToolResultBlockParam } from '@yuuka-types/llm'
 import { Box, Text } from 'ink'
 import * as React from 'react'
 import { Tool } from '@tool'
@@ -33,7 +33,9 @@ export function UserToolSuccessMessage({
     }
     const content = message.message?.content
     if (Array.isArray(content)) {
-      const block = content.find((c: any) => c?.type === 'tool_result')
+      const block = content.find(
+        (c): c is ToolResultBlockParam => (c as any)?.type === 'tool_result',
+      )
       if (typeof block?.content === 'string') return block.content
     }
     return ''

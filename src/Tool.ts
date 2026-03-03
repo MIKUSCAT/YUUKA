@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import * as React from 'react'
 import type { PermissionMode } from '@yuuka-types/PermissionMode'
+import type { SessionManager } from '@utils/sessionManager'
 
 /**
  * Core Tool interface for YUUKA's extensible tool system
@@ -19,6 +20,11 @@ export interface ToolUseContext {
   abortController: AbortController
   readFileTimestamps: { [filePath: string]: number }
   /**
+   * Global, pi-style session manager (JSONL). If present, tools and runtime
+   * hooks can append entries (compaction, custom events, etc.).
+   */
+  sessionManager?: SessionManager
+  /**
    * 可选：交互式权限回调（用于 TaskTool 等“嵌套 query”场景）。
    * 主 REPL 会提供一个能弹确认框的 canUseTool；非交互场景可能为空。
    */
@@ -33,6 +39,8 @@ export interface ToolUseContext {
     permissionMode?: PermissionMode
     forkNumber?: number
     messageLogName?: string
+    sessionId?: string
+    sessionPath?: string
     maxThinkingTokens?: any
     isCustomCommand?: boolean
   }
@@ -88,7 +96,7 @@ export interface Tool<
     input: z.infer<TInput>,
     context: ToolUseContext,
   ) => AsyncGenerator<
-    | { type: 'result'; data: TOutput; resultForAssistant?: string }
+    | { type: 'result'; data: TOutput; resultForAssistant?: string | any[] }
     | { type: 'progress'; content: any; normalizedMessages?: any[]; tools?: any[] },
     void,
     unknown

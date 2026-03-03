@@ -65,6 +65,15 @@ export async function queryLLM(
       ? [getCLISyspromptPrefix(), ...systemPrompt]
       : systemPrompt
 
+    const rawSessionId =
+      (options.toolUseContext as any)?.options?.sessionId ??
+      (options.toolUseContext as any)?.options?.messageLogName ??
+      undefined
+    const sessionId =
+      typeof rawSessionId === 'string' && rawSessionId.trim()
+        ? rawSessionId.trim()
+        : undefined
+
     const config = getGlobalConfig()
     const result = await queryGeminiLLM({
       messages,
@@ -73,6 +82,7 @@ export async function queryLLM(
       signal,
       model: options.model as any,
       stream: config.stream ?? true,
+      sessionId,
     })
 
     debugLogger.api('LLM_REQUEST_SUCCESS', {

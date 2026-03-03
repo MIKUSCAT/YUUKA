@@ -31,8 +31,10 @@ export default {
     const rest = tokens.slice(1)
 
     const runtimeOptions = (context as any).options || {}
-    const messageLogName = String(runtimeOptions.messageLogName || '').trim()
-    const forkNumber = Number(runtimeOptions.forkNumber || 0)
+    const sessionManager = (context as any).sessionManager as any
+    const sessionFile = sessionManager?.getSessionFile?.() || ''
+    const sessionId = sessionManager?.getSessionId?.() || ''
+    const leafId = sessionManager?.getLeafId?.() ?? null
 
     if (action === 'help' || action === '-h' || action === '--help') {
       return formatUsage()
@@ -65,29 +67,33 @@ export default {
     }
 
     if (action === 'save' || action === 'new' || action === 'create') {
-      if (!messageLogName) {
-        return '当前会话缺少 messageLogName，暂时无法创建快照。'
+      if (!sessionManager || !sessionFile || !sessionId) {
+        return '当前会话缺少 session 信息，暂时无法创建快照。'
       }
       const label = rest.join(' ').trim() || undefined
       const snapshot = createConversationSnapshot({
-        messageLogName,
-        forkNumber,
         reason: 'manual',
         label,
+        sessionId,
+        sessionFile,
+        leafId,
+        messages: sessionManager.buildSessionContext?.().messages ?? [],
       })
       return `快照已保存：${snapshot.id}（${snapshot.messageCount} 条消息）`
     }
 
     // 默认把未知 action 当作 save 的名称参数
-    if (!messageLogName) {
-      return '当前会话缺少 messageLogName，暂时无法创建快照。'
+    if (!sessionManager || !sessionFile || !sessionId) {
+      return '当前会话缺少 session 信息，暂时无法创建快照。'
     }
     const fallbackLabel = raw || undefined
     const snapshot = createConversationSnapshot({
-      messageLogName,
-      forkNumber,
       reason: 'manual',
       label: fallbackLabel,
+      sessionId,
+      sessionFile,
+      leafId,
+      messages: sessionManager.buildSessionContext?.().messages ?? [],
     })
     return `快照已保存：${snapshot.id}（${snapshot.messageCount} 条消息）`
   },

@@ -1,4 +1,4 @@
-import { ImageBlockParam } from '@anthropic-ai/sdk/resources/index.mjs'
+import type { ImageBlockParam } from '@yuuka-types/llm'
 import { statSync } from 'node:fs'
 import { Box, Text } from 'ink'
 import * as path from 'node:path'
